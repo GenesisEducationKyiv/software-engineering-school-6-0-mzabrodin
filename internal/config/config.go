@@ -18,6 +18,7 @@ type Config struct {
 	GitHubToken  string
 	ScanInterval time.Duration
 	DatabaseURL  string
+	MigrateDSN   string
 	RedisURL     string
 	SMTP         SMTPConfig
 	APIKey       string
@@ -34,6 +35,7 @@ func Load() *Config {
 		GitHubToken:  getEnv("GITHUB_TOKEN", ""),
 		ScanInterval: scanInterval,
 		DatabaseURL:  buildDatabaseURL(),
+		MigrateDSN:   buildMigrateURL(),
 		RedisURL:     buildRedisURL(),
 		SMTP: SMTPConfig{
 			Host:      getEnv("SMTP_HOST", ""),
@@ -53,6 +55,16 @@ func buildDatabaseURL() string {
 		" password=" + getEnv("DB_PASSWORD", "postgres") +
 		" dbname=" + getEnv("DB_NAME", "github_release_notifier") +
 		" sslmode=" + getEnv("DB_SSL_MODE", "disable")
+}
+
+func buildMigrateURL() string {
+	return "postgres://" +
+		getEnv("DB_USER", "postgres") + ":" +
+		getEnv("DB_PASSWORD", "postgres") + "@" +
+		getEnv("DB_HOST", "localhost") + ":" +
+		getEnv("DB_PORT", "5432") + "/" +
+		getEnv("DB_NAME", "github_release_notifier") +
+		"?sslmode=" + getEnv("DB_SSL_MODE", "disable")
 }
 
 func buildRedisURL() string {
