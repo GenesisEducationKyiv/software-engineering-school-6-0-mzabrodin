@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github-release-notifier/internal/config"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
@@ -14,10 +14,9 @@ func main() {
 		log.Printf("could not load .env file: %v", err)
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	cfg := config.Load()
+
+	port := cfg.Port
 
 	r := chi.NewRouter()
 
