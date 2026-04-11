@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -13,34 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	maxRetries    = 10
-	retryInterval = 2 * time.Second
-)
-
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
-	var (
-		pool *pgxpool.Pool
-		err  error
-	)
-
-	for i := range maxRetries {
-		pool, err = pgxpool.New(ctx, databaseURL)
-		if err == nil {
-			if pingErr := pool.Ping(ctx); pingErr == nil {
-				log.Println("database connected successfully")
-				return pool, nil
-			} else {
-				pool.Close()
-				err = pingErr
-			}
-		}
-
-		log.Printf("waiting for database. attempt %d/%d: %v", i+1, maxRetries, err)
-		time.Sleep(retryInterval)
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("create pool: %w", err)
 	}
 
-	return nil, fmt.Errorf("database is not ready after %d attempts: %w", maxRetries, err)
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping db: %w", err)
+	}
+
+	log.Println("database connected successfully")
+	return pool, nil
 }
 
 func RunMigrations(databaseURL string) error {
