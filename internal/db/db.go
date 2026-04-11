@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -23,7 +23,7 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
-	log.Println("database connected successfully")
+	slog.Info("database connected successfully")
 	return pool, nil
 }
 
@@ -36,11 +36,11 @@ func RunMigrations(databaseURL string) error {
 	defer func(m *migrate.Migrate) {
 		sourceErr, databaseErr := m.Close()
 		if sourceErr != nil {
-			log.Printf("failed to close migration source: %v", sourceErr)
+			slog.Error("failed to close migration source", "error", sourceErr)
 		}
 
 		if databaseErr != nil {
-			log.Printf("failed to close migration database: %v", databaseErr)
+			slog.Error("failed to close migration database", "error", databaseErr)
 		}
 	}(migrator)
 
@@ -48,6 +48,6 @@ func RunMigrations(databaseURL string) error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	log.Println("migrations applied successfully")
+	slog.Info("migrations applied successfully")
 	return nil
 }

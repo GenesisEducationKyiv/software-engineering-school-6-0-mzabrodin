@@ -2,29 +2,37 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"os"
+
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/db"
-	"log"
-	"net/http"
+
+	"log/slog"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 )
 
 func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	if err := godotenv.Load(); err != nil {
-		log.Printf("could not load .env file: %v", err)
+		slog.Warn("could not load .env file", "error", err)
 	}
 
 	cfg := config.Load()
 
 	if err := db.RunMigrations(cfg.MigrateDSN); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
 	}
 
 	pool, err := db.NewPool(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -36,11 +44,15 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		_, err := w.Write([]byte(`{"status":"ok"}`))
 		if err != nil {
-			log.Printf("failed to write health check response: %v", err)
+			slog.Error("failed to write health check response", "error", err)
 			return
 		}
 	})
 
-	log.Printf("Server started on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	slog.Info("Server started", "port", port)
+
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
 }
