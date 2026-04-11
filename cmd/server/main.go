@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"github-release-notifier/internal/config"
+	"github-release-notifier/internal/db"
 	"log"
 	"net/http"
 
@@ -15,6 +17,16 @@ func main() {
 	}
 
 	cfg := config.Load()
+
+	if err := db.RunMigrations(cfg.MigrateDSN); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
+
+	pool, err := db.NewPool(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+	defer pool.Close()
 
 	port := cfg.Port
 
