@@ -40,7 +40,7 @@ func Load() *Config {
 			Port:      getEnv("SMTP_PORT", "587"),
 			User:      getEnv("SMTP_USER", ""),
 			Password:  getEnv("SMTP_PASSWORD", ""),
-			FromEmail: getEnv("SMTP_FROM_EMAIL", ""),
+			FromEmail: getEnv("SMTP_FROM", ""),
 		},
 		APIKey: getEnv("API_KEY", ""),
 	}
