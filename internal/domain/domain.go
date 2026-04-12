@@ -30,3 +30,16 @@ type SubscriptionView struct {
 	Confirmed   bool
 	LastSeenTag *string
 }
+
+type ReleaseNotification struct {
+	To             string
+	Repo           string
+	Tag            string
+	ReleaseURL     string
+	UnsubscribeURL string
+}
+
+type Release struct {
+	TagName string
+	HTMLURL string
+}
