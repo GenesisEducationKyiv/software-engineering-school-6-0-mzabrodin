@@ -15,6 +15,7 @@ type SMTPConfig struct {
 
 type Config struct {
 	Port         string
+	BaseURL      string
 	GitHubToken  string
 	ScanInterval time.Duration
 	DatabaseURL  string
@@ -32,6 +33,7 @@ func Load() *Config {
 
 	return &Config{
 		Port:         getEnv("PORT", "8080"),
+		BaseURL:      getEnv("BASE_URL", "http://localhost:8080"),
 		GitHubToken:  getEnv("GITHUB_TOKEN", ""),
 		ScanInterval: scanInterval,
 		DatabaseURL:  buildDatabaseURL(),
