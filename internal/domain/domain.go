@@ -23,3 +23,10 @@ type Subscription struct {
 	Confirmed        bool
 	CreatedAt        time.Time
 }
+
+type SubscriptionView struct {
+	Email       string
+	Repo        string
+	Confirmed   bool
+	LastSeenTag *string
+}
