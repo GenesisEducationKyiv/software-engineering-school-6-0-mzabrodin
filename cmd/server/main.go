@@ -3,18 +3,22 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"os"
-
+	"github-release-notifier/internal/api"
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/db"
-
+	"github-release-notifier/internal/github"
+	"github-release-notifier/internal/mailer"
+	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/scanner"
+	"github-release-notifier/internal/service"
 	"log/slog"
+	"net/http"
+	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 )
 
@@ -40,20 +44,32 @@ func main() {
 	}
 	defer pool.Close()
 
-	r := chi.NewRouter()
+	repos := repository.NewRepoRepository(pool)
+	subs := repository.NewSubscriptionRepository(pool)
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"status":"ok"}`))
-		if err != nil {
-			slog.Error("failed to write health check response", "error", err)
-			return
-		}
-	})
+	gh := github.NewClient(cfg.GitHubToken)
+
+	smtpPort, err := strconv.Atoi(cfg.SMTP.Port)
+	if err != nil {
+		slog.Error("invalid SMTP port", "error", err)
+		os.Exit(1)
+	}
+
+	mail := mailer.NewMailer(cfg.SMTP.Host, smtpPort, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
+
+	svc := service.NewSubscriptionService(repos, subs, gh, mail, cfg.BaseURL)
+
+	scannerCtx, cancelScanner := context.WithCancel(context.Background())
+	defer cancelScanner()
+	scan := scanner.NewScanner(repos, subs, gh, mail, cfg.ScanInterval, cfg.BaseURL)
+	go scan.Start(scannerCtx)
+
+	handler := api.NewHandler(svc)
+	router := api.NewRouter(handler)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: r,
+		Handler: router,
 	}
 
 	go func() {
@@ -69,6 +85,7 @@ func main() {
 	<-quit
 
 	slog.Info("shutting down server")
+	cancelScanner()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
