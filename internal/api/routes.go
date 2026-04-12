@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(h *Handler, apiKey string) http.Handler {
@@ -14,10 +15,13 @@ func NewRouter(h *Handler, apiKey string) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(MetricsMiddleware)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, map[string]string{"status": "ok"})
 	})
+
+	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(KeyAuth(apiKey))
