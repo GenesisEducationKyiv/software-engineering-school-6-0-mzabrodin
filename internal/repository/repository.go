@@ -7,14 +7,14 @@ import (
 	"github.com/google/uuid"
 )
 
-type RepositoriesRepository interface {
+type RepoRepository interface {
 	Create(ctx context.Context, repo *domain.Repository) error
 	GetByName(ctx context.Context, name string) (*domain.Repository, error)
 	GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error)
 	UpdateLastSeenTag(ctx context.Context, name string, tag string) error
 }
 
-type SubscriptionsRepository interface {
+type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *domain.Subscription) error
 	GetByConfirmToken(ctx context.Context, token string) (*domain.Subscription, error)
 	GetByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error)
