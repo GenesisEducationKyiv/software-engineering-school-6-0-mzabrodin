@@ -24,11 +24,14 @@ func NewRouter(h *Handler, apiKey string) http.Handler {
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Use(KeyAuth(apiKey))
-		r.Post("/subscribe", h.Subscribe)
 		r.Get("/confirm/{token}", h.Confirm)
 		r.Get("/unsubscribe/{token}", h.Unsubscribe)
-		r.Get("/subscriptions", h.GetSubscriptions)
+
+		r.Group(func(r chi.Router) {
+			r.Use(KeyAuth(apiKey))
+			r.Post("/subscribe", h.Subscribe)
+			r.Get("/subscriptions", h.GetSubscriptions)
+		})
 	})
 
 	return r
