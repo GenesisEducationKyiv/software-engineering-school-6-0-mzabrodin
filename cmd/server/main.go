@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/api"
+	"github-release-notifier/internal/cache"
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/db"
 	"github-release-notifier/internal/github"
@@ -48,7 +49,21 @@ func main() {
 	repos := repository.NewRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
 
-	gh := github.NewClient(cfg.GitHubToken)
+	redisCache, err := cache.NewRedisCache(context.Background(), cfg.RedisURL)
+	if err != nil {
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
+	}
+
+	defer func() {
+		if err := redisCache.Close(); err != nil {
+			slog.Warn("failed to close redis connection", "error", err)
+		}
+	}()
+
+	slog.Info("redis connected")
+
+	gh := github.NewClient(cfg.GitHubToken).WithCache(redisCache, 10*time.Minute)
 
 	smtpPort, err := strconv.Atoi(cfg.SMTP.Port)
 	if err != nil {
