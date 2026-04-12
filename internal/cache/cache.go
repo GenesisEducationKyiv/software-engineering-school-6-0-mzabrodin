@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/domain"
 	"time"
+
+	"github-release-notifier/internal/domain"
 
 	"github.com/redis/go-redis/v9"
 )
