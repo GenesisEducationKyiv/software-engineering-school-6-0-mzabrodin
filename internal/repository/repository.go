@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+
 	"github-release-notifier/internal/domain"
 
 	"github.com/google/uuid"

@@ -3,6 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+
 	"github-release-notifier/internal/api"
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/db"
@@ -11,13 +19,6 @@ import (
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/scanner"
 	"github-release-notifier/internal/service"
-	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
-	"strconv"
-	"syscall"
-	"time"
 
 	"github.com/joho/godotenv"
 )

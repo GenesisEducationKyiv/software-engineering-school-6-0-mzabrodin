@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/domain"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github-release-notifier/internal/domain"
 
 	"github.com/google/uuid"
 )

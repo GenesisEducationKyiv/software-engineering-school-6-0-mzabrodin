@@ -2,8 +2,9 @@ package mailer
 
 import (
 	"fmt"
-	"github-release-notifier/internal/domain"
 	"log/slog"
+
+	"github-release-notifier/internal/domain"
 
 	"gopkg.in/gomail.v2"
 )

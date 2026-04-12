@@ -1,9 +1,10 @@
 package mailer
 
 import (
-	"github-release-notifier/internal/domain"
 	"strings"
 	"testing"
+
+	"github-release-notifier/internal/domain"
 )
 
 func TestConfirmationBody_ContainsRepo(t *testing.T) {

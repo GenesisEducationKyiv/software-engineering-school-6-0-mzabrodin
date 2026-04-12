@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/domain"
 	"testing"
+
+	"github-release-notifier/internal/domain"
 
 	"github.com/google/uuid"
 )

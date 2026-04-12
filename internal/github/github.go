@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github-release-notifier/internal/domain"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github-release-notifier/internal/domain"
 )
 
 const (
@@ -97,11 +98,11 @@ func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
 		return 0, nil, fmt.Errorf("http request: %w", err)
 	}
 
-	defer func(body io.ReadCloser) {
-		if err := body.Close(); err != nil {
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
 			slog.Error("failed to close response body", "error", err)
 		}
-	}(resp.Body)
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

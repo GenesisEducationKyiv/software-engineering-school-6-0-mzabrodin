@@ -3,11 +3,12 @@ package github
 import (
 	"context"
 	"errors"
-	"github-release-notifier/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github-release-notifier/internal/domain"
 )
 
 func newTestClient(serverURL, token string) *Client {

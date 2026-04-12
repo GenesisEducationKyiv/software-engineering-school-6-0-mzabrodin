@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github-release-notifier/internal/domain"
-	"github-release-notifier/internal/service"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
