@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github-release-notifier/internal/domain"
-
 	"github.com/google/uuid"
+
+	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/metrics"
 )
 
 type Mailer interface {
@@ -79,6 +80,12 @@ func (s *Scanner) Start(ctx context.Context) {
 func (s *Scanner) scan(ctx context.Context) {
 	slog.Info("scanning repositories for new releases")
 
+	start := time.Now()
+	defer func() {
+		metrics.ScannerDuration.Observe(time.Since(start).Seconds())
+		metrics.ScannerRunsTotal.Inc()
+	}()
+
 	repos, err := s.repos.GetAllWithSubscriptions(ctx)
 	if err != nil {
 		slog.Error("failed to get repositories", "error", err)
@@ -101,11 +108,13 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 	release, err := s.github.GetLatestRelease(ctx, owner, name)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnauthorized) {
+			metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
 			slog.Warn("GitHub token is invalid or missing, skipping scan", "repo", repo.Name)
 			return nil
 		}
 
 		if errors.Is(err, domain.ErrRateLimited) {
+			metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
 			slog.Warn("rate limited by GitHub, skipping scan", "repo", repo.Name)
 			return nil
 		}
@@ -114,6 +123,7 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 			return nil
 		}
 
+		metrics.GitHubAPIErrorsTotal.WithLabelValues("other").Inc()
 		return fmt.Errorf("get latest release: %w", err)
 	}
 
@@ -142,6 +152,8 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 	if err := s.mailer.SendReleaseNotifications(notifications); err != nil {
 		return fmt.Errorf("send notifications: %w", err)
 	}
+
+	metrics.NotificationsSentTotal.Add(float64(len(notifications)))
 
 	if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
 		return fmt.Errorf("update last seen tag: %w", err)
