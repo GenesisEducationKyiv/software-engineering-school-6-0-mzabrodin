@@ -200,6 +200,12 @@ CREATE INDEX idx_subscriptions_email ON subscriptions (email);
 The `last_seen_tag` on `repositories` is shared across all subscribers. This means a single GitHub API call per
 repository per scan cycle, regardless of how many subscribers it has.
 
+## Security notes
+
+The `.env` file approach is convenient for development and evaluation but is not suitable for production:
+For production deployments, replace `.env` with a proper secret manager
+The `.env` file is listed in `.gitignore`. The committed `.env.example` contains only placeholder values and is safe to keep in the repository.
+
 ## Tests
 
 ```bash
