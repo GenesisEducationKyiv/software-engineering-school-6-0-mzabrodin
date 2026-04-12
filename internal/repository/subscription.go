@@ -39,50 +39,6 @@ func (r *subscriptionsRepository) Create(ctx context.Context, sub *domain.Subscr
 	return nil
 }
 
-func (r *subscriptionsRepository) GetByConfirmToken(ctx context.Context, token string) (*domain.Subscription, error) {
-	sub := &domain.Subscription{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, repository_id, email, confirm_token, unsubscribe_token, confirmed, created_at
-		FROM subscriptions WHERE confirm_token = $1
-	`, token).Scan(
-		&sub.ID, &sub.RepositoryID, &sub.Email,
-		&sub.ConfirmToken, &sub.UnsubscribeToken,
-		&sub.Confirmed, &sub.CreatedAt,
-	)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrNotFound
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("get by confirm token: %w", err)
-	}
-
-	return sub, nil
-}
-
-func (r *subscriptionsRepository) GetByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error) {
-	sub := &domain.Subscription{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, repository_id, email, confirm_token, unsubscribe_token, confirmed, created_at
-		FROM subscriptions WHERE unsubscribe_token = $1
-	`, token).Scan(
-		&sub.ID, &sub.RepositoryID, &sub.Email,
-		&sub.ConfirmToken, &sub.UnsubscribeToken,
-		&sub.Confirmed, &sub.CreatedAt,
-	)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrNotFound
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("get by unsubscribe token: %w", err)
-	}
-
-	return sub, nil
-}
-
 func (r *subscriptionsRepository) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT s.email, r.name, s.confirmed, r.last_seen_tag
