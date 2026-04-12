@@ -12,6 +12,11 @@ linters:
     - bodyclose
     - noctx
     - exhaustive
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
 
 formatters:
   enable:
@@ -24,7 +29,3 @@ formatters:
 
 issues:
   max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
