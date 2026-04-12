@@ -8,4 +8,5 @@ var (
 	ErrRateLimited   = errors.New("github API rate limit exceeded")
 	ErrUnauthorized  = errors.New("github API unauthorized: check GITHUB_TOKEN")
 	ErrNoRelease     = errors.New("no releases found")
+	ErrMiss          = errors.New("cache miss")
 )
