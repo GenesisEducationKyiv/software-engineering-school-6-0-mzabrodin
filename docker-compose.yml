@@ -1,4 +1,16 @@
 services:
+  app:
+    build: .
+    container_name: github_release_notifier_app
+    ports:
+      - "${PORT}:8080"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:18-alpine
     container_name: github_release_notifier_postgres
