@@ -65,7 +65,7 @@ func main() {
 	go scan.Start(scannerCtx)
 
 	handler := api.NewHandler(svc)
-	router := api.NewRouter(handler)
+	router := api.NewRouter(handler, cfg.APIKey)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
