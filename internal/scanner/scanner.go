@@ -99,6 +99,11 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 
 	release, err := s.github.GetLatestRelease(ctx, owner, name)
 	if err != nil {
+		if errors.Is(err, domain.ErrUnauthorized) {
+			slog.Warn("GitHub token is invalid or missing, skipping scan", "repo", repo.Name)
+			return nil
+		}
+
 		if errors.Is(err, domain.ErrRateLimited) {
 			slog.Warn("rate limited by GitHub, skipping scan", "repo", repo.Name)
 			return nil

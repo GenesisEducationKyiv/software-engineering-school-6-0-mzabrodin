@@ -108,6 +108,10 @@ func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
 		return 0, nil, fmt.Errorf("read body: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return 0, nil, domain.ErrUnauthorized
+	}
+
 	if resp.StatusCode == http.StatusTooManyRequests ||
 		(resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0") {
 		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
