@@ -63,7 +63,7 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*dom
 	}
 
 	if status == http.StatusNotFound {
-		return nil, ErrNoRelease
+		return nil, domain.ErrNoRelease
 	}
 
 	if status != http.StatusOK {
@@ -110,7 +110,7 @@ func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
 		(resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0") {
 		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
 
-		return 0, nil, fmt.Errorf("%w, retry after %s", ErrRateLimited, retryAfter)
+		return 0, nil, fmt.Errorf("%w, retry after %s", domain.ErrRateLimited, retryAfter)
 	}
 
 	return resp.StatusCode, body, nil
