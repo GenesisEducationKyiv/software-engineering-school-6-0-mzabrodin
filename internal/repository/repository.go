@@ -16,8 +16,6 @@ type RepoRepository interface {
 
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *domain.Subscription) error
-	GetByConfirmToken(ctx context.Context, token string) (*domain.Subscription, error)
-	GetByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error)
 	GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error)
 	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error)
 	Confirm(ctx context.Context, token string) error
