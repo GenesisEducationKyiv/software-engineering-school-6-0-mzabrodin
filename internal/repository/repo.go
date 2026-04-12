@@ -40,7 +40,7 @@ func (r *repositoriesRepository) GetByName(ctx context.Context, name string) (*d
 	`, name).Scan(&repo.ID, &repo.Name, &repo.LastSeenTag, &repo.CheckedAt, &repo.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrNotFound
 	}
 
 	if err != nil {
@@ -89,7 +89,7 @@ func (r *repositoriesRepository) UpdateLastSeenTag(ctx context.Context, name str
 	}
 
 	if cmd.RowsAffected() == 0 {
-		return ErrNotFound
+		return domain.ErrNotFound
 	}
 
 	return nil

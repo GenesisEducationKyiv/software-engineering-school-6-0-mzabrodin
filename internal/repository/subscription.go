@@ -29,7 +29,7 @@ func (r *subscriptionsRepository) Create(ctx context.Context, sub *domain.Subscr
 	`, sub.RepositoryID, sub.Email, sub.ConfirmToken, sub.UnsubscribeToken, sub.Confirmed).Scan(&sub.ID, &sub.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrAlreadyExists
+		return domain.ErrAlreadyExists
 	}
 
 	if err != nil {
@@ -51,7 +51,7 @@ func (r *subscriptionsRepository) GetByConfirmToken(ctx context.Context, token s
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrNotFound
 	}
 
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *subscriptionsRepository) GetByUnsubscribeToken(ctx context.Context, tok
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, domain.ErrNotFound
 	}
 
 	if err != nil {
@@ -157,7 +157,7 @@ func (r *subscriptionsRepository) Confirm(ctx context.Context, token string) err
 	}
 
 	if result.RowsAffected() == 0 {
-		return ErrNotFound
+		return domain.ErrNotFound
 	}
 
 	return nil
@@ -173,7 +173,7 @@ func (r *subscriptionsRepository) Delete(ctx context.Context, token string) erro
 	}
 
 	if result.RowsAffected() == 0 {
-		return ErrNotFound
+		return domain.ErrNotFound
 	}
 
 	return nil
