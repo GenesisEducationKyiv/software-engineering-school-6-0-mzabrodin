@@ -24,19 +24,21 @@ type githubRelease struct {
 }
 
 type Client struct {
-	http  *http.Client
-	token string
+	http    *http.Client
+	token   string
+	baseURL string
 }
 
 func NewClient(token string) *Client {
 	return &Client{
-		http:  &http.Client{Timeout: defaultTimeout},
-		token: token,
+		http:    &http.Client{Timeout: defaultTimeout},
+		token:   token,
+		baseURL: apiBaseURL,
 	}
 }
 
 func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s", apiBaseURL, owner, repo)
+	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repo)
 
 	status, _, err := c.do(ctx, url)
 	if err != nil {
@@ -55,7 +57,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 }
 
 func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", apiBaseURL, owner, repo)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo)
 
 	status, body, err := c.do(ctx, url)
 	if err != nil {
