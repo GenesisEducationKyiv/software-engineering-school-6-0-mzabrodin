@@ -19,6 +19,30 @@ func newTestClient(serverURL, token string) *Client {
 	}
 }
 
+type mockCache struct {
+	data map[string]string
+}
+
+func newMockCache() *mockCache {
+	return &mockCache{data: make(map[string]string)}
+}
+
+func (m *mockCache) Get(_ context.Context, key string) (string, error) {
+	val, ok := m.data[key]
+	if !ok {
+		return "", domain.ErrMiss
+	}
+
+	return val, nil
+}
+
+func (m *mockCache) Set(_ context.Context, key, value string, _ time.Duration) error {
+	m.data[key] = value
+	return nil
+}
+
+func (m *mockCache) Close() error { return nil }
+
 func TestRepoExists_Found(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -192,6 +216,144 @@ func TestGetLatestRelease_UnexpectedStatus(t *testing.T) {
 	_, err := c.GetLatestRelease(context.Background(), "owner", "repo")
 	if err == nil {
 		t.Error("expected error for unexpected status, got nil")
+	}
+}
+
+func TestRepoExists_CacheHit_True(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("HTTP server was called despite cache hit")
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	mc.data[keyPrefixExists+"owner/repo"] = "1"
+
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+	exists, err := c.RepoExists(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected cache hit to return true")
+	}
+}
+
+func TestRepoExists_CacheHit_False(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("HTTP server was called despite cache hit")
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	mc.data[keyPrefixExists+"owner/repo"] = "0"
+
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+	exists, err := c.RepoExists(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if exists {
+		t.Error("expected cache hit to return false")
+	}
+}
+
+func TestRepoExists_CacheMiss_PopulatesCache(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+	_, _ = c.RepoExists(context.Background(), "owner", "repo")
+
+	if got := mc.data[keyPrefixExists+"owner/repo"]; got != "1" {
+		t.Errorf("cache entry = %q, want \"1\"", got)
+	}
+}
+
+func TestRepoExists_NotFound_PopulatesCache(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+	_, _ = c.RepoExists(context.Background(), "owner", "repo")
+
+	if got := mc.data[keyPrefixExists+"owner/repo"]; got != "0" {
+		t.Errorf("cache entry = %q, want \"0\"", got)
+	}
+}
+
+func TestGetLatestRelease_CacheHit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("HTTP server was called despite cache hit")
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	mc.data[keyPrefixRelease+"owner/repo"] = `{"TagName":"v2.0.0","HTMLURL":"https://example.com"}`
+
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+	rel, err := c.GetLatestRelease(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if rel.TagName != "v2.0.0" {
+		t.Errorf("got tag %q, want \"v2.0.0\"", rel.TagName)
+	}
+}
+
+func TestGetLatestRelease_CacheMiss_PopulatesCache(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v3.0.0","html_url":"https://example.com"}`))
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+	_, _ = c.GetLatestRelease(context.Background(), "owner", "repo")
+
+	if _, ok := mc.data[keyPrefixRelease+"owner/repo"]; !ok {
+		t.Error("expected cache to be populated after API call")
+	}
+}
+
+func TestGetLatestRelease_NoRelease_CachesSentinel(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	defer srv.Close()
+
+	mc := newMockCache()
+	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
+
+	_, err := c.GetLatestRelease(context.Background(), "owner", "repo")
+	if !errors.Is(err, domain.ErrNoRelease) {
+		t.Fatalf("got %v, want ErrNoRelease", err)
+	}
+
+	_, err = c.GetLatestRelease(context.Background(), "owner", "repo")
+	if !errors.Is(err, domain.ErrNoRelease) {
+		t.Fatalf("got %v, want ErrNoRelease", err)
+	}
+
+	if calls != 1 {
+		t.Errorf("server called %d times, want 1", calls)
 	}
 }
 
