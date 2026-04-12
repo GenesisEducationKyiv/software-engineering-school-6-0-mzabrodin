@@ -11,7 +11,7 @@ type SubscriptionResponse struct {
 	Email       string  `json:"email"`
 	Repo        string  `json:"repo"`
 	Confirmed   bool    `json:"confirmed"`
-	LastSeenTag *string `json:"last_seen_tag"`
+	LastSeenTag *string `json:"last_seen_tag,omitempty"`
 }
 
 type MessageResponse struct {
