@@ -74,7 +74,12 @@ func (m *mockMailer) SendConfirmation(_, _, _ string) error {
 	return m.sendErr
 }
 
-func newSvc(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) *SubscriptionService {
+func newSvc(
+	repos *mockRepoRepository,
+	subs *mockSubRepository,
+	gh *mockGitHub,
+	mailer *mockMailer,
+) *SubscriptionService {
 	return NewSubscriptionService(repos, subs, gh, mailer, "http://localhost:8080")
 }
 
@@ -123,6 +128,7 @@ func TestParseRepo_Invalid(t *testing.T) {
 func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
 	err := svc.Subscribe(context.Background(), "user@example.com", "invalid")
+
 	if !errors.Is(err, ErrInvalidRepo) {
 		t.Errorf("got %v, want ErrInvalidRepo", err)
 	}
@@ -245,6 +251,7 @@ func TestGetByEmail_ReturnsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if len(result) != 1 {
 		t.Errorf("got %d results, want 1", len(result))
 	}
