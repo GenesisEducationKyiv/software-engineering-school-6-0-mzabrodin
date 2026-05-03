@@ -16,12 +16,15 @@ import (
 )
 
 const (
-	apiBaseURL       = "https://api.github.com"
-	apiVersion       = "2026-03-10"
-	defaultTimeout   = 10 * time.Second
-	keyPrefixExists  = "github:repo_exists:"
-	keyPrefixRelease = "github:latest_release:"
-	cacheNoRelease   = "none"
+	apiBaseURL        = "https://api.github.com"
+	apiVersion        = "2026-03-10"
+	defaultTimeout    = 10 * time.Second
+	keyPrefixExists   = "github:repo_exists:"
+	keyPrefixRelease  = "github:latest_release:"
+	cacheNoRelease    = "none"
+	cacheTrue         = "1"
+	cacheFalse        = "0"
+	defaultRetryAfter = time.Minute
 )
 
 type githubRelease struct {
