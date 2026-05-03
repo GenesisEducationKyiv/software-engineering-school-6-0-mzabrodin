@@ -144,8 +144,8 @@ func (c *Client) cacheString(ctx context.Context, key, value string) {
 	}
 }
 
-func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (c *Client) do(ctx context.Context, url string) (statusCode int, responseData []byte, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return 0, nil, fmt.Errorf("create request: %w", err)
 	}
