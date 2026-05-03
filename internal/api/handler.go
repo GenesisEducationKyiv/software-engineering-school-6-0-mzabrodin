@@ -14,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const tokenHexLen = 64
+
 type SubscriptionService interface {
 	Subscribe(ctx context.Context, email, repo string) error
 	Confirm(ctx context.Context, token string) error
@@ -62,7 +64,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	if len(token) != 64 {
+	if len(token) != tokenHexLen {
 		jsonErr(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -81,7 +83,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	if len(token) != 64 {
+	if len(token) != tokenHexLen {
 		jsonErr(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -112,9 +114,5 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responses := toSubscriptionResponses(subs)
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(responses); err != nil {
-		slog.Error("failed to encode response", "error", err)
-	}
+	jsonOK(w, toSubscriptionResponses(subs))
 }
