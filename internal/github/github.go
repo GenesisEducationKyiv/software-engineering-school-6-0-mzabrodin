@@ -173,25 +173,37 @@ func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
 		return 0, nil, domain.ErrUnauthorized
 	}
 
-	if resp.StatusCode == http.StatusTooManyRequests ||
-		(resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0") {
-		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
-
-		return 0, nil, fmt.Errorf("%w, retry after %s", domain.ErrRateLimited, retryAfter)
+	if isRateLimited(resp) {
+		resource := resp.Header.Get("X-RateLimit-Resource")
+		retryAfter := parseRetryAfter(resp)
+		return 0, nil, fmt.Errorf("%w: resource=%s, retry after %s", domain.ErrRateLimited, resource, retryAfter)
 	}
 
 	return resp.StatusCode, body, nil
 }
 
-func parseRetryAfter(header string) time.Duration {
-	if header == "" {
-		return time.Minute
+func isRateLimited(resp *http.Response) bool {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return true
 	}
 
-	seconds, err := strconv.Atoi(header)
-	if err != nil {
-		return time.Minute
+	return resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0"
+}
+
+func parseRetryAfter(resp *http.Response) time.Duration {
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		if seconds, err := strconv.Atoi(retryAfter); err == nil {
+			return time.Duration(seconds) * time.Second
+		}
 	}
 
-	return time.Duration(seconds) * time.Second
+	if resetAt := resp.Header.Get("X-RateLimit-Reset"); resetAt != "" {
+		if unix, err := strconv.ParseInt(resetAt, 10, 64); err == nil {
+			if until := time.Until(time.Unix(unix, 0)); until > 0 {
+				return until
+			}
+		}
+	}
+
+	return defaultRetryAfter
 }
