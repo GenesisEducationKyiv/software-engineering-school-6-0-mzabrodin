@@ -77,7 +77,7 @@ func buildRedisURL() string {
 	return u.String()
 }
 
-func getEnv(key string, fallback string) string {
+func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
