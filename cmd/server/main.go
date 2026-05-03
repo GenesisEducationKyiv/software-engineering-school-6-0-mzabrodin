@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -34,7 +33,7 @@ func main() {
 
 	cfg := config.Load()
 
-	if err := db.RunMigrations(cfg.MigrateDSN); err != nil {
+	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
 		slog.Error("failed to run migrations", "error", err)
 		os.Exit(1)
 	}
@@ -65,13 +64,7 @@ func main() {
 
 	gh := github.NewClient(cfg.GitHubToken).WithCache(redisCache, 10*time.Minute)
 
-	smtpPort, err := strconv.Atoi(cfg.SMTP.Port)
-	if err != nil {
-		slog.Error("invalid SMTP port", "error", err)
-		os.Exit(1)
-	}
-
-	mail := mailer.NewMailer(cfg.SMTP.Host, smtpPort, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
+	mail := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
 
 	svc := service.NewSubscriptionService(repos, subs, gh, mail, cfg.BaseURL)
 
