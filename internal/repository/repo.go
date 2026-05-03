@@ -11,15 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type repositoriesRepository struct {
+type RepoRepository struct {
 	pool *pgxpool.Pool
 }
 
-func NewRepoRepository(pool *pgxpool.Pool) RepoRepository {
-	return &repositoriesRepository{pool: pool}
+func NewRepoRepository(pool *pgxpool.Pool) *RepoRepository {
+	return &RepoRepository{pool: pool}
 }
 
-func (r *repositoriesRepository) Create(ctx context.Context, repo *domain.Repository) error {
+func (r *RepoRepository) Create(ctx context.Context, repo *domain.Repository) error {
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO repositories (name)
 		VALUES ($1)
@@ -33,7 +33,7 @@ func (r *repositoriesRepository) Create(ctx context.Context, repo *domain.Reposi
 	return nil
 }
 
-func (r *repositoriesRepository) GetByName(ctx context.Context, name string) (*domain.Repository, error) {
+func (r *RepoRepository) GetByName(ctx context.Context, name string) (*domain.Repository, error) {
 	repo := &domain.Repository{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, name, last_seen_tag, checked_at, created_at
@@ -50,7 +50,7 @@ func (r *repositoriesRepository) GetByName(ctx context.Context, name string) (*d
 	return repo, nil
 }
 
-func (r *repositoriesRepository) GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error) {
+func (r *RepoRepository) GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT r.id, r.name, r.last_seen_tag, r.checked_at, r.created_at
 		FROM repositories r
@@ -80,7 +80,7 @@ func (r *repositoriesRepository) GetAllWithSubscriptions(ctx context.Context) ([
 	return repos, nil
 }
 
-func (r *repositoriesRepository) UpdateLastSeenTag(ctx context.Context, name string, tag string) error {
+func (r *RepoRepository) UpdateLastSeenTag(ctx context.Context, name, tag string) error {
 	cmd, err := r.pool.Exec(ctx, `
        UPDATE repositories SET last_seen_tag = $1, checked_at = NOW() WHERE name = $2
     `, tag, name)

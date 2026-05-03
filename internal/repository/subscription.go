@@ -12,15 +12,15 @@ import (
 	"github-release-notifier/internal/domain"
 )
 
-type subscriptionsRepository struct {
+type SubscriptionRepository struct {
 	pool *pgxpool.Pool
 }
 
-func NewSubscriptionRepository(pool *pgxpool.Pool) SubscriptionRepository {
-	return &subscriptionsRepository{pool: pool}
+func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
+	return &SubscriptionRepository{pool: pool}
 }
 
-func (r *subscriptionsRepository) Create(ctx context.Context, sub *domain.Subscription) error {
+func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscription) error {
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token, confirmed)
 		VALUES ($1, $2, $3, $4, $5)
@@ -39,7 +39,7 @@ func (r *subscriptionsRepository) Create(ctx context.Context, sub *domain.Subscr
 	return nil
 }
 
-func (r *subscriptionsRepository) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
+func (r *SubscriptionRepository) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT s.email, r.name, s.confirmed, r.last_seen_tag
 		FROM subscriptions s
@@ -70,7 +70,10 @@ func (r *subscriptionsRepository) GetByEmail(ctx context.Context, email string) 
 	return views, nil
 }
 
-func (r *subscriptionsRepository) GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error) {
+func (r *SubscriptionRepository) GetConfirmedByRepoID(
+	ctx context.Context,
+	repoID uuid.UUID,
+) ([]*domain.Subscription, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, repository_id, email, confirm_token, unsubscribe_token, confirmed, created_at
 		FROM subscriptions WHERE repository_id = $1 AND confirmed = true
@@ -103,7 +106,7 @@ func (r *subscriptionsRepository) GetConfirmedByRepoID(ctx context.Context, repo
 	return subs, nil
 }
 
-func (r *subscriptionsRepository) Confirm(ctx context.Context, token string) error {
+func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) error {
 	result, err := r.pool.Exec(ctx, `
 		UPDATE subscriptions SET confirmed = true WHERE confirm_token = $1
 	`, token)
@@ -119,7 +122,7 @@ func (r *subscriptionsRepository) Confirm(ctx context.Context, token string) err
 	return nil
 }
 
-func (r *subscriptionsRepository) Delete(ctx context.Context, token string) error {
+func (r *SubscriptionRepository) Delete(ctx context.Context, token string) error {
 	result, err := r.pool.Exec(ctx, `
 		DELETE FROM subscriptions WHERE unsubscribe_token = $1
 	`, token)
