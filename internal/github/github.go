@@ -133,7 +133,10 @@ func (c *Client) cacheString(ctx context.Context, key, value string) {
 	if c.cache == nil {
 		return
 	}
-	if err := c.cache.Set(ctx, key, value, c.ttl); err != nil {
+
+	saveCtx := context.WithoutCancel(ctx)
+
+	if err := c.cache.Set(saveCtx, key, value, c.ttl); err != nil {
 		slog.Warn("cache set failed", "key", key, "error", err)
 	}
 }
