@@ -56,10 +56,11 @@ func (c *Client) WithCache(ca cache.Cache, ttl time.Duration) *Client {
 }
 
 func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
+	key := keyPrefixExists + owner + "/" + repo
+
 	if c.cache != nil {
-		key := keyPrefixExists + owner + "/" + repo
 		if val, err := c.cache.Get(ctx, key); err == nil {
-			return val == "1", nil
+			return val == cacheTrue, nil
 		} else if !errors.Is(err, domain.ErrMiss) {
 			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
 		}
@@ -73,7 +74,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 	}
 
 	if status == http.StatusNotFound {
-		c.cacheString(ctx, keyPrefixExists+owner+"/"+repo, "0")
+		c.cacheString(ctx, key, cacheFalse)
 
 		return false, nil
 	}
@@ -82,36 +83,27 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 		return false, fmt.Errorf("unexpected status %d", status)
 	}
 
-	c.cacheString(ctx, keyPrefixExists+owner+"/"+repo, "1")
+	c.cacheString(ctx, key, cacheTrue)
 
 	return true, nil
 }
 
 func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error) {
+	key := keyPrefixRelease + owner + "/" + repo
+
 	if c.cache != nil {
-		key := keyPrefixRelease + owner + "/" + repo
-		if val, err := c.cache.Get(ctx, key); err == nil {
-			if val == cacheNoRelease {
-				return nil, domain.ErrNoRelease
-			}
-			var r domain.Release
-			if err := json.Unmarshal([]byte(val), &r); err == nil {
-				return &r, nil
-			}
-		} else if !errors.Is(err, domain.ErrMiss) {
-			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
+		if release, err := c.getCachedRelease(ctx, key); !errors.Is(err, domain.ErrMiss) {
+			return release, err
 		}
 	}
 
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo)
-
-	status, body, err := c.do(ctx, url)
+	status, body, err := c.do(ctx, fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo))
 	if err != nil {
 		return nil, err
 	}
 
 	if status == http.StatusNotFound {
-		c.cacheString(ctx, keyPrefixRelease+owner+"/"+repo, cacheNoRelease)
+		c.cacheString(ctx, key, cacheNoRelease)
 		return nil, domain.ErrNoRelease
 	}
 
@@ -119,14 +111,45 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*dom
 		return nil, fmt.Errorf("unexpected status %d", status)
 	}
 
+	return c.parseAndCacheRelease(ctx, key, body)
+}
+
+func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Release, error) {
+	val, err := c.cache.Get(ctx, key)
+	if err != nil {
+		if !errors.Is(err, domain.ErrMiss) {
+			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
+		}
+
+		return nil, domain.ErrMiss
+	}
+
+	if val == cacheNoRelease {
+		return nil, domain.ErrNoRelease
+	}
+
+	var r domain.Release
+	if err := json.Unmarshal([]byte(val), &r); err != nil {
+		slog.Warn("failed to unmarshal cached release", "key", key, "error", err)
+		return nil, domain.ErrMiss
+	}
+
+	return &r, nil
+}
+
+func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []byte) (*domain.Release, error) {
 	var r githubRelease
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("decode release: %w", err)
 	}
 
 	release := &domain.Release{TagName: r.TagName, HTMLURL: r.HTMLURL}
-	if data, err := json.Marshal(release); err == nil {
-		c.cacheString(ctx, keyPrefixRelease+owner+"/"+repo, string(data))
+
+	data, err := json.Marshal(release)
+	if err != nil {
+		slog.Warn("failed to marshal release for cache", "error", err)
+	} else {
+		c.cacheString(ctx, key, string(data))
 	}
 
 	return release, nil
