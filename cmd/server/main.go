@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,34 +25,37 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
+	if err := run(); err != nil {
+		slog.Error("application failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	if err := godotenv.Load(); err != nil {
 		slog.Warn("could not load .env file", "error", err)
 	}
 
 	cfg := config.Load()
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
-		slog.Error("failed to run migrations", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	pool, err := db.NewPool(context.Background(), cfg.DatabaseURL)
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer pool.Close()
 
-	repos := repository.NewRepoRepository(pool)
-	subs := repository.NewSubscriptionRepository(pool)
-
-	redisCache, err := cache.NewRedisCache(context.Background(), cfg.RedisURL)
+	redisCache, err := cache.NewRedisCache(ctx, cfg.RedisURL)
 	if err != nil {
-		slog.Error("failed to connect to redis", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to redis: %w", err)
 	}
 
 	defer func() {
@@ -66,42 +70,40 @@ func main() {
 
 	mail := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
 
+	repos := repository.NewRepoRepository(pool)
+	subs := repository.NewSubscriptionRepository(pool)
 	svc := service.NewSubscriptionService(repos, subs, gh, mail, cfg.BaseURL)
 
-	scannerCtx, cancelScanner := context.WithCancel(context.Background())
-	defer cancelScanner()
 	scan := scanner.NewScanner(repos, subs, gh, mail, cfg.ScanInterval, cfg.BaseURL)
-	go scan.Start(scannerCtx)
-
-	handler := api.NewHandler(svc)
-	router := api.NewRouter(handler, cfg.APIKey)
+	go scan.Start(ctx)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: router,
+		Handler: api.NewRouter(api.NewHandler(svc), cfg.APIKey),
 	}
 
+	serverError := make(chan error, 1)
 	go func() {
 		slog.Info("server started", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("server failed", "error", err)
-			os.Exit(1)
+			serverError <- err
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case err := <-serverError:
+		return fmt.Errorf("server error: %w", err)
+	case <-ctx.Done():
+		slog.Info("shutting down")
+	}
 
-	slog.Info("shutting down server")
-	cancelScanner()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		slog.Error("server forced to shutdown", "error", err)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("server shutdown: %w", err)
 	}
 
 	slog.Info("server stopped")
+	return nil
 }
