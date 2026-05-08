@@ -30,6 +30,7 @@ func NewRedisCache(ctx context.Context, redisURL string) (Cache, error) {
 	client := redis.NewClient(opt)
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
 		return nil, fmt.Errorf("ping redis: %w", err)
 	}
 
@@ -49,7 +50,7 @@ func (c *redisCache) Get(ctx context.Context, key string) (string, error) {
 	return val, nil
 }
 
-func (c *redisCache) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
+func (c *redisCache) Set(ctx context.Context, key, value string, ttl time.Duration) error {
 	if err := c.client.Set(ctx, key, value, ttl).Err(); err != nil {
 		return fmt.Errorf("redis set: %w", err)
 	}
@@ -58,5 +59,9 @@ func (c *redisCache) Set(ctx context.Context, key string, value string, ttl time
 }
 
 func (c *redisCache) Close() error {
-	return c.client.Close()
+	if err := c.client.Close(); err != nil {
+		return fmt.Errorf("close redis client: %w", err)
+	}
+
+	return nil
 }

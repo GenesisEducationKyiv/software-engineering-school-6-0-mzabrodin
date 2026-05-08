@@ -24,7 +24,13 @@ func (mw *metricsWriter) Write(b []byte) (int, error) {
 	if mw.status == 0 {
 		mw.status = http.StatusOK
 	}
-	return mw.ResponseWriter.Write(b)
+
+	n, err := mw.ResponseWriter.Write(b)
+	if err != nil {
+		return n, fmt.Errorf("write response: %w", err)
+	}
+
+	return n, nil
 }
 
 func MetricsMiddleware(next http.Handler) http.Handler {

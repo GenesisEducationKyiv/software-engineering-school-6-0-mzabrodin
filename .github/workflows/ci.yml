@@ -2,13 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "**" ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -18,26 +19,34 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - name: Setup Golang
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: false
 
-      - uses: golangci/golangci-lint-action@v7
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.4
+          version: v2.12.1
 
-  test:
-    name: Test
+  build-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - name: Setup Golang
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
+      - name: Build
+        run: go build ./...
+
       - name: Run tests
-        run: go test -count=1 -race ./...
+        run: go test -v -count=1 -race ./...

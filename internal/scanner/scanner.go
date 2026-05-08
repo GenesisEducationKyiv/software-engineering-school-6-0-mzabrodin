@@ -105,26 +105,13 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 		return err
 	}
 
-	release, err := s.github.GetLatestRelease(ctx, owner, name)
+	release, err := s.getRelease(ctx, repo.Name, owner, name)
 	if err != nil {
-		if errors.Is(err, domain.ErrUnauthorized) {
-			metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
-			slog.Warn("GitHub token is invalid or missing, skipping scan", "repo", repo.Name)
-			return nil
-		}
+		return err
+	}
 
-		if errors.Is(err, domain.ErrRateLimited) {
-			metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
-			slog.Warn("rate limited by GitHub, skipping scan", "repo", repo.Name)
-			return nil
-		}
-
-		if errors.Is(err, domain.ErrNoRelease) {
-			return nil
-		}
-
-		metrics.GitHubAPIErrorsTotal.WithLabelValues("other").Inc()
-		return fmt.Errorf("get latest release: %w", err)
+	if release == nil {
+		return nil
 	}
 
 	if repo.LastSeenTag != nil && *repo.LastSeenTag == release.TagName {
@@ -133,9 +120,51 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 
 	slog.Info("new release detected", "repo", repo.Name, "tag", release.TagName)
 
+	return s.notify(ctx, repo, release)
+}
+
+func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) (*domain.Release, error) {
+	release, err := s.github.GetLatestRelease(ctx, owner, name)
+	if err != nil {
+		return nil, s.handleReleaseError(err, repoName)
+	}
+
+	return release, nil
+}
+
+func (s *Scanner) handleReleaseError(err error, repoName string) error {
+	switch {
+	case errors.Is(err, domain.ErrUnauthorized):
+		metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
+		slog.Warn("GitHub token is invalid or missing, skipping scan", "repo", repoName)
+		return nil
+
+	case errors.Is(err, domain.ErrRateLimited):
+		metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
+		slog.Warn("rate limited by GitHub, skipping scan", "repo", repoName)
+		return nil
+
+	case errors.Is(err, domain.ErrNoRelease):
+		return nil
+
+	default:
+		metrics.GitHubAPIErrorsTotal.WithLabelValues("other").Inc()
+		return fmt.Errorf("get latest release: %w", err)
+	}
+}
+
+func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *domain.Release) error {
 	subs, err := s.subs.GetConfirmedByRepoID(ctx, repo.ID)
 	if err != nil {
 		return fmt.Errorf("get subscribers: %w", err)
+	}
+
+	if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
+		return fmt.Errorf("update last seen tag: %w", err)
+	}
+
+	if len(subs) == 0 {
+		return nil
 	}
 
 	notifications := make([]domain.ReleaseNotification, 0, len(subs))
@@ -150,15 +179,11 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 	}
 
 	if err := s.mailer.SendReleaseNotifications(notifications); err != nil {
-		return fmt.Errorf("send notifications: %w", err)
+		slog.Error("send notifications failed", "repo", repo.Name, "error", err)
+		return nil
 	}
 
 	metrics.NotificationsSentTotal.Add(float64(len(notifications)))
-
-	if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
-		return fmt.Errorf("update last seen tag: %w", err)
-	}
-
 	slog.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(notifications))
 
 	return nil

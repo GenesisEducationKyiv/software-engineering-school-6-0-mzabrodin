@@ -16,12 +16,15 @@ import (
 )
 
 const (
-	apiBaseURL       = "https://api.github.com"
-	apiVersion       = "2026-03-10"
-	defaultTimeout   = 10 * time.Second
-	keyPrefixExists  = "github:repo_exists:"
-	keyPrefixRelease = "github:latest_release:"
-	cacheNoRelease   = "none"
+	apiBaseURL        = "https://api.github.com"
+	apiVersion        = "2026-03-10"
+	defaultTimeout    = 10 * time.Second
+	keyPrefixExists   = "github:repo_exists:"
+	keyPrefixRelease  = "github:latest_release:"
+	cacheNoRelease    = "none"
+	cacheTrue         = "1"
+	cacheFalse        = "0"
+	defaultRetryAfter = time.Minute
 )
 
 type githubRelease struct {
@@ -53,10 +56,11 @@ func (c *Client) WithCache(ca cache.Cache, ttl time.Duration) *Client {
 }
 
 func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
+	key := keyPrefixExists + owner + "/" + repo
+
 	if c.cache != nil {
-		key := keyPrefixExists + owner + "/" + repo
 		if val, err := c.cache.Get(ctx, key); err == nil {
-			return val == "1", nil
+			return val == cacheTrue, nil
 		} else if !errors.Is(err, domain.ErrMiss) {
 			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
 		}
@@ -70,7 +74,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 	}
 
 	if status == http.StatusNotFound {
-		c.cacheString(ctx, keyPrefixExists+owner+"/"+repo, "0")
+		c.cacheString(ctx, key, cacheFalse)
 
 		return false, nil
 	}
@@ -79,36 +83,27 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 		return false, fmt.Errorf("unexpected status %d", status)
 	}
 
-	c.cacheString(ctx, keyPrefixExists+owner+"/"+repo, "1")
+	c.cacheString(ctx, key, cacheTrue)
 
 	return true, nil
 }
 
 func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error) {
+	key := keyPrefixRelease + owner + "/" + repo
+
 	if c.cache != nil {
-		key := keyPrefixRelease + owner + "/" + repo
-		if val, err := c.cache.Get(ctx, key); err == nil {
-			if val == cacheNoRelease {
-				return nil, domain.ErrNoRelease
-			}
-			var r domain.Release
-			if err := json.Unmarshal([]byte(val), &r); err == nil {
-				return &r, nil
-			}
-		} else if !errors.Is(err, domain.ErrMiss) {
-			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
+		if release, err := c.getCachedRelease(ctx, key); !errors.Is(err, domain.ErrMiss) {
+			return release, err
 		}
 	}
 
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo)
-
-	status, body, err := c.do(ctx, url)
+	status, body, err := c.do(ctx, fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo))
 	if err != nil {
 		return nil, err
 	}
 
 	if status == http.StatusNotFound {
-		c.cacheString(ctx, keyPrefixRelease+owner+"/"+repo, cacheNoRelease)
+		c.cacheString(ctx, key, cacheNoRelease)
 		return nil, domain.ErrNoRelease
 	}
 
@@ -116,14 +111,45 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*dom
 		return nil, fmt.Errorf("unexpected status %d", status)
 	}
 
+	return c.parseAndCacheRelease(ctx, key, body)
+}
+
+func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Release, error) {
+	val, err := c.cache.Get(ctx, key)
+	if err != nil {
+		if !errors.Is(err, domain.ErrMiss) {
+			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
+		}
+
+		return nil, domain.ErrMiss
+	}
+
+	if val == cacheNoRelease {
+		return nil, domain.ErrNoRelease
+	}
+
+	var r domain.Release
+	if err := json.Unmarshal([]byte(val), &r); err != nil {
+		slog.Warn("failed to unmarshal cached release", "key", key, "error", err)
+		return nil, domain.ErrMiss
+	}
+
+	return &r, nil
+}
+
+func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []byte) (*domain.Release, error) {
 	var r githubRelease
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("decode release: %w", err)
 	}
 
 	release := &domain.Release{TagName: r.TagName, HTMLURL: r.HTMLURL}
-	if data, err := json.Marshal(release); err == nil {
-		c.cacheString(ctx, keyPrefixRelease+owner+"/"+repo, string(data))
+
+	data, err := json.Marshal(release)
+	if err != nil {
+		slog.Warn("failed to marshal release for cache", "error", err)
+	} else {
+		c.cacheString(ctx, key, string(data))
 	}
 
 	return release, nil
@@ -133,13 +159,16 @@ func (c *Client) cacheString(ctx context.Context, key, value string) {
 	if c.cache == nil {
 		return
 	}
-	if err := c.cache.Set(ctx, key, value, c.ttl); err != nil {
+
+	saveCtx := context.WithoutCancel(ctx)
+
+	if err := c.cache.Set(saveCtx, key, value, c.ttl); err != nil {
 		slog.Warn("cache set failed", "key", key, "error", err)
 	}
 }
 
-func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (c *Client) do(ctx context.Context, url string) (statusCode int, responseData []byte, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return 0, nil, fmt.Errorf("create request: %w", err)
 	}
@@ -170,25 +199,37 @@ func (c *Client) do(ctx context.Context, url string) (int, []byte, error) {
 		return 0, nil, domain.ErrUnauthorized
 	}
 
-	if resp.StatusCode == http.StatusTooManyRequests ||
-		(resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0") {
-		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
-
-		return 0, nil, fmt.Errorf("%w, retry after %s", domain.ErrRateLimited, retryAfter)
+	if isRateLimited(resp) {
+		resource := resp.Header.Get("X-RateLimit-Resource")
+		retryAfter := parseRetryAfter(resp)
+		return 0, nil, fmt.Errorf("%w: resource=%s, retry after %s", domain.ErrRateLimited, resource, retryAfter)
 	}
 
 	return resp.StatusCode, body, nil
 }
 
-func parseRetryAfter(header string) time.Duration {
-	if header == "" {
-		return time.Minute
+func isRateLimited(resp *http.Response) bool {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return true
 	}
 
-	seconds, err := strconv.Atoi(header)
-	if err != nil {
-		return time.Minute
+	return resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0"
+}
+
+func parseRetryAfter(resp *http.Response) time.Duration {
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		if seconds, err := strconv.Atoi(retryAfter); err == nil {
+			return time.Duration(seconds) * time.Second
+		}
 	}
 
-	return time.Duration(seconds) * time.Second
+	if resetAt := resp.Header.Get("X-RateLimit-Reset"); resetAt != "" {
+		if unix, err := strconv.ParseInt(resetAt, 10, 64); err == nil {
+			if until := time.Until(time.Unix(unix, 0)); until > 0 {
+				return until
+			}
+		}
+	}
+
+	return defaultRetryAfter
 }

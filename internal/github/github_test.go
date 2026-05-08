@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -358,22 +359,37 @@ func TestGetLatestRelease_NoRelease_CachesSentinel(t *testing.T) {
 }
 
 func TestParseRetryAfter_Empty(t *testing.T) {
-	d := parseRetryAfter("")
-	if d != time.Minute {
-		t.Errorf("got %v, want 1m", d)
+	resp := &http.Response{Header: http.Header{}}
+	d := parseRetryAfter(resp)
+	if d != defaultRetryAfter {
+		t.Errorf("got %v, want %v", d, defaultRetryAfter)
 	}
 }
 
 func TestParseRetryAfter_ValidSeconds(t *testing.T) {
-	d := parseRetryAfter("90")
+	resp := &http.Response{Header: http.Header{}}
+	resp.Header.Set("Retry-After", "90")
+	d := parseRetryAfter(resp)
 	if d != 90*time.Second {
 		t.Errorf("got %v, want 90s", d)
 	}
 }
 
 func TestParseRetryAfter_InvalidString(t *testing.T) {
-	d := parseRetryAfter("not-a-number")
-	if d != time.Minute {
-		t.Errorf("got %v, want 1m fallback", d)
+	resp := &http.Response{Header: http.Header{}}
+	resp.Header.Set("Retry-After", "not-a-number")
+	d := parseRetryAfter(resp)
+	if d != defaultRetryAfter {
+		t.Errorf("got %v, want %v", d, defaultRetryAfter)
+	}
+}
+
+func TestParseRetryAfter_RateLimitReset(t *testing.T) {
+	resp := &http.Response{Header: http.Header{}}
+	resetAt := time.Now().Add(2 * time.Minute).Unix()
+	resp.Header.Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+	d := parseRetryAfter(resp)
+	if d < time.Minute || d > 3*time.Minute {
+		t.Errorf("got %v, want ~2m", d)
 	}
 }

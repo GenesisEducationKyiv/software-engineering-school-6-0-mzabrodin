@@ -85,6 +85,7 @@ func TestCheckRepo_RateLimited_ReturnsNil(t *testing.T) {
 	gh := &mockGitHub{err: fmt.Errorf("%w, retry after 60s", domain.ErrRateLimited)}
 	s := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockMailer{})
 	repo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
+
 	if err := s.checkRepo(context.Background(), repo); err != nil {
 		t.Errorf("expected nil (skip), got %v", err)
 	}
@@ -94,13 +95,16 @@ func TestCheckRepo_NoRelease_ReturnsNil(t *testing.T) {
 	gh := &mockGitHub{err: domain.ErrNoRelease}
 	s := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockMailer{})
 	repo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
+
 	if err := s.checkRepo(context.Background(), repo); err != nil {
 		t.Errorf("expected nil, got %v", err)
 	}
 }
 
 func TestCheckRepo_TagUnchanged_NoNotification(t *testing.T) {
-	gh := &mockGitHub{release: &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"}}
+	gh := &mockGitHub{
+		release: &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"},
+	}
 	repos := &mockRepoRepository{}
 	mailer := &mockMailer{}
 	s := newScanner(repos, &mockSubRepository{}, gh, mailer)
@@ -124,7 +128,9 @@ func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
 	repoID := uuid.New()
 	newTag := "v2.0.0"
 
-	gh := &mockGitHub{release: &domain.Release{TagName: newTag, HTMLURL: "https://github.com/owner/repo/releases/tag/v2.0.0"}}
+	gh := &mockGitHub{
+		release: &domain.Release{TagName: newTag, HTMLURL: "https://github.com/owner/repo/releases/tag/v2.0.0"},
+	}
 	subs := &mockSubRepository{
 		subs: []*domain.Subscription{
 			{ID: subID, RepositoryID: repoID, Email: "user@example.com", UnsubscribeToken: "tok"},
@@ -154,7 +160,9 @@ func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
 
 func TestCheckRepo_FirstRelease_NoLastSeenTag(t *testing.T) {
 	repoID := uuid.New()
-	gh := &mockGitHub{release: &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"}}
+	gh := &mockGitHub{
+		release: &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"},
+	}
 	subs := &mockSubRepository{
 		subs: []*domain.Subscription{
 			{ID: uuid.New(), RepositoryID: repoID, Email: "user@example.com", UnsubscribeToken: "tok"},
@@ -174,9 +182,10 @@ func TestCheckRepo_FirstRelease_NoLastSeenTag(t *testing.T) {
 	}
 }
 
-func TestCheckRepo_MailerError_ReturnsError(t *testing.T) {
+func TestCheckRepo_MailerError_TagStillUpdated(t *testing.T) {
 	repoID := uuid.New()
-	gh := &mockGitHub{release: &domain.Release{TagName: "v2.0.0", HTMLURL: "..."}}
+	newTag := "v2.0.0"
+	gh := &mockGitHub{release: &domain.Release{TagName: newTag, HTMLURL: "..."}}
 	subs := &mockSubRepository{
 		subs: []*domain.Subscription{
 			{ID: uuid.New(), RepositoryID: repoID, Email: "user@example.com", UnsubscribeToken: "tok"},
@@ -188,7 +197,34 @@ func TestCheckRepo_MailerError_ReturnsError(t *testing.T) {
 	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: nil}
 
 	err := s.checkRepo(context.Background(), repo)
-	if err == nil {
-		t.Error("expected error from mailer, got nil")
+	if err != nil {
+		t.Errorf("expected nil (mailer error only logged), got %v", err)
+	}
+
+	if repos.updatedTag != newTag {
+		t.Errorf("expected tag %q to be updated despite mailer error, got %q", newTag, repos.updatedTag)
+	}
+}
+
+func TestCheckRepo_NoSubscribers_UpdatesTagOnly(t *testing.T) {
+	repoID := uuid.New()
+	newTag := "v2.0.0"
+	gh := &mockGitHub{release: &domain.Release{TagName: newTag, HTMLURL: "..."}}
+	subs := &mockSubRepository{subs: []*domain.Subscription{}}
+	repos := &mockRepoRepository{}
+	mailer := &mockMailer{}
+	s := newScanner(repos, subs, gh, mailer)
+	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: nil}
+
+	if err := s.checkRepo(context.Background(), repo); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repos.updatedTag != newTag {
+		t.Errorf("expected tag %q to be updated, got %q", newTag, repos.updatedTag)
+	}
+
+	if len(mailer.notified) != 0 {
+		t.Error("expected no notifications for empty subscribers")
 	}
 }

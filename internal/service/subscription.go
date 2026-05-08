@@ -13,6 +13,8 @@ import (
 	"github-release-notifier/internal/domain"
 )
 
+const tokenBytes = 32
+
 var repoRegex = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 type RepoRepository interface {
@@ -65,6 +67,26 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 		return err
 	}
 
+	if err := s.ensureRepoExists(ctx, owner, name); err != nil {
+		return err
+	}
+
+	repo, err := s.ensureRepoStored(ctx, repoName)
+	if err != nil {
+		return err
+	}
+
+	confirmToken, err := s.createSubscription(ctx, email, repo)
+	if err != nil {
+		return err
+	}
+
+	s.sendConfirmationEmail(email, repoName, confirmToken)
+
+	return nil
+}
+
+func (s *SubscriptionService) ensureRepoExists(ctx context.Context, owner, name string) error {
 	exists, err := s.github.RepoExists(ctx, owner, name)
 	if err != nil {
 		return fmt.Errorf("check repo exists: %w", err)
@@ -74,25 +96,40 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 		return ErrRepoNotFound
 	}
 
-	repo, err := s.repos.GetByName(ctx, repoName)
-	if errors.Is(err, domain.ErrNotFound) {
-		repo = &domain.Repository{Name: repoName}
-		if err := s.repos.Create(ctx, repo); err != nil {
-			return fmt.Errorf("create repository: %w", err)
-		}
+	return nil
+}
 
-	} else if err != nil {
-		return fmt.Errorf("get repository: %w", err)
+func (s *SubscriptionService) ensureRepoStored(ctx context.Context, repoName string) (*domain.Repository, error) {
+	repo, err := s.repos.GetByName(ctx, repoName)
+	if err == nil {
+		return repo, nil
 	}
 
+	if !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("get repository: %w", err)
+	}
+
+	repo = &domain.Repository{Name: repoName}
+	if err := s.repos.Create(ctx, repo); err != nil {
+		return nil, fmt.Errorf("create repository: %w", err)
+	}
+
+	return repo, nil
+}
+
+func (s *SubscriptionService) createSubscription(
+	ctx context.Context,
+	email string,
+	repo *domain.Repository,
+) (string, error) {
 	confirmToken, err := randomToken()
 	if err != nil {
-		return fmt.Errorf("generate confirm token: %w", err)
+		return "", fmt.Errorf("generate confirm token: %w", err)
 	}
 
 	unsubscribeToken, err := randomToken()
 	if err != nil {
-		return fmt.Errorf("generate unsubscribe token: %w", err)
+		return "", fmt.Errorf("generate unsubscribe token: %w", err)
 	}
 
 	sub := &domain.Subscription{
@@ -103,17 +140,19 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 	}
 
 	if err := s.subs.Create(ctx, sub); err != nil {
-		return err
+		return "", fmt.Errorf("create subscription: %w", err)
 	}
 
+	return confirmToken, nil
+}
+
+func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
 	confirmURL := fmt.Sprintf("%s/api/confirm/%s", s.baseURL, confirmToken)
 	go func() {
 		if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
 			slog.Error("failed to send confirmation email", "email", email, "error", err)
 		}
 	}()
-
-	return nil
 }
 
 func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
@@ -138,9 +177,9 @@ func parseRepo(repo string) (owner, name string, err error) {
 }
 
 func randomToken() (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", fmt.Errorf("generate random bytes: %w", err)
 	}
 
 	return hex.EncodeToString(b), nil
