@@ -53,7 +53,28 @@ CREATE TABLE subscriptions
 CREATE INDEX idx_subscriptions_email ON subscriptions (email);
 ```
 
-![Database Schema](db.drawio.svg)
+```mermaid
+erDiagram
+    REPOSITORIES {
+        UUID id PK
+        TEXT name UK
+        TEXT last_seen_tag
+        TIMESTAMPTZ checked_at
+        TIMESTAMPTZ created_at
+    }
+
+    SUBSCRIPTIONS {
+        UUID id PK
+        UUID repository_id FK
+        TEXT email
+        TEXT confirm_token UK
+        TEXT unsubscribe_token UK
+        BOOLEAN confirmed
+        TIMESTAMPTZ created_at
+    }
+
+    REPOSITORIES ||--o{ SUBSCRIPTIONS : "Has"
+```
 
 - **`last_seen_tag` is on `repositories`, not `subscriptions`:** the scanner makes one GitHub API call per repository per tick, regardless of subscriber count.
 - **`confirmed` is a boolean, not an enum:** the subscription has exactly two states.
