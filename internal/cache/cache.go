@@ -30,8 +30,7 @@ func NewRedisCache(ctx context.Context, redisURL string) (Cache, error) {
 	client := redis.NewClient(opt)
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("ping redis: %w", err)
+		return nil, errors.Join(fmt.Errorf("ping redis: %w", err), client.Close())
 	}
 
 	return &redisCache{client: client}, nil
