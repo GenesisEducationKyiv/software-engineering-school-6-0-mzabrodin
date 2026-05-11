@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"net/mail"
 
 	"github-release-notifier/internal/domain"
 )
@@ -72,6 +73,9 @@ func NewSubscriptionService(
 
 func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) error {
 	owner, name, err := parseRepo(repoName)
+	if _, err := mail.ParseAddress(email); err != nil {
+		return domain.ErrInvalidEmail
+	}
 	if err != nil {
 		return err
 	}
@@ -173,6 +177,10 @@ func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) err
 }
 
 func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, domain.ErrInvalidEmail
+	}
+
 	return s.subs.GetByEmail(ctx, email)
 }
 
