@@ -13,6 +13,7 @@ import (
 	"github-release-notifier/internal/domain"
 )
 
+// 32 random bytes encoded as 64-character hex string
 const tokenBytes = 32
 
 type RepoRepository interface {
