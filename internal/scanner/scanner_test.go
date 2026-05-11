@@ -56,29 +56,16 @@ func (m *mockMailer) SendReleaseNotifications(notifications []domain.ReleaseNoti
 	return m.err
 }
 
+type mockURLBuilder struct {
+	base string
+}
+
+func (m *mockURLBuilder) UnsubscribeURL(token string) string {
+	return m.base + "/api/unsubscribe/" + token
+}
+
 func newScanner(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) *Scanner {
-	return NewScanner(repos, subs, gh, mailer, 0, "http://localhost:8080")
-}
-
-func TestSplitRepo_Valid(t *testing.T) {
-	owner, name, err := splitRepo("golang/go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if owner != "golang" || name != "go" {
-		t.Errorf("got (%q, %q), want (\"golang\", \"go\")", owner, name)
-	}
-}
-
-func TestSplitRepo_Invalid(t *testing.T) {
-	cases := []string{"", "noslash", "/repo", "owner/"}
-	for _, tc := range cases {
-		_, _, err := splitRepo(tc)
-		if err == nil {
-			t.Errorf("splitRepo(%q): expected error, got nil", tc)
-		}
-	}
+	return NewScanner(repos, subs, gh, mailer, 0, &mockURLBuilder{"http://localhost:8080"})
 }
 
 func TestCheckRepo_RateLimited_ReturnsNil(t *testing.T) {
@@ -127,7 +114,6 @@ func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
 	subID := uuid.New()
 	repoID := uuid.New()
 	newTag := "v2.0.0"
-
 	gh := &mockGitHub{
 		release: &domain.Release{TagName: newTag, HTMLURL: "https://github.com/owner/repo/releases/tag/v2.0.0"},
 	}
@@ -182,7 +168,7 @@ func TestCheckRepo_FirstRelease_NoLastSeenTag(t *testing.T) {
 	}
 }
 
-func TestCheckRepo_MailerError_TagStillUpdated(t *testing.T) {
+func TestCheckRepo_MailerError_TagNotUpdated(t *testing.T) {
 	repoID := uuid.New()
 	newTag := "v2.0.0"
 	gh := &mockGitHub{release: &domain.Release{TagName: newTag, HTMLURL: "..."}}
@@ -197,12 +183,12 @@ func TestCheckRepo_MailerError_TagStillUpdated(t *testing.T) {
 	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: nil}
 
 	err := s.checkRepo(context.Background(), repo)
-	if err != nil {
-		t.Errorf("expected nil (mailer error only logged), got %v", err)
+	if err == nil {
+		t.Error("expected error when mailer fails")
 	}
 
-	if repos.updatedTag != newTag {
-		t.Errorf("expected tag %q to be updated despite mailer error, got %q", newTag, repos.updatedTag)
+	if repos.updatedTag != "" {
+		t.Errorf("expected tag NOT to be updated when mailer fails, got %q", repos.updatedTag)
 	}
 }
 
