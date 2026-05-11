@@ -32,11 +32,16 @@ type githubRelease struct {
 	HTMLURL string `json:"html_url"`
 }
 
+type cacher interface {
+	Get(ctx context.Context, key string) (value string, found bool, err error)
+	Set(ctx context.Context, key, value string, ttl time.Duration) error
+}
+
 type Client struct {
 	http    *http.Client
 	token   string
 	baseURL string
-	cache   cache.Cache
+	cache   cacher
 	ttl     time.Duration
 }
 
@@ -48,7 +53,7 @@ func NewClient(token string) *Client {
 	}
 }
 
-func (c *Client) WithCache(ca cache.Cache, ttl time.Duration) *Client {
+func (c *Client) WithCache(ca cacher, ttl time.Duration) *Client {
 	c.cache = ca
 	c.ttl = ttl
 
