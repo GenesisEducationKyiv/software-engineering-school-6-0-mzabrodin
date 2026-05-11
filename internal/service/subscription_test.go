@@ -43,10 +43,6 @@ func (m *mockSubRepository) GetByEmail(_ context.Context, _ string) ([]*domain.S
 	return m.views, m.viewsErr
 }
 
-func (m *mockSubRepository) GetConfirmedByRepoID(_ context.Context, _ uuid.UUID) ([]*domain.Subscription, error) {
-	return nil, nil
-}
-
 func (m *mockSubRepository) Confirm(_ context.Context, _ string) error {
 	return m.confirmErr
 }
@@ -74,13 +70,21 @@ func (m *mockMailer) SendConfirmation(_, _, _ string) error {
 	return m.sendErr
 }
 
+type mockURLBuilder struct {
+	base string
+}
+
+func (m *mockURLBuilder) ConfirmURL(token string) string {
+	return m.base + "/api/confirm/" + token
+}
+
 func newSvc(
 	repos *mockRepoRepository,
 	subs *mockSubRepository,
 	gh *mockGitHub,
 	mailer *mockMailer,
 ) *SubscriptionService {
-	return NewSubscriptionService(repos, subs, gh, mailer, "http://localhost:8080")
+	return NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{"http://localhost:8080"})
 }
 
 func TestParseRepo_Valid(t *testing.T) {
@@ -95,14 +99,14 @@ func TestParseRepo_Valid(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		owner, name, err := parseRepo(tc.input)
+		owner, name, err := domain.ParseRepo(tc.input)
 		if err != nil {
-			t.Errorf("parseRepo(%q) unexpected error: %v", tc.input, err)
+			t.Errorf("domain.ParseRepo(%q) unexpected error: %v", tc.input, err)
 			continue
 		}
 
 		if owner != tc.wantOwner || name != tc.wantName {
-			t.Errorf("parseRepo(%q) = (%q, %q), want (%q, %q)", tc.input, owner, name, tc.wantOwner, tc.wantName)
+			t.Errorf("domain.ParseRepo(%q) = (%q, %q), want (%q, %q)", tc.input, owner, name, tc.wantOwner, tc.wantName)
 		}
 	}
 }
@@ -118,10 +122,19 @@ func TestParseRepo_Invalid(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_, _, err := parseRepo(tc)
-		if !errors.Is(err, ErrInvalidRepo) {
-			t.Errorf("parseRepo(%q) = %v, want ErrInvalidRepo", tc, err)
+		_, _, err := domain.ParseRepo(tc)
+		if !errors.Is(err, domain.ErrInvalidRepo) {
+			t.Errorf("domain.ParseRepo(%q) = %v, want ErrInvalidRepo", tc, err)
 		}
+	}
+}
+
+func TestSubscribe_InvalidEmail(t *testing.T) {
+	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
+	err := svc.Subscribe(context.Background(), "not-an-email", "owner/repo")
+
+	if !errors.Is(err, domain.ErrInvalidEmail) {
+		t.Errorf("got %v, want ErrInvalidEmail", err)
 	}
 }
 
@@ -129,7 +142,7 @@ func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
 	err := svc.Subscribe(context.Background(), "user@example.com", "invalid")
 
-	if !errors.Is(err, ErrInvalidRepo) {
+	if !errors.Is(err, domain.ErrInvalidRepo) {
 		t.Errorf("got %v, want ErrInvalidRepo", err)
 	}
 }
@@ -142,7 +155,7 @@ func TestSubscribe_RepoNotFoundOnGitHub(t *testing.T) {
 		&mockMailer{},
 	)
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if !errors.Is(err, ErrRepoNotFound) {
+	if !errors.Is(err, domain.ErrRepoNotFound) {
 		t.Errorf("got %v, want ErrRepoNotFound", err)
 	}
 }
@@ -156,7 +169,7 @@ func TestSubscribe_GitHubError(t *testing.T) {
 		&mockMailer{},
 	)
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if err == nil || errors.Is(err, ErrRepoNotFound) {
+	if err == nil || errors.Is(err, domain.ErrRepoNotFound) {
 		t.Errorf("expected wrapped GitHub error, got %v", err)
 	}
 }
@@ -237,6 +250,14 @@ func TestUnsubscribe_NotFound(t *testing.T) {
 	err := svc.Unsubscribe(context.Background(), "badtoken")
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("got %v, want ErrNotFound", err)
+	}
+}
+
+func TestGetByEmail_InvalidEmail(t *testing.T) {
+	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
+	_, err := svc.GetByEmail(context.Background(), "not-an-email")
+	if !errors.Is(err, domain.ErrInvalidEmail) {
+		t.Errorf("got %v, want ErrInvalidEmail", err)
 	}
 }
 
