@@ -37,12 +37,21 @@ type Mailer interface {
 	SendConfirmation(to, repo, confirmURL string) error
 }
 
+type URLBuilder interface {
+	ConfirmURL(token string) string
+}
+
 type SubscriptionService struct {
 	repos   RepoRepository
 	subs    SubscriptionRepository
 	github  GitHubClient
 	mailer  Mailer
 	baseURL string
+	repos  RepoRepository
+	subs   SubscriptionRepository
+	github GitHubClient
+	mailer Mailer
+	urls   URLBuilder
 }
 
 func NewSubscriptionService(
@@ -50,14 +59,14 @@ func NewSubscriptionService(
 	subs SubscriptionRepository,
 	github GitHubClient,
 	mailer Mailer,
-	baseURL string,
+	urls URLBuilder,
 ) *SubscriptionService {
 	return &SubscriptionService{
-		repos:   repos,
-		subs:    subs,
-		github:  github,
-		mailer:  mailer,
-		baseURL: baseURL,
+		repos:  repos,
+		subs:   subs,
+		github: github,
+		mailer: mailer,
+		urls:   urls,
 	}
 }
 
@@ -147,7 +156,7 @@ func (s *SubscriptionService) createSubscription(
 }
 
 func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
-	confirmURL := fmt.Sprintf("%s/api/confirm/%s", s.baseURL, confirmToken)
+	confirmURL := s.urls.ConfirmURL(confirmToken)
 	go func() {
 		if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
 			slog.Error("failed to send confirmation email", "email", email, "error", err)
