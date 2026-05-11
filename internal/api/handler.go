@@ -15,7 +15,7 @@ import (
 
 const tokenHexLen = 64
 
-type SubscriptionService interface {
+type subscriptionService interface {
 	Subscribe(ctx context.Context, email, repo string) error
 	Confirm(ctx context.Context, token string) error
 	Unsubscribe(ctx context.Context, token string) error
@@ -23,10 +23,10 @@ type SubscriptionService interface {
 }
 
 type Handler struct {
-	service SubscriptionService
+	service subscriptionService
 }
 
-func NewHandler(svc SubscriptionService) *Handler {
+func NewHandler(svc subscriptionService) *Handler {
 	return &Handler{service: svc}
 }
 

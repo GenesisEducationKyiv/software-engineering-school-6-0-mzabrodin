@@ -16,45 +16,45 @@ import (
 // 32 random bytes encoded as 64-character hex string
 const tokenBytes = 32
 
-type RepoRepository interface {
+type repoRepository interface {
 	Create(ctx context.Context, repo *domain.Repository) error
 	GetByName(ctx context.Context, name string) (*domain.Repository, error)
 }
 
-type SubscriptionRepository interface {
+type subscriptionRepository interface {
 	Create(ctx context.Context, sub *domain.Subscription) error
 	GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error)
 	Confirm(ctx context.Context, token string) error
 	Delete(ctx context.Context, token string) error
 }
 
-type GitHubClient interface {
+type gitHubClient interface {
 	RepoExists(ctx context.Context, owner, repo string) (bool, error)
 }
 
-type Mailer interface {
+type mailer interface {
 	SendConfirmation(to, repo, confirmURL string) error
 }
 
-type URLBuilder interface {
+type urlBuilder interface {
 	ConfirmURL(token string) string
 }
 
 type SubscriptionService struct {
-	repos  RepoRepository
-	subs   SubscriptionRepository
-	github GitHubClient
-	mailer Mailer
-	urls   URLBuilder
+	repos  repoRepository
+	subs   subscriptionRepository
+	github gitHubClient
+	mailer mailer
+	urls   urlBuilder
 	wg     sync.WaitGroup
 }
 
 func NewSubscriptionService(
-	repos RepoRepository,
-	subs SubscriptionRepository,
-	github GitHubClient,
-	mailer Mailer,
-	urls URLBuilder,
+	repos repoRepository,
+	subs subscriptionRepository,
+	github gitHubClient,
+	mailer mailer,
+	urls urlBuilder,
 ) *SubscriptionService {
 	return &SubscriptionService{
 		repos:  repos,

@@ -13,43 +13,43 @@ import (
 	"github-release-notifier/internal/metrics"
 )
 
-type Mailer interface {
+type mailer interface {
 	SendReleaseNotifications(notifications []domain.ReleaseNotification) error
 }
 
-type GitHubClient interface {
+type gitHubClient interface {
 	GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error)
 }
 
-type RepoRepository interface {
+type repoRepository interface {
 	GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error)
 	UpdateLastSeenTag(ctx context.Context, name string, tag string) error
 }
 
-type SubscriptionRepository interface {
+type subscriptionRepository interface {
 	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error)
 }
 
-type URLBuilder interface {
+type urlBuilder interface {
 	UnsubscribeURL(token string) string
 }
 
 type Scanner struct {
-	repos    RepoRepository
-	subs     SubscriptionRepository
-	github   GitHubClient
-	mailer   Mailer
+	repos    repoRepository
+	subs     subscriptionRepository
+	github   gitHubClient
+	mailer   mailer
 	interval time.Duration
-	urls     URLBuilder
+	urls     urlBuilder
 }
 
 func NewScanner(
-	repos RepoRepository,
-	subs SubscriptionRepository,
-	gh GitHubClient,
-	mailer Mailer,
+	repos repoRepository,
+	subs subscriptionRepository,
+	gh gitHubClient,
+	mailer mailer,
 	interval time.Duration,
-	urls URLBuilder,
+	urls urlBuilder,
 ) *Scanner {
 	return &Scanner{
 		repos:    repos,
