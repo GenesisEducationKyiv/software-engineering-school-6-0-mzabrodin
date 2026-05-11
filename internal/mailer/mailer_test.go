@@ -1,8 +1,10 @@
 package mailer
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github-release-notifier/internal/domain"
 )
@@ -12,15 +14,11 @@ func TestConfirmationTemplate(t *testing.T) {
 		"Repo":       "golang/go",
 		"ConfirmURL": "http://localhost/confirm/abc",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	for _, want := range []string{"golang/go", "http://localhost/confirm/abc", "<html>"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("body missing %q", want)
-		}
-	}
+	assert.Contains(t, body, "golang/go")
+	assert.Contains(t, body, "http://localhost/confirm/abc")
+	assert.Contains(t, body, "<html>")
 }
 
 func TestReleaseTemplate(t *testing.T) {
@@ -30,28 +28,16 @@ func TestReleaseTemplate(t *testing.T) {
 		"ReleaseURL":     "http://github.com/release",
 		"UnsubscribeURL": "http://example.com/unsub",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	for _, want := range []string{
-		"owner/repo",
-		"v2.0.0",
-		"http://github.com/release",
-		"http://example.com/unsub",
-		"<html>",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("body missing %q", want)
-		}
-	}
+	assert.Contains(t, body, "owner/repo")
+	assert.Contains(t, body, "v2.0.0")
+	assert.Contains(t, body, "http://github.com/release")
+	assert.Contains(t, body, "http://example.com/unsub")
+	assert.Contains(t, body, "<html>")
 }
 
 func TestSendReleaseNotifications_EmptySlice_NoError(t *testing.T) {
 	m := NewMailer("localhost", 587, "user", "pass", "from@example.com")
-	err := m.SendReleaseNotifications([]domain.ReleaseNotification{})
-
-	if err != nil {
-		t.Errorf("expected nil for empty notifications, got %v", err)
-	}
+	assert.NoError(t, m.SendReleaseNotifications([]domain.ReleaseNotification{}))
 }

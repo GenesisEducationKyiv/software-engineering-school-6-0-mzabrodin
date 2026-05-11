@@ -1,8 +1,10 @@
 package domain
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseRepo_Valid(t *testing.T) {
@@ -18,14 +20,9 @@ func TestParseRepo_Valid(t *testing.T) {
 
 	for _, tc := range cases {
 		owner, name, err := ParseRepo(tc.input)
-		if err != nil {
-			t.Errorf("ParseRepo(%q) unexpected error: %v", tc.input, err)
-			continue
-		}
-
-		if owner != tc.wantOwner || name != tc.wantName {
-			t.Errorf("ParseRepo(%q) = (%q, %q), want (%q, %q)", tc.input, owner, name, tc.wantOwner, tc.wantName)
-		}
+		require.NoError(t, err, "ParseRepo(%q)", tc.input)
+		assert.Equal(t, tc.wantOwner, owner, "ParseRepo(%q) owner", tc.input)
+		assert.Equal(t, tc.wantName, name, "ParseRepo(%q) name", tc.input)
 	}
 }
 
@@ -41,8 +38,6 @@ func TestParseRepo_Invalid(t *testing.T) {
 
 	for _, tc := range cases {
 		_, _, err := ParseRepo(tc)
-		if !errors.Is(err, ErrInvalidRepo) {
-			t.Errorf("ParseRepo(%q) = %v, want ErrInvalidRepo", tc, err)
-		}
+		assert.ErrorIs(t, err, ErrInvalidRepo, "ParseRepo(%q)", tc)
 	}
 }

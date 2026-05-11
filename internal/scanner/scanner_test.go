@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github-release-notifier/internal/domain"
-
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github-release-notifier/internal/domain"
 )
 
 type mockRepoRepository struct {
@@ -73,9 +75,7 @@ func TestCheckRepo_RateLimited_ReturnsNil(t *testing.T) {
 	s := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockMailer{})
 	repo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
 
-	if err := s.checkRepo(context.Background(), repo); err != nil {
-		t.Errorf("expected nil (skip), got %v", err)
-	}
+	assert.NoError(t, s.checkRepo(context.Background(), repo))
 }
 
 func TestCheckRepo_NoRelease_ReturnsNil(t *testing.T) {
@@ -83,9 +83,7 @@ func TestCheckRepo_NoRelease_ReturnsNil(t *testing.T) {
 	s := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockMailer{})
 	repo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
 
-	if err := s.checkRepo(context.Background(), repo); err != nil {
-		t.Errorf("expected nil, got %v", err)
-	}
+	assert.NoError(t, s.checkRepo(context.Background(), repo))
 }
 
 func TestCheckRepo_TagUnchanged_NoNotification(t *testing.T) {
@@ -97,21 +95,12 @@ func TestCheckRepo_TagUnchanged_NoNotification(t *testing.T) {
 	s := newScanner(repos, &mockSubRepository{}, gh, mailer)
 	repo := &domain.Repository{ID: uuid.New(), Name: "owner/repo", LastSeenTag: new("v1.0.0")}
 
-	if err := s.checkRepo(context.Background(), repo); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(mailer.notified) != 0 {
-		t.Error("expected no notifications for unchanged tag")
-	}
-
-	if repos.updatedTag != "" {
-		t.Error("expected no DB update for unchanged tag")
-	}
+	require.NoError(t, s.checkRepo(context.Background(), repo))
+	assert.Empty(t, mailer.notified)
+	assert.Empty(t, repos.updatedTag)
 }
 
 func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
-	subID := uuid.New()
 	repoID := uuid.New()
 	newTag := "v2.0.0"
 	gh := &mockGitHub{
@@ -119,7 +108,7 @@ func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
 	}
 	subs := &mockSubRepository{
 		subs: []*domain.Subscription{
-			{ID: subID, RepositoryID: repoID, Email: "user@example.com", UnsubscribeToken: "tok"},
+			{ID: uuid.New(), RepositoryID: repoID, Email: "user@example.com", UnsubscribeToken: "tok"},
 		},
 	}
 	repos := &mockRepoRepository{}
@@ -127,21 +116,10 @@ func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
 	s := newScanner(repos, subs, gh, mailer)
 	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: new("v1.0.0")}
 
-	if err := s.checkRepo(context.Background(), repo); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(mailer.notified) != 1 {
-		t.Errorf("expected 1 notification, got %d", len(mailer.notified))
-	}
-
-	if repos.updatedTag != newTag {
-		t.Errorf("expected updated tag %q, got %q", newTag, repos.updatedTag)
-	}
-
-	if repos.updatedName != "owner/repo" {
-		t.Errorf("expected updated name %q, got %q", "owner/repo", repos.updatedName)
-	}
+	require.NoError(t, s.checkRepo(context.Background(), repo))
+	assert.Len(t, mailer.notified, 1)
+	assert.Equal(t, newTag, repos.updatedTag)
+	assert.Equal(t, "owner/repo", repos.updatedName)
 }
 
 func TestCheckRepo_FirstRelease_NoLastSeenTag(t *testing.T) {
@@ -159,19 +137,14 @@ func TestCheckRepo_FirstRelease_NoLastSeenTag(t *testing.T) {
 	s := newScanner(repos, subs, gh, mailer)
 	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: nil}
 
-	if err := s.checkRepo(context.Background(), repo); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(mailer.notified) != 1 {
-		t.Errorf("expected 1 notification, got %d", len(mailer.notified))
-	}
+	require.NoError(t, s.checkRepo(context.Background(), repo))
+	assert.Len(t, mailer.notified, 1)
+	assert.Equal(t, "v1.0.0", repos.updatedTag)
 }
 
 func TestCheckRepo_MailerError_TagNotUpdated(t *testing.T) {
 	repoID := uuid.New()
-	newTag := "v2.0.0"
-	gh := &mockGitHub{release: &domain.Release{TagName: newTag, HTMLURL: "..."}}
+	gh := &mockGitHub{release: &domain.Release{TagName: "v2.0.0", HTMLURL: "..."}}
 	subs := &mockSubRepository{
 		subs: []*domain.Subscription{
 			{ID: uuid.New(), RepositoryID: repoID, Email: "user@example.com", UnsubscribeToken: "tok"},
@@ -182,14 +155,8 @@ func TestCheckRepo_MailerError_TagNotUpdated(t *testing.T) {
 	s := newScanner(repos, subs, gh, mailer)
 	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: nil}
 
-	err := s.checkRepo(context.Background(), repo)
-	if err == nil {
-		t.Error("expected error when mailer fails")
-	}
-
-	if repos.updatedTag != "" {
-		t.Errorf("expected tag NOT to be updated when mailer fails, got %q", repos.updatedTag)
-	}
+	assert.Error(t, s.checkRepo(context.Background(), repo))
+	assert.Empty(t, repos.updatedTag)
 }
 
 func TestCheckRepo_NoSubscribers_UpdatesTagOnly(t *testing.T) {
@@ -202,15 +169,7 @@ func TestCheckRepo_NoSubscribers_UpdatesTagOnly(t *testing.T) {
 	s := newScanner(repos, subs, gh, mailer)
 	repo := &domain.Repository{ID: repoID, Name: "owner/repo", LastSeenTag: nil}
 
-	if err := s.checkRepo(context.Background(), repo); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repos.updatedTag != newTag {
-		t.Errorf("expected tag %q to be updated, got %q", newTag, repos.updatedTag)
-	}
-
-	if len(mailer.notified) != 0 {
-		t.Error("expected no notifications for empty subscribers")
-	}
+	require.NoError(t, s.checkRepo(context.Background(), repo))
+	assert.Equal(t, newTag, repos.updatedTag)
+	assert.Empty(t, mailer.notified)
 }

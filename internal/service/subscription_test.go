@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 
-	"github-release-notifier/internal/domain"
-
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github-release-notifier/internal/domain"
 )
 
 type mockRepoRepository struct {
@@ -91,18 +92,14 @@ func TestSubscribe_InvalidEmail(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
 	err := svc.Subscribe(context.Background(), "not-an-email", "owner/repo")
 
-	if !errors.Is(err, domain.ErrInvalidEmail) {
-		t.Errorf("got %v, want ErrInvalidEmail", err)
-	}
+	assert.ErrorIs(t, err, domain.ErrInvalidEmail)
 }
 
 func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
 	err := svc.Subscribe(context.Background(), "user@example.com", "invalid")
 
-	if !errors.Is(err, domain.ErrInvalidRepo) {
-		t.Errorf("got %v, want ErrInvalidRepo", err)
-	}
+	assert.ErrorIs(t, err, domain.ErrInvalidRepo)
 }
 
 func TestSubscribe_RepoNotFoundOnGitHub(t *testing.T) {
@@ -113,23 +110,19 @@ func TestSubscribe_RepoNotFoundOnGitHub(t *testing.T) {
 		&mockMailer{},
 	)
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if !errors.Is(err, domain.ErrRepoNotFound) {
-		t.Errorf("got %v, want ErrRepoNotFound", err)
-	}
+	assert.ErrorIs(t, err, domain.ErrRepoNotFound)
 }
 
 func TestSubscribe_GitHubError(t *testing.T) {
-	ghErr := errors.New("network error")
 	svc := newSvc(
 		&mockRepoRepository{},
 		&mockSubRepository{},
-		&mockGitHub{err: ghErr},
+		&mockGitHub{err: domain.ErrRateLimited},
 		&mockMailer{},
 	)
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if err == nil || errors.Is(err, domain.ErrRepoNotFound) {
-		t.Errorf("expected wrapped GitHub error, got %v", err)
-	}
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, domain.ErrRepoNotFound)
 }
 
 func TestSubscribe_NewRepo_CreatesAndSubscribes(t *testing.T) {
@@ -139,13 +132,8 @@ func TestSubscribe_NewRepo_CreatesAndSubscribes(t *testing.T) {
 	svc := newSvc(repos, subs, &mockGitHub{exists: true}, mailer)
 
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !repos.created {
-		t.Error("expected repository to be created")
-	}
+	require.NoError(t, err)
+	assert.True(t, repos.created)
 }
 
 func TestSubscribe_ExistingRepo_SkipsCreate(t *testing.T) {
@@ -156,13 +144,8 @@ func TestSubscribe_ExistingRepo_SkipsCreate(t *testing.T) {
 	svc := newSvc(repos, subs, &mockGitHub{exists: true}, mailer)
 
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repos.created {
-		t.Error("expected repository NOT to be created (it already exists)")
-	}
+	require.NoError(t, err)
+	assert.False(t, repos.created)
 }
 
 func TestSubscribe_AlreadySubscribed(t *testing.T) {
@@ -172,51 +155,35 @@ func TestSubscribe_AlreadySubscribed(t *testing.T) {
 	svc := newSvc(repos, subs, &mockGitHub{exists: true}, &mockMailer{})
 
 	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-	if !errors.Is(err, domain.ErrAlreadyExists) {
-		t.Errorf("got %v, want ErrAlreadyExists", err)
-	}
+	assert.ErrorIs(t, err, domain.ErrAlreadyExists)
 }
 
 func TestConfirm_Success(t *testing.T) {
-	subs := &mockSubRepository{}
-	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	if err := svc.Confirm(context.Background(), "sometoken"); err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
+	assert.NoError(t, svc.Confirm(context.Background(), "sometoken"))
 }
 
 func TestConfirm_NotFound(t *testing.T) {
 	subs := &mockSubRepository{confirmErr: domain.ErrNotFound}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	err := svc.Confirm(context.Background(), "badtoken")
-	if !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("got %v, want ErrNotFound", err)
-	}
+	assert.ErrorIs(t, svc.Confirm(context.Background(), "badtoken"), domain.ErrNotFound)
 }
 
 func TestUnsubscribe_Success(t *testing.T) {
-	subs := &mockSubRepository{}
-	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	if err := svc.Unsubscribe(context.Background(), "sometoken"); err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
+	assert.NoError(t, svc.Unsubscribe(context.Background(), "sometoken"))
 }
 
 func TestUnsubscribe_NotFound(t *testing.T) {
 	subs := &mockSubRepository{deleteErr: domain.ErrNotFound}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	err := svc.Unsubscribe(context.Background(), "badtoken")
-	if !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("got %v, want ErrNotFound", err)
-	}
+	assert.ErrorIs(t, svc.Unsubscribe(context.Background(), "badtoken"), domain.ErrNotFound)
 }
 
 func TestGetByEmail_InvalidEmail(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
 	_, err := svc.GetByEmail(context.Background(), "not-an-email")
-	if !errors.Is(err, domain.ErrInvalidEmail) {
-		t.Errorf("got %v, want ErrInvalidEmail", err)
-	}
+	assert.ErrorIs(t, err, domain.ErrInvalidEmail)
 }
 
 func TestGetByEmail_ReturnsList(t *testing.T) {
@@ -227,20 +194,13 @@ func TestGetByEmail_ReturnsList(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
 
 	result, err := svc.GetByEmail(context.Background(), "user@example.com")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(result) != 1 {
-		t.Errorf("got %d results, want 1", len(result))
-	}
+	require.NoError(t, err)
+	assert.Len(t, result, 1)
 }
 
 func TestGetByEmail_Error(t *testing.T) {
-	subs := &mockSubRepository{viewsErr: errors.New("db error")}
+	subs := &mockSubRepository{viewsErr: assert.AnError}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
 	_, err := svc.GetByEmail(context.Background(), "user@example.com")
-	if err == nil {
-		t.Error("expected error, got nil")
-	}
+	assert.Error(t, err)
 }
