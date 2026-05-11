@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,13 +30,17 @@ type SubscriptionRepository interface {
 	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error)
 }
 
+type URLBuilder interface {
+	UnsubscribeURL(token string) string
+}
+
 type Scanner struct {
 	repos    RepoRepository
 	subs     SubscriptionRepository
 	github   GitHubClient
 	mailer   Mailer
 	interval time.Duration
-	baseURL  string
+	urls     URLBuilder
 }
 
 func NewScanner(
@@ -46,7 +49,7 @@ func NewScanner(
 	gh GitHubClient,
 	mailer Mailer,
 	interval time.Duration,
-	baseURL string,
+	urls URLBuilder,
 ) *Scanner {
 	return &Scanner{
 		repos:    repos,
@@ -54,7 +57,7 @@ func NewScanner(
 		github:   gh,
 		mailer:   mailer,
 		interval: interval,
-		baseURL:  baseURL,
+		urls:     urls,
 	}
 }
 
@@ -100,7 +103,7 @@ func (s *Scanner) scan(ctx context.Context) {
 }
 
 func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error {
-	owner, name, err := splitRepo(repo.Name)
+	owner, name, err := domain.ParseRepo(repo.Name)
 	if err != nil {
 		return err
 	}
@@ -159,28 +162,22 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 		return fmt.Errorf("get subscribers: %w", err)
 	}
 
-	if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
-		return fmt.Errorf("update last seen tag: %w", err)
-	}
-
 	if len(subs) == 0 {
+		if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
+			return fmt.Errorf("update last seen tag: %w", err)
+		}
+
 		return nil
 	}
 
-	notifications := make([]domain.ReleaseNotification, 0, len(subs))
-	for _, sub := range subs {
-		notifications = append(notifications, domain.ReleaseNotification{
-			To:             sub.Email,
-			Repo:           repo.Name,
-			Tag:            release.TagName,
-			ReleaseURL:     release.HTMLURL,
-			UnsubscribeURL: fmt.Sprintf("%s/api/unsubscribe/%s", s.baseURL, sub.UnsubscribeToken),
-		})
-	}
+	notifications := s.buildNotifications(subs, repo, release)
 
 	if err := s.mailer.SendReleaseNotifications(notifications); err != nil {
-		slog.Error("send notifications failed", "repo", repo.Name, "error", err)
-		return nil
+		return fmt.Errorf("send notifications: %w", err)
+	}
+
+	if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
+		return fmt.Errorf("update last seen tag: %w", err)
 	}
 
 	metrics.NotificationsSentTotal.Add(float64(len(notifications)))
@@ -189,11 +186,18 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 	return nil
 }
 
-func splitRepo(repo string) (owner, name string, err error) {
-	parts := strings.SplitN(repo, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("invalid repo format: %s", repo)
+func (s *Scanner) buildNotifications(
+	subs []*domain.Subscription,
+	repo *domain.Repository,
+	release *domain.Release,
+) []domain.ReleaseNotification {
+	notifications := make([]domain.ReleaseNotification, 0, len(subs))
+	for _, sub := range subs {
+		notifications = append(
+			notifications,
+			domain.NewReleaseNotification(sub, repo, release, s.urls.UnsubscribeURL(sub.UnsubscribeToken)),
+		)
 	}
 
-	return parts[0], parts[1], nil
+	return notifications
 }
