@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github-release-notifier/internal/domain"
-
 	"github.com/redis/go-redis/v9"
 )
 
 type Cache interface {
-	Get(ctx context.Context, key string) (string, error)
+	Get(ctx context.Context, key string) (value string, found bool, err error)
 	Set(ctx context.Context, key string, value string, ttl time.Duration) error
 	Close() error
 }
@@ -36,17 +34,17 @@ func NewRedisCache(ctx context.Context, redisURL string) (Cache, error) {
 	return &redisCache{client: client}, nil
 }
 
-func (c *redisCache) Get(ctx context.Context, key string) (string, error) {
+func (c *redisCache) Get(ctx context.Context, key string) (value string, found bool, err error) {
 	val, err := c.client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
-		return "", domain.ErrMiss
+		return "", false, nil
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("redis get: %w", err)
+		return "", false, fmt.Errorf("redis get: %w", err)
 	}
 
-	return val, nil
+	return val, true, nil
 }
 
 func (c *redisCache) Set(ctx context.Context, key, value string, ttl time.Duration) error {
