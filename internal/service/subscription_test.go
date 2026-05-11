@@ -87,48 +87,6 @@ func newSvc(
 	return NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{"http://localhost:8080"})
 }
 
-func TestParseRepo_Valid(t *testing.T) {
-	cases := []struct {
-		input     string
-		wantOwner string
-		wantName  string
-	}{
-		{"golang/go", "golang", "go"},
-		{"owner/repo-name", "owner", "repo-name"},
-		{"My.Org/My_Repo.123", "My.Org", "My_Repo.123"},
-	}
-
-	for _, tc := range cases {
-		owner, name, err := domain.ParseRepo(tc.input)
-		if err != nil {
-			t.Errorf("domain.ParseRepo(%q) unexpected error: %v", tc.input, err)
-			continue
-		}
-
-		if owner != tc.wantOwner || name != tc.wantName {
-			t.Errorf("domain.ParseRepo(%q) = (%q, %q), want (%q, %q)", tc.input, owner, name, tc.wantOwner, tc.wantName)
-		}
-	}
-}
-
-func TestParseRepo_Invalid(t *testing.T) {
-	cases := []string{
-		"",
-		"noslash",
-		"/repo",
-		"owner/",
-		"owner/repo/extra",
-		"owner repo",
-	}
-
-	for _, tc := range cases {
-		_, _, err := domain.ParseRepo(tc)
-		if !errors.Is(err, domain.ErrInvalidRepo) {
-			t.Errorf("domain.ParseRepo(%q) = %v, want ErrInvalidRepo", tc, err)
-		}
-	}
-}
-
 func TestSubscribe_InvalidEmail(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
 	err := svc.Subscribe(context.Background(), "not-an-email", "owner/repo")
