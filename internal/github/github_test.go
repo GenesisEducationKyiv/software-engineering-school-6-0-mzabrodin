@@ -28,21 +28,15 @@ func newMockCache() *mockCache {
 	return &mockCache{data: make(map[string]string)}
 }
 
-func (m *mockCache) Get(_ context.Context, key string) (string, error) {
+func (m *mockCache) Get(_ context.Context, key string) (value string, found bool, err error) {
 	val, ok := m.data[key]
-	if !ok {
-		return "", domain.ErrMiss
-	}
-
-	return val, nil
+	return val, ok, nil
 }
 
 func (m *mockCache) Set(_ context.Context, key, value string, _ time.Duration) error {
 	m.data[key] = value
 	return nil
 }
-
-func (m *mockCache) Close() error { return nil }
 
 func TestRepoExists_Found(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
