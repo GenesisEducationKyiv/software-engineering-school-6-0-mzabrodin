@@ -7,16 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
-	"strings"
 	"net/mail"
 
 	"github-release-notifier/internal/domain"
 )
 
 const tokenBytes = 32
-
-var repoRegex = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 type RepoRepository interface {
 	Create(ctx context.Context, repo *domain.Repository) error
@@ -72,10 +68,11 @@ func NewSubscriptionService(
 }
 
 func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) error {
-	owner, name, err := parseRepo(repoName)
 	if _, err := mail.ParseAddress(email); err != nil {
 		return domain.ErrInvalidEmail
 	}
+
+	owner, name, err := domain.ParseRepo(repoName)
 	if err != nil {
 		return err
 	}
@@ -184,13 +181,6 @@ func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*
 	return s.subs.GetByEmail(ctx, email)
 }
 
-func parseRepo(repo string) (owner, name string, err error) {
-	if !repoRegex.MatchString(repo) {
-		return "", "", ErrInvalidRepo
-	}
-
-	parts := strings.SplitN(repo, "/", 2)
-	return parts[0], parts[1], nil
 }
 
 func randomToken() (string, error) {
