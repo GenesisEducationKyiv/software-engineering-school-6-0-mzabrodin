@@ -71,7 +71,7 @@ func run() error {
 
 	mail := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
 
-	repos := repository.NewRepoRepository(pool)
+	repos := repository.NewGitHubRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
 	svc := service.NewSubscriptionService(repos, subs, gh, mail, urls)

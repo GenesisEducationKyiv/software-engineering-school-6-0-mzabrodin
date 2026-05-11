@@ -16,7 +16,7 @@ import (
 // 32 random bytes encoded as 64-character hex string
 const tokenBytes = 32
 
-type repoRepository interface {
+type gitHubRepoRepository interface {
 	Create(ctx context.Context, repo *domain.Repository) error
 	GetByName(ctx context.Context, name string) (*domain.Repository, error)
 }
@@ -41,7 +41,7 @@ type urlBuilder interface {
 }
 
 type SubscriptionService struct {
-	repos  repoRepository
+	repos  gitHubRepoRepository
 	subs   subscriptionRepository
 	github gitHubClient
 	mailer mailer
@@ -50,7 +50,7 @@ type SubscriptionService struct {
 }
 
 func NewSubscriptionService(
-	repos repoRepository,
+	repos gitHubRepoRepository,
 	subs subscriptionRepository,
 	github gitHubClient,
 	mailer mailer,

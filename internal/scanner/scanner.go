@@ -21,7 +21,7 @@ type gitHubClient interface {
 	GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error)
 }
 
-type repoRepository interface {
+type gitHubRepoRepository interface {
 	GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error)
 	UpdateLastSeenTag(ctx context.Context, name string, tag string) error
 }
@@ -35,7 +35,7 @@ type urlBuilder interface {
 }
 
 type Scanner struct {
-	repos    repoRepository
+	repos    gitHubRepoRepository
 	subs     subscriptionRepository
 	github   gitHubClient
 	mailer   mailer
@@ -44,7 +44,7 @@ type Scanner struct {
 }
 
 func NewScanner(
-	repos repoRepository,
+	repos gitHubRepoRepository,
 	subs subscriptionRepository,
 	gh gitHubClient,
 	mailer mailer,
