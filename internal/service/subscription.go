@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
+	"sync"
 
 	"github-release-notifier/internal/domain"
 )
@@ -39,16 +40,12 @@ type URLBuilder interface {
 }
 
 type SubscriptionService struct {
-	repos   RepoRepository
-	subs    SubscriptionRepository
-	github  GitHubClient
-	mailer  Mailer
-	baseURL string
 	repos  RepoRepository
 	subs   SubscriptionRepository
 	github GitHubClient
 	mailer Mailer
 	urls   URLBuilder
+	wg     sync.WaitGroup
 }
 
 func NewSubscriptionService(
@@ -158,7 +155,9 @@ func (s *SubscriptionService) createSubscription(
 
 func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
 	confirmURL := s.urls.ConfirmURL(confirmToken)
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
 			slog.Error("failed to send confirmation email", "email", email, "error", err)
 		}
@@ -181,6 +180,8 @@ func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*
 	return s.subs.GetByEmail(ctx, email)
 }
 
+func (s *SubscriptionService) Shutdown() {
+	s.wg.Wait()
 }
 
 func randomToken() (string, error) {
