@@ -93,7 +93,7 @@ func (s *SubscriptionService) ensureRepoExists(ctx context.Context, owner, name 
 	}
 
 	if !exists {
-		return ErrRepoNotFound
+		return domain.ErrRepoNotFound
 	}
 
 	return nil
