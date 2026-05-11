@@ -89,7 +89,6 @@ func (m *Mailer) SendReleaseNotifications(notifications []domain.ReleaseNotifica
 			"ReleaseURL":     n.ReleaseURL,
 			"UnsubscribeURL": n.UnsubscribeURL,
 		})
-
 		if err != nil {
 			errs = append(errs, fmt.Errorf("render email for %s: %w", n.To, err))
 			continue
