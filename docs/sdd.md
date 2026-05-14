@@ -7,7 +7,7 @@
 1. Subscription is created by providing an email and a repository in `owner/repo` format. The repository is verified against GitHub API before saving
 2. New subscriptions are inactive until the user confirms ownership by clicking a one-time link sent to their email
 3. Every release notification email contains a personal unsubscribe link
-4. Active subscriptions for an email can be listed via API
+4. All subscriptions (active and pending) for an email can be listed via API
 5. A background scanner checks all repositories with confirmed subscribers on a fixed interval and sends email notifications when a new release tag is detected
 6. Each repository stores a single `last_seen_tag`. The scanner notifies only when a newer tag appears, not on every run
 
