@@ -168,7 +168,7 @@ Two structs backed by `pgxpool.Pool`:
 - `RepoRepository` reads and updates the `repositories` table
 - `SubscriptionRepository` creates, confirms and removes rows in `subscriptions`
 
-Both map `pgx.ErrNoRows` to `domain.ErrNotFound` and constraint violations to `domain.ErrAlreadyExists`.
+Both map `pgx.ErrNoRows` to `domain.ErrNotFound`. `SubscriptionRepository` additionally maps constraint violations on the unique `(email, repository_id)` index to `domain.ErrAlreadyExists`.
 
 ### Scanner (`internal/scanner`)
 
