@@ -95,6 +95,10 @@ sequenceDiagram
             Service-->>API: ErrRepoNotFound
             API-->>User: 404 Not Found
         else repo exists
+            Service->>DB: GetByName(repo)
+            alt not in DB
+                Service->>DB: CreateRepository(repo)
+            end
             Service->>DB: CreateSubscription(email, repo, tokens)
             alt already subscribed
                 DB-->>Service: ErrAlreadyExists
