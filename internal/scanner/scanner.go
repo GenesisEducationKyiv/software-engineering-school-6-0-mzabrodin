@@ -13,8 +13,8 @@ import (
 	"github-release-notifier/internal/metrics"
 )
 
-type mailer interface {
-	SendReleaseNotifications(notifications []domain.ReleaseNotification) error
+type notifier interface {
+	Notify(ctx context.Context, subs []*domain.Subscription, repo *domain.Repository, release *domain.Release) error
 }
 
 type gitHubClient interface {
@@ -30,34 +30,27 @@ type subscriptionRepository interface {
 	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error)
 }
 
-type urlBuilder interface {
-	UnsubscribeURL(token string) string
-}
-
 type Scanner struct {
 	repos    gitHubRepoRepository
 	subs     subscriptionRepository
 	github   gitHubClient
-	mailer   mailer
+	notifier notifier
 	interval time.Duration
-	urls     urlBuilder
 }
 
 func NewScanner(
 	repos gitHubRepoRepository,
 	subs subscriptionRepository,
 	gh gitHubClient,
-	mailer mailer,
+	notifier notifier,
 	interval time.Duration,
-	urls urlBuilder,
 ) *Scanner {
 	return &Scanner{
 		repos:    repos,
 		subs:     subs,
 		github:   gh,
-		mailer:   mailer,
+		notifier: notifier,
 		interval: interval,
-		urls:     urls,
 	}
 }
 
@@ -170,9 +163,7 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 		return nil
 	}
 
-	notifications := s.buildNotifications(subs, repo, release)
-
-	if err := s.mailer.SendReleaseNotifications(notifications); err != nil {
+	if err := s.notifier.Notify(ctx, subs, repo, release); err != nil {
 		return fmt.Errorf("send notifications: %w", err)
 	}
 
@@ -180,24 +171,8 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 		return fmt.Errorf("update last seen tag: %w", err)
 	}
 
-	metrics.NotificationsSentTotal.Add(float64(len(notifications)))
-	slog.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(notifications))
+	metrics.NotificationsSentTotal.Add(float64(len(subs)))
+	slog.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(subs))
 
 	return nil
-}
-
-func (s *Scanner) buildNotifications(
-	subs []*domain.Subscription,
-	repo *domain.Repository,
-	release *domain.Release,
-) []domain.ReleaseNotification {
-	notifications := make([]domain.ReleaseNotification, 0, len(subs))
-	for _, sub := range subs {
-		notifications = append(
-			notifications,
-			domain.NewReleaseNotification(sub, repo, release, s.urls.UnsubscribeURL(sub.UnsubscribeToken)),
-		)
-	}
-
-	return notifications
 }
