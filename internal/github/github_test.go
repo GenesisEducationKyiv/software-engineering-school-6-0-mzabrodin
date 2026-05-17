@@ -50,7 +50,7 @@ func responseServer(t *testing.T, status int, body string) *Client {
 }
 
 // failGetClient creates a client backed by a cache that always fails on Get, using a server that delegates to handler and counts calls via the returned pointer.
-func failGetClient(t *testing.T, handler http.HandlerFunc) (*Client, *int) {
+func failGetClient(t *testing.T, handler http.HandlerFunc) (client *Client, calls *int) {
 	t.Helper()
 	n := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
