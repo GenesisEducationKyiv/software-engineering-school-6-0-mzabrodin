@@ -39,6 +39,21 @@ type ReleaseNotification struct {
 	UnsubscribeURL string
 }
 
+func NewReleaseNotification(
+	sub *Subscription,
+	repo *Repository,
+	release *Release,
+	unsubURL string,
+) ReleaseNotification {
+	return ReleaseNotification{
+		To:             sub.Email,
+		Repo:           repo.Name,
+		Tag:            release.TagName,
+		ReleaseURL:     release.HTMLURL,
+		UnsubscribeURL: unsubURL,
+	}
+}
+
 type Release struct {
 	TagName string
 	HTMLURL string

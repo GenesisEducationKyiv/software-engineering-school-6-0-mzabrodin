@@ -20,6 +20,7 @@ import (
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/scanner"
 	"github-release-notifier/internal/service"
+	"github-release-notifier/internal/urlbuilder"
 
 	"github.com/joho/godotenv"
 )
@@ -70,11 +71,16 @@ func run() error {
 
 	mail := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
 
-	repos := repository.NewRepoRepository(pool)
+	repos := repository.NewGitHubRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
-	svc := service.NewSubscriptionService(repos, subs, gh, mail, cfg.BaseURL)
+	urls := urlbuilder.New(cfg.BaseURL)
 
-	scan := scanner.NewScanner(repos, subs, gh, mail, cfg.ScanInterval, cfg.BaseURL)
+	confirmationNotifier := service.NewConfirmationNotifier(mail)
+	releaseNotifier := scanner.NewReleaseNotifier(mail, urls)
+
+	svc := service.NewSubscriptionService(repos, subs, gh, confirmationNotifier, urls)
+
+	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval)
 	go scan.Start(ctx)
 
 	srv := &http.Server{
@@ -103,6 +109,8 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("server shutdown: %w", err)
 	}
+
+	svc.Shutdown()
 
 	slog.Info("server stopped")
 	return nil

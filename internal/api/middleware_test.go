@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func okHandler(w http.ResponseWriter, _ *http.Request) {
@@ -21,9 +23,7 @@ func TestAPIKeyAuth_NoKeyConfigured_AllowsAll(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, newRequest())
 
-	if w.Code != http.StatusOK {
-		t.Errorf("got %d, want 200", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestAPIKeyAuth_CorrectKey_Allows(t *testing.T) {
@@ -34,9 +34,7 @@ func TestAPIKeyAuth_CorrectKey_Allows(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("got %d, want 200", w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestAPIKeyAuth_WrongKey_Returns401(t *testing.T) {
@@ -47,9 +45,7 @@ func TestAPIKeyAuth_WrongKey_Returns401(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("got %d, want 401", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestAPIKeyAuth_MissingHeader_Returns401(t *testing.T) {
@@ -58,7 +54,5 @@ func TestAPIKeyAuth_MissingHeader_Returns401(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, newRequest())
 
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("got %d, want 401", w.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

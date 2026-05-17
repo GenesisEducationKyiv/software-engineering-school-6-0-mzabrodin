@@ -9,14 +9,13 @@ import (
 	"strings"
 
 	"github-release-notifier/internal/domain"
-	"github-release-notifier/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
 
 const tokenHexLen = 64
 
-type SubscriptionService interface {
+type subscriptionService interface {
 	Subscribe(ctx context.Context, email, repo string) error
 	Confirm(ctx context.Context, token string) error
 	Unsubscribe(ctx context.Context, token string) error
@@ -24,10 +23,10 @@ type SubscriptionService interface {
 }
 
 type Handler struct {
-	service SubscriptionService
+	service subscriptionService
 }
 
-func NewHandler(svc SubscriptionService) *Handler {
+func NewHandler(svc subscriptionService) *Handler {
 	return &Handler{service: svc}
 }
 
@@ -48,15 +47,22 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.Subscribe(r.Context(), req.Email, req.Repo)
 	switch {
-	case errors.Is(err, service.ErrInvalidRepo):
+	case errors.Is(err, domain.ErrInvalidEmail):
+		jsonErr(w, "invalid email format", http.StatusBadRequest)
+
+	case errors.Is(err, domain.ErrInvalidRepo):
 		jsonErr(w, "invalid repo format, expected owner/repo", http.StatusBadRequest)
-	case errors.Is(err, service.ErrRepoNotFound):
+
+	case errors.Is(err, domain.ErrRepoNotFound):
 		jsonErr(w, "repository not found on GitHub", http.StatusNotFound)
+
 	case errors.Is(err, domain.ErrAlreadyExists):
 		jsonErr(w, "email already subscribed to this repository", http.StatusConflict)
+
 	case err != nil:
 		slog.Error("subscribe failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
+
 	default:
 		jsonOK(w, MessageResponse{Message: "subscription successful, confirmation email sent"})
 	}
@@ -73,9 +79,11 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		jsonErr(w, "token not found", http.StatusNotFound)
+
 	case err != nil:
 		slog.Error("confirm failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
+
 	default:
 		jsonOK(w, MessageResponse{Message: "subscription confirmed successfully"})
 	}
@@ -92,9 +100,11 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		jsonErr(w, "token not found", http.StatusNotFound)
+
 	case err != nil:
 		slog.Error("unsubscribe failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
+
 	default:
 		jsonOK(w, MessageResponse{Message: "unsubscribed successfully"})
 	}
@@ -102,17 +112,21 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.URL.Query().Get("email"))
-	if email == "" || !strings.Contains(email, "@") {
-		jsonErr(w, "invalid email", http.StatusBadRequest)
+	if email == "" {
+		jsonErr(w, "email is required", http.StatusBadRequest)
 		return
 	}
 
 	subs, err := h.service.GetByEmail(r.Context(), email)
-	if err != nil {
+	switch {
+	case errors.Is(err, domain.ErrInvalidEmail):
+		jsonErr(w, "invalid email format", http.StatusBadRequest)
+
+	case err != nil:
 		slog.Error("get subscriptions failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
 
-	jsonOK(w, toSubscriptionResponses(subs))
+	default:
+		jsonOK(w, toSubscriptionResponses(subs))
+	}
 }

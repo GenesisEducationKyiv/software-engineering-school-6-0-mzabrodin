@@ -7,62 +7,69 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
-	"strings"
+	"net/mail"
 
 	"github-release-notifier/internal/domain"
 )
 
+// 32 random bytes encoded as 64-character hex string
 const tokenBytes = 32
 
-var repoRegex = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-
-type RepoRepository interface {
+type gitHubRepoRepository interface {
 	Create(ctx context.Context, repo *domain.Repository) error
 	GetByName(ctx context.Context, name string) (*domain.Repository, error)
 }
 
-type SubscriptionRepository interface {
+type subscriptionRepository interface {
 	Create(ctx context.Context, sub *domain.Subscription) error
 	GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error)
 	Confirm(ctx context.Context, token string) error
 	Delete(ctx context.Context, token string) error
 }
 
-type GitHubClient interface {
+type gitHubClient interface {
 	RepoExists(ctx context.Context, owner, repo string) (bool, error)
 }
 
-type Mailer interface {
+type mailer interface {
 	SendConfirmation(to, repo, confirmURL string) error
+	Shutdown()
+}
+
+type urlBuilder interface {
+	ConfirmURL(token string) string
 }
 
 type SubscriptionService struct {
-	repos   RepoRepository
-	subs    SubscriptionRepository
-	github  GitHubClient
-	mailer  Mailer
-	baseURL string
+	repos  gitHubRepoRepository
+	subs   subscriptionRepository
+	github gitHubClient
+	mailer mailer
+	urls   urlBuilder
 }
 
 func NewSubscriptionService(
-	repos RepoRepository,
-	subs SubscriptionRepository,
-	github GitHubClient,
-	mailer Mailer,
-	baseURL string,
+	repos gitHubRepoRepository,
+	subs subscriptionRepository,
+	github gitHubClient,
+	mailer mailer,
+	urls urlBuilder,
 ) *SubscriptionService {
 	return &SubscriptionService{
-		repos:   repos,
-		subs:    subs,
-		github:  github,
-		mailer:  mailer,
-		baseURL: baseURL,
+		repos:  repos,
+		subs:   subs,
+		github: github,
+		mailer: mailer,
+		urls:   urls,
 	}
 }
 
 func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) error {
-	owner, name, err := parseRepo(repoName)
+	if _, err := mail.ParseAddress(email); err != nil {
+		return domain.ErrInvalidEmail
+	}
+
+	owner, name, err := domain.ParseRepo(repoName)
 	if err != nil {
 		return err
 	}
@@ -93,7 +100,7 @@ func (s *SubscriptionService) ensureRepoExists(ctx context.Context, owner, name 
 	}
 
 	if !exists {
-		return ErrRepoNotFound
+		return domain.ErrRepoNotFound
 	}
 
 	return nil
@@ -147,12 +154,10 @@ func (s *SubscriptionService) createSubscription(
 }
 
 func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
-	confirmURL := fmt.Sprintf("%s/api/confirm/%s", s.baseURL, confirmToken)
-	go func() {
-		if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
-			slog.Error("failed to send confirmation email", "email", email, "error", err)
-		}
-	}()
+	confirmURL := s.urls.ConfirmURL(confirmToken)
+	if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
+		slog.Error("failed to send confirmation email", "email", email, "error", err)
+	}
 }
 
 func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
@@ -163,17 +168,16 @@ func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) err
 	return s.subs.Delete(ctx, token)
 }
 
-func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
-	return s.subs.GetByEmail(ctx, email)
+func (s *SubscriptionService) Shutdown() {
+	s.mailer.Shutdown()
 }
 
-func parseRepo(repo string) (owner, name string, err error) {
-	if !repoRegex.MatchString(repo) {
-		return "", "", ErrInvalidRepo
+func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, domain.ErrInvalidEmail
 	}
 
-	parts := strings.SplitN(repo, "/", 2)
-	return parts[0], parts[1], nil
+	return s.subs.GetByEmail(ctx, email)
 }
 
 func randomToken() (string, error) {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,47 +13,44 @@ import (
 	"github-release-notifier/internal/metrics"
 )
 
-type Mailer interface {
-	SendReleaseNotifications(notifications []domain.ReleaseNotification) error
+type notifier interface {
+	Notify(ctx context.Context, subs []*domain.Subscription, repo *domain.Repository, release *domain.Release) error
 }
 
-type GitHubClient interface {
+type gitHubClient interface {
 	GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error)
 }
 
-type RepoRepository interface {
+type gitHubRepoRepository interface {
 	GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error)
 	UpdateLastSeenTag(ctx context.Context, name string, tag string) error
 }
 
-type SubscriptionRepository interface {
+type subscriptionRepository interface {
 	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error)
 }
 
 type Scanner struct {
-	repos    RepoRepository
-	subs     SubscriptionRepository
-	github   GitHubClient
-	mailer   Mailer
+	repos    gitHubRepoRepository
+	subs     subscriptionRepository
+	github   gitHubClient
+	notifier notifier
 	interval time.Duration
-	baseURL  string
 }
 
 func NewScanner(
-	repos RepoRepository,
-	subs SubscriptionRepository,
-	gh GitHubClient,
-	mailer Mailer,
+	repos gitHubRepoRepository,
+	subs subscriptionRepository,
+	gh gitHubClient,
+	notifier notifier,
 	interval time.Duration,
-	baseURL string,
 ) *Scanner {
 	return &Scanner{
 		repos:    repos,
 		subs:     subs,
 		github:   gh,
-		mailer:   mailer,
+		notifier: notifier,
 		interval: interval,
-		baseURL:  baseURL,
 	}
 }
 
@@ -100,7 +96,7 @@ func (s *Scanner) scan(ctx context.Context) {
 }
 
 func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error {
-	owner, name, err := splitRepo(repo.Name)
+	owner, name, err := domain.ParseRepo(repo.Name)
 	if err != nil {
 		return err
 	}
@@ -159,41 +155,24 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 		return fmt.Errorf("get subscribers: %w", err)
 	}
 
+	if len(subs) == 0 {
+		if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
+			return fmt.Errorf("update last seen tag: %w", err)
+		}
+
+		return nil
+	}
+
+	if err := s.notifier.Notify(ctx, subs, repo, release); err != nil {
+		return fmt.Errorf("send notifications: %w", err)
+	}
+
 	if err := s.repos.UpdateLastSeenTag(ctx, repo.Name, release.TagName); err != nil {
 		return fmt.Errorf("update last seen tag: %w", err)
 	}
 
-	if len(subs) == 0 {
-		return nil
-	}
-
-	notifications := make([]domain.ReleaseNotification, 0, len(subs))
-	for _, sub := range subs {
-		notifications = append(notifications, domain.ReleaseNotification{
-			To:             sub.Email,
-			Repo:           repo.Name,
-			Tag:            release.TagName,
-			ReleaseURL:     release.HTMLURL,
-			UnsubscribeURL: fmt.Sprintf("%s/api/unsubscribe/%s", s.baseURL, sub.UnsubscribeToken),
-		})
-	}
-
-	if err := s.mailer.SendReleaseNotifications(notifications); err != nil {
-		slog.Error("send notifications failed", "repo", repo.Name, "error", err)
-		return nil
-	}
-
-	metrics.NotificationsSentTotal.Add(float64(len(notifications)))
-	slog.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(notifications))
+	metrics.NotificationsSentTotal.Add(float64(len(subs)))
+	slog.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(subs))
 
 	return nil
-}
-
-func splitRepo(repo string) (owner, name string, err error) {
-	parts := strings.SplitN(repo, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("invalid repo format: %s", repo)
-	}
-
-	return parts[0], parts[1], nil
 }
