@@ -3,10 +3,12 @@
 package integration
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubscribe_Success(t *testing.T) {
@@ -16,6 +18,18 @@ func TestSubscribe_Success(t *testing.T) {
 	resp := doRequest(t, http.MethodPost, srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":"owner/repo"}`, testAPIKey)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var email, repo string
+	var confirmed bool
+	row := testPool.QueryRow(context.Background(), `
+		SELECT s.email, r.name, s.confirmed
+		FROM subscriptions s
+		JOIN repositories r ON r.id = s.repository_id
+		WHERE s.email = $1`, testEmail)
+	require.NoError(t, row.Scan(&email, &repo, &confirmed))
+	assert.Equal(t, testEmail, email)
+	assert.Equal(t, testRepoName, repo)
+	assert.False(t, confirmed, "new subscription must not be confirmed")
 }
 
 func TestSubscribe_NoAPIKey_Returns401(t *testing.T) {
