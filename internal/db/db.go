@@ -27,8 +27,8 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func RunMigrations(databaseURL string) error {
-	migrator, err := migrate.New("file://migrations", databaseURL)
+func RunMigrations(databaseURL, migrationsURL string) error {
+	migrator, err := migrate.New(migrationsURL, databaseURL)
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}

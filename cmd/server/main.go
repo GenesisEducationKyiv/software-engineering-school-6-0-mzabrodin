@@ -44,7 +44,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
+	if err := db.RunMigrations(cfg.DatabaseURL, "file://migrations"); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
