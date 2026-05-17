@@ -71,6 +71,8 @@ func (m *mockMailer) SendConfirmation(_, _, _ string) error {
 	return m.sendErr
 }
 
+func (m *mockMailer) Shutdown() {}
+
 type mockURLBuilder struct {
 	base string
 }
