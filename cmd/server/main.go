@@ -74,9 +74,13 @@ func run() error {
 	repos := repository.NewGitHubRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
-	svc := service.NewSubscriptionService(repos, subs, gh, mail, urls)
 
-	scan := scanner.NewScanner(repos, subs, gh, mail, cfg.ScanInterval, urls)
+	confirmationNotifier := service.NewConfirmationNotifier(mail)
+	releaseNotifier := scanner.NewReleaseNotifier(mail, urls)
+
+	svc := service.NewSubscriptionService(repos, subs, gh, confirmationNotifier, urls)
+
+	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval)
 	go scan.Start(ctx)
 
 	srv := &http.Server{
