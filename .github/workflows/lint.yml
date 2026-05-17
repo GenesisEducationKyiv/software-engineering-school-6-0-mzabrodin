@@ -33,3 +33,9 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version-file: .golangci-lint-version
+
+      - name: Run golangci-lint (integration tests)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version-file: .golangci-lint-version
+          args: --build-tags integration ./test/integration/...
