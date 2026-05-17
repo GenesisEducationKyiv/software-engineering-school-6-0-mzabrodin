@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
-	"sync"
 
 	"github-release-notifier/internal/domain"
 )
@@ -34,6 +33,7 @@ type gitHubClient interface {
 
 type mailer interface {
 	SendConfirmation(to, repo, confirmURL string) error
+	Shutdown()
 }
 
 type urlBuilder interface {
@@ -46,7 +46,6 @@ type SubscriptionService struct {
 	github gitHubClient
 	mailer mailer
 	urls   urlBuilder
-	wg     sync.WaitGroup
 }
 
 func NewSubscriptionService(
@@ -156,13 +155,9 @@ func (s *SubscriptionService) createSubscription(
 
 func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
 	confirmURL := s.urls.ConfirmURL(confirmToken)
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
-			slog.Error("failed to send confirmation email", "email", email, "error", err)
-		}
-	}()
+	if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
+		slog.Error("failed to send confirmation email", "email", email, "error", err)
+	}
 }
 
 func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
@@ -173,16 +168,16 @@ func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) err
 	return s.subs.Delete(ctx, token)
 }
 
+func (s *SubscriptionService) Shutdown() {
+	s.mailer.Shutdown()
+}
+
 func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
 	if _, err := mail.ParseAddress(email); err != nil {
 		return nil, domain.ErrInvalidEmail
 	}
 
 	return s.subs.GetByEmail(ctx, email)
-}
-
-func (s *SubscriptionService) Shutdown() {
-	s.wg.Wait()
 }
 
 func randomToken() (string, error) {
