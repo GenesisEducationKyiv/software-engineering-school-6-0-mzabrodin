@@ -11,6 +11,8 @@ import (
 	"github-release-notifier/internal/domain"
 )
 
+var ctx = context.Background()
+
 type mockRepoRepository struct {
 	repo    *domain.Repository
 	getErr  error
@@ -90,17 +92,17 @@ func newSvc(
 	return NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{"http://localhost:8080"})
 }
 
+// region Subscribe
+
 func TestSubscribe_InvalidEmail(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	err := svc.Subscribe(context.Background(), "not-an-email", "owner/repo")
-
+	err := svc.Subscribe(ctx, "not-an-email", "owner/repo")
 	assert.ErrorIs(t, err, domain.ErrInvalidEmail)
 }
 
 func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	err := svc.Subscribe(context.Background(), "user@example.com", "invalid")
-
+	err := svc.Subscribe(ctx, "user@example.com", "invalid")
 	assert.ErrorIs(t, err, domain.ErrInvalidRepo)
 }
 
@@ -111,7 +113,8 @@ func TestSubscribe_RepoNotFoundOnGitHub(t *testing.T) {
 		&mockGitHub{exists: false},
 		&mockMailer{},
 	)
-	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
 	assert.ErrorIs(t, err, domain.ErrRepoNotFound)
 }
 
@@ -122,20 +125,40 @@ func TestSubscribe_GitHubError(t *testing.T) {
 		&mockGitHub{err: domain.ErrRateLimited},
 		&mockMailer{},
 	)
-	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, domain.ErrRepoNotFound)
 }
 
 func TestSubscribe_NewRepo_CreatesAndSubscribes(t *testing.T) {
 	repos := &mockRepoRepository{getErr: domain.ErrNotFound}
-	subs := &mockSubRepository{}
 	mailer := &mockMailer{}
-	svc := newSvc(repos, subs, &mockGitHub{exists: true}, mailer)
+	svc := newSvc(repos, &mockSubRepository{}, &mockGitHub{exists: true}, mailer)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
 	require.NoError(t, err)
 	assert.True(t, repos.created)
+	assert.True(t, mailer.called)
+}
+
+func TestSubscribe_RepoGetError_ReturnsError(t *testing.T) {
+	repos := &mockRepoRepository{getErr: assert.AnError}
+	svc := newSvc(repos, &mockSubRepository{}, &mockGitHub{exists: true}, &mockMailer{})
+
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
+	assert.Error(t, err)
+	assert.False(t, repos.created)
+}
+
+func TestSubscribe_MailerError_StillReturnsNil(t *testing.T) {
+	existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
+	mailer := &mockMailer{sendErr: assert.AnError}
+	svc := newSvc(&mockRepoRepository{repo: existingRepo}, &mockSubRepository{}, &mockGitHub{exists: true}, mailer)
+
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
+	require.NoError(t, err)
+	assert.True(t, mailer.called)
 }
 
 func TestSubscribe_ExistingRepo_SkipsCreate(t *testing.T) {
@@ -145,7 +168,7 @@ func TestSubscribe_ExistingRepo_SkipsCreate(t *testing.T) {
 	mailer := &mockMailer{}
 	svc := newSvc(repos, subs, &mockGitHub{exists: true}, mailer)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
 	require.NoError(t, err)
 	assert.False(t, repos.created)
 }
@@ -156,35 +179,37 @@ func TestSubscribe_AlreadySubscribed(t *testing.T) {
 	subs := &mockSubRepository{createErr: domain.ErrAlreadyExists}
 	svc := newSvc(repos, subs, &mockGitHub{exists: true}, &mockMailer{})
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
 	assert.ErrorIs(t, err, domain.ErrAlreadyExists)
 }
 
+// endregion Subscribe
+
 func TestConfirm_Success(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	assert.NoError(t, svc.Confirm(context.Background(), "sometoken"))
+	assert.NoError(t, svc.Confirm(ctx, "sometoken"))
 }
 
 func TestConfirm_NotFound(t *testing.T) {
 	subs := &mockSubRepository{confirmErr: domain.ErrNotFound}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	assert.ErrorIs(t, svc.Confirm(context.Background(), "badtoken"), domain.ErrNotFound)
+	assert.ErrorIs(t, svc.Confirm(ctx, "badtoken"), domain.ErrNotFound)
 }
 
 func TestUnsubscribe_Success(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	assert.NoError(t, svc.Unsubscribe(context.Background(), "sometoken"))
+	assert.NoError(t, svc.Unsubscribe(ctx, "sometoken"))
 }
 
 func TestUnsubscribe_NotFound(t *testing.T) {
 	subs := &mockSubRepository{deleteErr: domain.ErrNotFound}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	assert.ErrorIs(t, svc.Unsubscribe(context.Background(), "badtoken"), domain.ErrNotFound)
+	assert.ErrorIs(t, svc.Unsubscribe(ctx, "badtoken"), domain.ErrNotFound)
 }
 
 func TestGetByEmail_InvalidEmail(t *testing.T) {
 	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	_, err := svc.GetByEmail(context.Background(), "not-an-email")
+	_, err := svc.GetByEmail(ctx, "not-an-email")
 	assert.ErrorIs(t, err, domain.ErrInvalidEmail)
 }
 
@@ -195,7 +220,7 @@ func TestGetByEmail_ReturnsList(t *testing.T) {
 	subs := &mockSubRepository{views: views}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
 
-	result, err := svc.GetByEmail(context.Background(), "user@example.com")
+	result, err := svc.GetByEmail(ctx, "user@example.com")
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }
@@ -203,6 +228,6 @@ func TestGetByEmail_ReturnsList(t *testing.T) {
 func TestGetByEmail_Error(t *testing.T) {
 	subs := &mockSubRepository{viewsErr: assert.AnError}
 	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	_, err := svc.GetByEmail(context.Background(), "user@example.com")
+	_, err := svc.GetByEmail(ctx, "user@example.com")
 	assert.Error(t, err)
 }
