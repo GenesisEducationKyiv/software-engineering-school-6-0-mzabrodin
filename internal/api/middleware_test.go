@@ -17,6 +17,10 @@ func newRequest() *http.Request {
 	return httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 }
 
+func securedHandler() http.Handler {
+	return KeyAuth("secret")(http.HandlerFunc(okHandler))
+}
+
 func TestAPIKeyAuth_NoKeyConfigured_AllowsAll(t *testing.T) {
 	handler := KeyAuth("")(http.HandlerFunc(okHandler))
 
@@ -27,32 +31,26 @@ func TestAPIKeyAuth_NoKeyConfigured_AllowsAll(t *testing.T) {
 }
 
 func TestAPIKeyAuth_CorrectKey_Allows(t *testing.T) {
-	handler := KeyAuth("secret")(http.HandlerFunc(okHandler))
-
 	r := newRequest()
 	r.Header.Set("X-API-Key", "secret")
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
+	securedHandler().ServeHTTP(w, r)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestAPIKeyAuth_WrongKey_Returns401(t *testing.T) {
-	handler := KeyAuth("secret")(http.HandlerFunc(okHandler))
-
 	r := newRequest()
 	r.Header.Set("X-API-Key", "wrong")
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
+	securedHandler().ServeHTTP(w, r)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestAPIKeyAuth_MissingHeader_Returns401(t *testing.T) {
-	handler := KeyAuth("secret")(http.HandlerFunc(okHandler))
-
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, newRequest())
+	securedHandler().ServeHTTP(w, newRequest())
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
