@@ -61,6 +61,8 @@ func jsonBody(t *testing.T, v any) *bytes.Buffer {
 	return bytes.NewBuffer(b)
 }
 
+var ctx = context.Background()
+
 // 64 hex chars
 const validToken = "7453d94668d17cf6adfc2b37045347fa14907a007786ed791865d1754b5737f6"
 
@@ -149,7 +151,7 @@ func TestHandlerSubscribe(t *testing.T) {
 				bodyReader = jsonBody(t, tc.body)
 			}
 
-			r := httptest.NewRequest(http.MethodPost, "/api/subscribe", bodyReader)
+			r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/subscribe", bodyReader)
 			r.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			h.Subscribe(w, r)
@@ -198,7 +200,12 @@ func TestHandlerConfirm(t *testing.T) {
 				tc.setupMock(svc)
 			}
 
-			r := httptest.NewRequest(http.MethodGet, "/api/confirm/"+tc.token, nil)
+			r := httptest.NewRequestWithContext(
+				ctx,
+				http.MethodGet,
+				"/api/confirm/"+tc.token,
+				http.NoBody,
+			)
 			r = withToken(r, tc.token)
 			w := httptest.NewRecorder()
 			h.Confirm(w, r)
@@ -247,7 +254,12 @@ func TestHandlerUnsubscribe(t *testing.T) {
 				tc.setupMock(svc)
 			}
 
-			r := httptest.NewRequest(http.MethodGet, "/api/unsubscribe/"+tc.token, nil)
+			r := httptest.NewRequestWithContext(
+				ctx,
+				http.MethodGet,
+				"/api/unsubscribe/"+tc.token,
+				http.NoBody,
+			)
 			r = withToken(r, tc.token)
 			w := httptest.NewRecorder()
 			h.Unsubscribe(w, r)
@@ -313,7 +325,7 @@ func TestHandlerGetSubscriptions(t *testing.T) {
 			if tc.email != "" {
 				url += "?email=" + tc.email
 			}
-			r := httptest.NewRequest(http.MethodGet, url, nil)
+			r := httptest.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 			w := httptest.NewRecorder()
 			h.GetSubscriptions(w, r)
 
