@@ -43,7 +43,7 @@ func TestConfirm_UnknownToken_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-func TestConfirm_AlreadyConfirmed_Returns404(t *testing.T) {
+func TestConfirm_AlreadyConfirmed_IsIdempotent(t *testing.T) {
 	truncateAll(t)
 	srv := newTestServer(t, true)
 
@@ -53,5 +53,5 @@ func TestConfirm_AlreadyConfirmed_Returns404(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	resp = doRequest(t, http.MethodGet, srv.URL+"/api/confirm/"+confirmToken, "", "")
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
