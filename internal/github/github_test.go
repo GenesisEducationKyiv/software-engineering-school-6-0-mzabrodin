@@ -70,7 +70,7 @@ type mockCache struct {
 	mock.Mock
 }
 
-func (m *mockCache) Get(ctx context.Context, key string) (string, bool, error) {
+func (m *mockCache) Get(ctx context.Context, key string) (value string, found bool, err error) {
 	args := m.Called(ctx, key)
 	return args.String(0), args.Bool(1), args.Error(2)
 }
