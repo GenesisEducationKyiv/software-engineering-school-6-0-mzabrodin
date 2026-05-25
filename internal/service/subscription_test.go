@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"context"
@@ -6,228 +6,273 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/service"
 )
 
 var ctx = context.Background()
-
-type mockRepoRepository struct {
-	repo    *domain.Repository
-	getErr  error
-	created bool
-}
-
-func (m *mockRepoRepository) Create(_ context.Context, repo *domain.Repository) error {
-	repo.ID = uuid.New()
-	m.created = true
-	return nil
-}
-
-func (m *mockRepoRepository) GetByName(_ context.Context, _ string) (*domain.Repository, error) {
-	return m.repo, m.getErr
-}
-
-type mockSubRepository struct {
-	createErr  error
-	views      []*domain.SubscriptionView
-	viewsErr   error
-	confirmErr error
-	deleteErr  error
-}
-
-func (m *mockSubRepository) Create(_ context.Context, sub *domain.Subscription) error {
-	sub.ID = uuid.New()
-	return m.createErr
-}
-
-func (m *mockSubRepository) GetByEmail(_ context.Context, _ string) ([]*domain.SubscriptionView, error) {
-	return m.views, m.viewsErr
-}
-
-func (m *mockSubRepository) Confirm(_ context.Context, _ string) error {
-	return m.confirmErr
-}
-
-func (m *mockSubRepository) Delete(_ context.Context, _ string) error {
-	return m.deleteErr
-}
-
-type mockGitHub struct {
-	exists bool
-	err    error
-}
-
-func (m *mockGitHub) RepoExists(_ context.Context, _, _ string) (bool, error) {
-	return m.exists, m.err
-}
-
-type mockMailer struct {
-	sendErr error
-	called  bool
-}
-
-func (m *mockMailer) SendConfirmation(_, _, _ string) error {
-	m.called = true
-	return m.sendErr
-}
-
-func (m *mockMailer) Shutdown() {}
-
-type mockURLBuilder struct {
-	base string
-}
-
-func (m *mockURLBuilder) ConfirmURL(token string) string {
-	return m.base + "/api/confirm/" + token
-}
 
 func newSvc(
 	repos *mockRepoRepository,
 	subs *mockSubRepository,
 	gh *mockGitHub,
 	mailer *mockMailer,
-) *SubscriptionService {
-	return NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{"http://localhost:8080"})
+) *service.SubscriptionService {
+	return service.NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{})
 }
 
-// region Subscribe
-
-func TestSubscribe_InvalidEmail(t *testing.T) {
-	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	err := svc.Subscribe(ctx, "not-an-email", "owner/repo")
-	assert.ErrorIs(t, err, domain.ErrInvalidEmail)
+type SubscriptionServiceSuite struct {
+	suite.Suite
 }
 
-func TestSubscribe_InvalidRepoFormat(t *testing.T) {
-	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	err := svc.Subscribe(ctx, "user@example.com", "invalid")
-	assert.ErrorIs(t, err, domain.ErrInvalidRepo)
+func TestSubscriptionServiceSuite(t *testing.T) {
+	suite.Run(t, new(SubscriptionServiceSuite))
 }
 
-func TestSubscribe_RepoNotFoundOnGitHub(t *testing.T) {
-	svc := newSvc(
-		&mockRepoRepository{},
-		&mockSubRepository{},
-		&mockGitHub{exists: false},
-		&mockMailer{},
-	)
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	assert.ErrorIs(t, err, domain.ErrRepoNotFound)
-}
-
-func TestSubscribe_GitHubError(t *testing.T) {
-	svc := newSvc(
-		&mockRepoRepository{},
-		&mockSubRepository{},
-		&mockGitHub{err: domain.ErrRateLimited},
-		&mockMailer{},
-	)
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	assert.Error(t, err)
-	assert.NotErrorIs(t, err, domain.ErrRepoNotFound)
-}
-
-func TestSubscribe_NewRepo_CreatesAndSubscribes(t *testing.T) {
-	repos := &mockRepoRepository{getErr: domain.ErrNotFound}
-	mailer := &mockMailer{}
-	svc := newSvc(repos, &mockSubRepository{}, &mockGitHub{exists: true}, mailer)
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	require.NoError(t, err)
-	assert.True(t, repos.created)
-	assert.True(t, mailer.called)
-}
-
-func TestSubscribe_RepoGetError_ReturnsError(t *testing.T) {
-	repos := &mockRepoRepository{getErr: assert.AnError}
-	svc := newSvc(repos, &mockSubRepository{}, &mockGitHub{exists: true}, &mockMailer{})
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	assert.Error(t, err)
-	assert.False(t, repos.created)
-}
-
-func TestSubscribe_MailerError_StillReturnsNil(t *testing.T) {
-	existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
-	mailer := &mockMailer{sendErr: assert.AnError}
-	svc := newSvc(&mockRepoRepository{repo: existingRepo}, &mockSubRepository{}, &mockGitHub{exists: true}, mailer)
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	require.NoError(t, err)
-	assert.True(t, mailer.called)
-}
-
-func TestSubscribe_ExistingRepo_SkipsCreate(t *testing.T) {
-	existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
-	repos := &mockRepoRepository{repo: existingRepo}
-	subs := &mockSubRepository{}
-	mailer := &mockMailer{}
-	svc := newSvc(repos, subs, &mockGitHub{exists: true}, mailer)
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	require.NoError(t, err)
-	assert.False(t, repos.created)
-}
-
-func TestSubscribe_AlreadySubscribed(t *testing.T) {
-	existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
-	repos := &mockRepoRepository{repo: existingRepo}
-	subs := &mockSubRepository{createErr: domain.ErrAlreadyExists}
-	svc := newSvc(repos, subs, &mockGitHub{exists: true}, &mockMailer{})
-
-	err := svc.Subscribe(ctx, "user@example.com", "owner/repo")
-	assert.ErrorIs(t, err, domain.ErrAlreadyExists)
-}
-
-// endregion Subscribe
-
-func TestConfirm_Success(t *testing.T) {
-	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	assert.NoError(t, svc.Confirm(ctx, "sometoken"))
-}
-
-func TestConfirm_NotFound(t *testing.T) {
-	subs := &mockSubRepository{confirmErr: domain.ErrNotFound}
-	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	assert.ErrorIs(t, svc.Confirm(ctx, "badtoken"), domain.ErrNotFound)
-}
-
-func TestUnsubscribe_Success(t *testing.T) {
-	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	assert.NoError(t, svc.Unsubscribe(ctx, "sometoken"))
-}
-
-func TestUnsubscribe_NotFound(t *testing.T) {
-	subs := &mockSubRepository{deleteErr: domain.ErrNotFound}
-	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	assert.ErrorIs(t, svc.Unsubscribe(ctx, "badtoken"), domain.ErrNotFound)
-}
-
-func TestGetByEmail_InvalidEmail(t *testing.T) {
-	svc := newSvc(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockMailer{})
-	_, err := svc.GetByEmail(ctx, "not-an-email")
-	assert.ErrorIs(t, err, domain.ErrInvalidEmail)
-}
-
-func TestGetByEmail_ReturnsList(t *testing.T) {
-	views := []*domain.SubscriptionView{
-		{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: new("v1.0.0")},
+func (s *SubscriptionServiceSuite) TestSubscribe() {
+	cases := []struct {
+		name       string
+		email      string
+		repo       string
+		setupMocks func(*mockRepoRepository, *mockSubRepository, *mockGitHub, *mockMailer)
+		wantErrIs  error
+		wantAnyErr bool
+		check      func(*SubscriptionServiceSuite, error)
+	}{
+		{
+			name:      "invalid email",
+			email:     "not-an-email",
+			repo:      "owner/repo",
+			wantErrIs: domain.ErrInvalidEmail,
+		},
+		{
+			name:      "invalid repo format",
+			email:     "user@example.com",
+			repo:      "invalid",
+			wantErrIs: domain.ErrInvalidRepo,
+		},
+		{
+			name:  "repo not found on github",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(false, nil)
+			},
+			wantErrIs: domain.ErrRepoNotFound,
+		},
+		{
+			name:  "github error",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(false, domain.ErrRateLimited)
+			},
+			wantAnyErr: true,
+			check: func(s *SubscriptionServiceSuite, err error) {
+				s.NotErrorIs(err, domain.ErrRepoNotFound)
+			},
+		},
+		{
+			name:  "new repo creates and subscribes",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
+				repos.On("GetByName", mock.Anything, "owner/repo").Return(nil, domain.ErrNotFound)
+				repos.On("Create", mock.Anything, mock.Anything).Return(nil)
+				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
+				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+			},
+		},
+		{
+			name:  "repo get error",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
+				repos.On("GetByName", mock.Anything, "owner/repo").Return(nil, assert.AnError)
+			},
+			wantAnyErr: true,
+		},
+		{
+			name:  "mailer error still returns nil",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
+				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
+				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
+				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything).Return(assert.AnError)
+			},
+		},
+		{
+			name:  "existing repo skips create",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
+				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
+				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
+				mailer.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			},
+		},
+		{
+			name:  "already subscribed",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
+				existingRepo := &domain.Repository{ID: uuid.New(), Name: "owner/repo"}
+				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
+				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
+				subs.On("Create", mock.Anything, mock.Anything).Return(domain.ErrAlreadyExists)
+			},
+			wantErrIs: domain.ErrAlreadyExists,
+		},
 	}
-	subs := &mockSubRepository{views: views}
-	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
 
-	result, err := svc.GetByEmail(ctx, "user@example.com")
-	require.NoError(t, err)
-	assert.Len(t, result, 1)
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			repos := &mockRepoRepository{}
+			subs := &mockSubRepository{}
+			gh := &mockGitHub{}
+			mailer := &mockMailer{}
+			defer repos.AssertExpectations(s.T())
+			defer subs.AssertExpectations(s.T())
+			defer gh.AssertExpectations(s.T())
+			defer mailer.AssertExpectations(s.T())
+
+			if tc.setupMocks != nil {
+				tc.setupMocks(repos, subs, gh, mailer)
+			}
+
+			svc := newSvc(repos, subs, gh, mailer)
+			err := svc.Subscribe(ctx, tc.email, tc.repo)
+			switch {
+			case tc.wantErrIs != nil:
+				s.ErrorIs(err, tc.wantErrIs)
+			case tc.wantAnyErr:
+				s.Error(err)
+			default:
+				s.NoError(err)
+			}
+			if tc.check != nil {
+				tc.check(s, err)
+			}
+		})
+	}
 }
 
-func TestGetByEmail_Error(t *testing.T) {
-	subs := &mockSubRepository{viewsErr: assert.AnError}
-	svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-	_, err := svc.GetByEmail(ctx, "user@example.com")
-	assert.Error(t, err)
+func (s *SubscriptionServiceSuite) TestConfirm() {
+	cases := []struct {
+		name      string
+		mockErr   error
+		wantErrIs error
+	}{
+		{"success", nil, nil},
+		{"not found", domain.ErrNotFound, domain.ErrNotFound},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			subs := &mockSubRepository{}
+			subs.On("Confirm", mock.Anything, "sometoken").Return(tc.mockErr)
+			defer subs.AssertExpectations(s.T())
+
+			svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
+			err := svc.Confirm(ctx, "sometoken")
+			if tc.wantErrIs != nil {
+				s.ErrorIs(err, tc.wantErrIs)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestUnsubscribe() {
+	cases := []struct {
+		name      string
+		mockErr   error
+		wantErrIs error
+	}{
+		{"success", nil, nil},
+		{"not found", domain.ErrNotFound, domain.ErrNotFound},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			subs := &mockSubRepository{}
+			subs.On("Delete", mock.Anything, "sometoken").Return(tc.mockErr)
+			defer subs.AssertExpectations(s.T())
+
+			svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
+			err := svc.Unsubscribe(ctx, "sometoken")
+			if tc.wantErrIs != nil {
+				s.ErrorIs(err, tc.wantErrIs)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestGetByEmail() {
+	cases := []struct {
+		name      string
+		email     string
+		setupMock func(*mockSubRepository)
+		wantLen   int
+		wantErrIs error
+		wantErr   bool
+	}{
+		{
+			name:      "invalid email",
+			email:     "not-an-email",
+			wantErrIs: domain.ErrInvalidEmail,
+		},
+		{
+			name:  "returns list",
+			email: "user@example.com",
+			setupMock: func(subs *mockSubRepository) {
+				views := []*domain.SubscriptionView{
+					{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: new("v1.0.0")},
+				}
+				subs.On("GetByEmail", mock.Anything, "user@example.com").Return(views, nil)
+			},
+			wantLen: 1,
+		},
+		{
+			name:  "repository error",
+			email: "user@example.com",
+			setupMock: func(subs *mockSubRepository) {
+				subs.On("GetByEmail", mock.Anything, "user@example.com").Return(nil, assert.AnError)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			subs := &mockSubRepository{}
+			defer subs.AssertExpectations(s.T())
+			if tc.setupMock != nil {
+				tc.setupMock(subs)
+			}
+
+			svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
+			result, err := svc.GetByEmail(ctx, tc.email)
+			switch {
+			case tc.wantErrIs != nil:
+				s.ErrorIs(err, tc.wantErrIs)
+			case tc.wantErr:
+				s.Error(err)
+			default:
+				s.Require().NoError(err)
+				s.Len(result, tc.wantLen)
+			}
+		})
+	}
 }
