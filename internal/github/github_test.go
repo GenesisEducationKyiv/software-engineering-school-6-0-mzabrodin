@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/domain"
 )
@@ -59,44 +59,37 @@ func failGetClient(t *testing.T, handler http.HandlerFunc) (client *Client, call
 	}))
 	t.Cleanup(srv.Close)
 
-	mc := &mockCache{data: make(map[string]string), failOnGet: true}
+	mc := &mockCache{}
+	mc.On("Get", mock.Anything, mock.Anything).Return("", false, errors.New("cache get error"))
+	mc.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	return newTestClient(srv.URL, "").WithCache(mc, time.Minute), &n
 }
 
 type mockCache struct {
-	data       map[string]string
-	failOnGet  bool
-	failOnSet  bool
-	lastSetCtx context.Context
+	mock.Mock
 }
 
-func newMockCache() *mockCache {
-	return &mockCache{data: make(map[string]string)}
+func (m *mockCache) Get(ctx context.Context, key string) (string, bool, error) {
+	args := m.Called(ctx, key)
+	return args.String(0), args.Bool(1), args.Error(2)
 }
 
-func (m *mockCache) Get(_ context.Context, key string) (value string, found bool, err error) {
-	if m.failOnGet {
-		return "", false, errors.New("cache get error")
-	}
-	val, ok := m.data[key]
-
-	return val, ok, nil
+func (m *mockCache) Set(ctx context.Context, key, value string, ttl time.Duration) error {
+	return m.Called(ctx, key, value, ttl).Error(0)
 }
 
-func (m *mockCache) Set(ctx context.Context, key, value string, _ time.Duration) error {
-	m.lastSetCtx = ctx
-	if m.failOnSet {
-		return errors.New("cache set error")
-	}
-	m.data[key] = value
+type ClientSuite struct {
+	suite.Suite
+}
 
-	return nil
+func TestClientSuite(t *testing.T) {
+	suite.Run(t, new(ClientSuite))
 }
 
 // region RepoExists
 
-func TestRepoExists_StatusCases(t *testing.T) {
+func (s *ClientSuite) TestRepoExists_StatusCases() {
 	cases := []struct {
 		name      string
 		status    int
@@ -111,130 +104,150 @@ func TestRepoExists_StatusCases(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := statusServer(t, tc.status)
+		s.Run(tc.name, func() {
+			c := statusServer(s.T(), tc.status)
 			exists, err := c.RepoExists(ctx, "owner", "repo")
 			switch {
 			case tc.wantErrIs != nil:
-				assert.ErrorIs(t, err, tc.wantErrIs)
-
+				s.ErrorIs(err, tc.wantErrIs)
 			case tc.wantErr:
-				assert.Error(t, err)
-
+				s.Error(err)
 			default:
-				require.NoError(t, err)
-				assert.Equal(t, tc.wantExist, exists)
+				s.Require().NoError(err)
+				s.Equal(tc.wantExist, exists)
 			}
 		})
 	}
 }
 
-func TestRepoExists_RateLimited_429(t *testing.T) {
+func (s *ClientSuite) TestRepoExists_RateLimited_429() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "30")
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
 	c := newTestClient(srv.URL, "")
 	_, err := c.RepoExists(ctx, "owner", "repo")
-	assert.ErrorIs(t, err, domain.ErrRateLimited)
+	s.ErrorIs(err, domain.ErrRateLimited)
 }
 
-func TestRepoExists_RateLimited_403WithHeader(t *testing.T) {
+func (s *ClientSuite) TestRateLimited_403WithHeader() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "0")
 		w.WriteHeader(http.StatusForbidden)
 	}))
-	t.Cleanup(srv.Close)
-
+	s.T().Cleanup(srv.Close)
 	c := newTestClient(srv.URL, "")
-	_, err := c.RepoExists(ctx, "owner", "repo")
-	assert.ErrorIs(t, err, domain.ErrRateLimited)
+
+	s.Run("RepoExists", func() {
+		_, err := c.RepoExists(ctx, "owner", "repo")
+		s.ErrorIs(err, domain.ErrRateLimited)
+	})
+	s.Run("GetLatestRelease", func() {
+		_, err := c.GetLatestRelease(ctx, "owner", "repo")
+		s.ErrorIs(err, domain.ErrRateLimited)
+	})
 }
 
-func TestRepoExists_SetsAuthHeader(t *testing.T) {
+func (s *ClientSuite) TestRepoExists_SetsAuthHeader() {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusOK)
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
 	c := newTestClient(srv.URL, "mytoken")
 	_, _ = c.RepoExists(ctx, "owner", "repo")
-	assert.Equal(t, "Bearer mytoken", gotAuth)
+	s.Equal("Bearer mytoken", gotAuth)
 }
 
-func TestRepoExists_CacheHit_True(t *testing.T) {
+func (s *ClientSuite) TestRepoExists_CacheHit_True() {
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("HTTP server was called despite cache hit")
+		s.T().Error("HTTP server was called despite cache hit")
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
-	mc := newMockCache()
-	mc.data[keyPrefixExists+"owner/repo"] = "1"
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, keyPrefixExists+"owner/repo").Return("1", true, nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 	exists, err := c.RepoExists(ctx, "owner", "repo")
-	require.NoError(t, err)
-	assert.True(t, exists)
+	s.Require().NoError(err)
+	s.True(exists)
 }
 
-func TestRepoExists_CacheHit_False(t *testing.T) {
+func (s *ClientSuite) TestRepoExists_CacheHit_False() {
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("HTTP server was called despite cache hit")
+		s.T().Error("HTTP server was called despite cache hit")
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
-	mc := newMockCache()
-	mc.data[keyPrefixExists+"owner/repo"] = "0"
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, keyPrefixExists+"owner/repo").Return("0", true, nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 	exists, err := c.RepoExists(ctx, "owner", "repo")
-	require.NoError(t, err)
-	assert.False(t, exists)
+	s.Require().NoError(err)
+	s.False(exists)
 }
 
-func TestRepoExists_CacheMiss_PopulatesCache(t *testing.T) {
-	mc := newMockCache()
-	c := statusServer(t, http.StatusOK)
-	c = c.WithCache(mc, time.Minute)
-	_, _ = c.RepoExists(ctx, "owner", "repo")
-	assert.Equal(t, "1", mc.data[keyPrefixExists+"owner/repo"])
+func (s *ClientSuite) TestRepoExists_CachePopulation() {
+	cases := []struct {
+		name       string
+		status     int
+		wantCached string
+	}{
+		{"found caches 1", http.StatusOK, "1"},
+		{"not found caches 0", http.StatusNotFound, "0"},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			mc := &mockCache{}
+			defer mc.AssertExpectations(s.T())
+			var capturedVal string
+			mc.On("Get", mock.Anything, keyPrefixExists+"owner/repo").Return("", false, nil)
+			mc.On("Set", mock.Anything, keyPrefixExists+"owner/repo", mock.Anything, mock.Anything).
+				Run(func(args mock.Arguments) { capturedVal = args.String(2) }).
+				Return(nil)
+			c := statusServer(s.T(), tc.status).WithCache(mc, time.Minute)
+			_, _ = c.RepoExists(ctx, "owner", "repo")
+			s.Equal(tc.wantCached, capturedVal)
+		})
+	}
 }
 
-func TestRepoExists_NotFound_PopulatesCache(t *testing.T) {
-	mc := newMockCache()
-	c := statusServer(t, http.StatusNotFound)
-	c = c.WithCache(mc, time.Minute)
-	_, _ = c.RepoExists(ctx, "owner", "repo")
-	assert.Equal(t, "0", mc.data[keyPrefixExists+"owner/repo"])
-}
-
-func TestRepoExists_CacheGetError_FallsThrough(t *testing.T) {
-	c, calls := failGetClient(t, func(w http.ResponseWriter, _ *http.Request) {
+func (s *ClientSuite) TestRepoExists_CacheGetError_FallsThrough() {
+	c, calls := failGetClient(s.T(), func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	exists, err := c.RepoExists(ctx, "owner", "repo")
-	require.NoError(t, err)
-	assert.True(t, exists)
-	assert.Equal(t, 1, *calls)
+	s.Require().NoError(err)
+	s.True(exists)
+	s.Equal(1, *calls)
 }
 
-func TestRepoExists_CacheSetError_StillReturnsResult(t *testing.T) {
-	mc := &mockCache{data: make(map[string]string), failOnSet: true}
-	c := statusServer(t, http.StatusOK).WithCache(mc, time.Minute)
+func (s *ClientSuite) TestRepoExists_CacheSetError_StillReturnsResult() {
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, mock.Anything).Return("", false, nil)
+	mc.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(errors.New("cache set error"))
+
+	c := statusServer(s.T(), http.StatusOK).WithCache(mc, time.Minute)
 	exists, err := c.RepoExists(ctx, "owner", "repo")
-	require.NoError(t, err)
-	assert.True(t, exists)
+	s.Require().NoError(err)
+	s.True(exists)
 }
 
 // endregion RepoExists
 
 // region GetLatestRelease
 
-func TestGetLatestRelease_StatusCases(t *testing.T) {
+func (s *ClientSuite) TestGetLatestRelease_StatusCases() {
 	const successBody = `{"tag_name":"v1.2.3","html_url":"https://github.com/owner/repo/releases/tag/v1.2.3"}`
 	cases := []struct {
 		name      string
@@ -251,89 +264,83 @@ func TestGetLatestRelease_StatusCases(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := responseServer(t, tc.status, tc.body)
+		s.Run(tc.name, func() {
+			c := responseServer(s.T(), tc.status, tc.body)
 			rel, err := c.GetLatestRelease(ctx, "owner", "repo")
 			switch {
 			case tc.wantTag != "":
-				require.NoError(t, err)
-				assert.Equal(t, tc.wantTag, rel.TagName)
-
+				s.Require().NoError(err)
+				s.Equal(tc.wantTag, rel.TagName)
 			case tc.wantErrIs != nil:
-				assert.ErrorIs(t, err, tc.wantErrIs)
-
+				s.ErrorIs(err, tc.wantErrIs)
 			default:
-				assert.Error(t, err)
+				s.Error(err)
 			}
 		})
 	}
 }
 
-func TestGetLatestRelease_RateLimited_403WithHeader(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	t.Cleanup(srv.Close)
-
-	c := newTestClient(srv.URL, "")
+func (s *ClientSuite) TestGetLatestRelease_InvalidJSON() {
+	c := responseServer(s.T(), http.StatusOK, "not json")
 	_, err := c.GetLatestRelease(ctx, "owner", "repo")
-
-	assert.ErrorIs(t, err, domain.ErrRateLimited)
+	s.Error(err)
 }
 
-func TestGetLatestRelease_InvalidJSON(t *testing.T) {
-	c := responseServer(t, http.StatusOK, "not json")
-	_, err := c.GetLatestRelease(ctx, "owner", "repo")
-	assert.Error(t, err)
-}
-
-func TestGetLatestRelease_CacheHit(t *testing.T) {
+func (s *ClientSuite) TestGetLatestRelease_CacheHit() {
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Error("HTTP server was called despite cache hit")
+		s.T().Error("HTTP server was called despite cache hit")
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
-	mc := newMockCache()
-	mc.data[keyPrefixRelease+"owner/repo"] = `{"TagName":"v2.0.0","HTMLURL":"https://example.com"}`
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, keyPrefixRelease+"owner/repo").
+		Return(`{"TagName":"v2.0.0","HTMLURL":"https://example.com"}`, true, nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 	rel, err := c.GetLatestRelease(ctx, "owner", "repo")
 
-	require.NoError(t, err)
-	assert.Equal(t, "v2.0.0", rel.TagName)
+	s.Require().NoError(err)
+	s.Equal("v2.0.0", rel.TagName)
 }
 
-func TestGetLatestRelease_CacheMiss_PopulatesCache(t *testing.T) {
+func (s *ClientSuite) TestGetLatestRelease_CacheMiss_PopulatesCache() {
 	const body = `{"tag_name":"v3.0.0","html_url":"https://example.com"}`
-	mc := newMockCache()
-	c := responseServer(t, http.StatusOK, body)
-	c = c.WithCache(mc, time.Minute)
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, keyPrefixRelease+"owner/repo").Return("", false, nil)
+	mc.On("Set", mock.Anything, keyPrefixRelease+"owner/repo", mock.Anything, mock.Anything).Return(nil)
+
+	c := responseServer(s.T(), http.StatusOK, body).WithCache(mc, time.Minute)
 	_, _ = c.GetLatestRelease(ctx, "owner", "repo")
-	assert.Contains(t, mc.data, keyPrefixRelease+"owner/repo")
 }
 
-func TestGetLatestRelease_NoRelease_CachesSentinel(t *testing.T) {
+func (s *ClientSuite) TestGetLatestRelease_NoRelease_CachesSentinel() {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
-	mc := newMockCache()
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, keyPrefixRelease+"owner/repo").Return("", false, nil).Once()
+	mc.On("Set", mock.Anything, keyPrefixRelease+"owner/repo", "none", mock.Anything).Return(nil).Once()
+	mc.On("Get", mock.Anything, keyPrefixRelease+"owner/repo").Return("none", true, nil).Once()
+
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 
 	_, err := c.GetLatestRelease(ctx, "owner", "repo")
-	require.ErrorIs(t, err, domain.ErrNoRelease)
+	s.Require().ErrorIs(err, domain.ErrNoRelease)
 
 	_, err = c.GetLatestRelease(ctx, "owner", "repo")
-	require.ErrorIs(t, err, domain.ErrNoRelease)
+	s.Require().ErrorIs(err, domain.ErrNoRelease)
 
-	assert.Equal(t, 1, calls)
+	s.Equal(1, calls)
 }
 
-func TestGetLatestRelease_CacheCorruptedJSON_FallsThrough(t *testing.T) {
+func (s *ClientSuite) TestGetLatestRelease_CacheCorruptedJSON_FallsThrough() {
 	const goodBody = `{"tag_name":"v1.0.0","html_url":"https://example.com"}`
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -341,62 +348,64 @@ func TestGetLatestRelease_CacheCorruptedJSON_FallsThrough(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(goodBody))
 	}))
-	t.Cleanup(srv.Close)
+	s.T().Cleanup(srv.Close)
 
-	mc := newMockCache()
-	mc.data[keyPrefixRelease+"owner/repo"] = "not valid json"
+	mc := &mockCache{}
+	defer mc.AssertExpectations(s.T())
+	mc.On("Get", mock.Anything, keyPrefixRelease+"owner/repo").Return("not valid json", true, nil)
+
+	var repopulated string
+	mc.On("Set", mock.Anything, keyPrefixRelease+"owner/repo", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) { repopulated = args.String(2) }).
+		Return(nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 	rel, err := c.GetLatestRelease(ctx, "owner", "repo")
 
-	require.NoError(t, err)
-	assert.Equal(t, "v1.0.0", rel.TagName)
-	assert.Equal(t, 1, calls)
-
-	// The corrupt entry must be replaced with fresh data so the next call is served from cache.
-	repopulated := mc.data[keyPrefixRelease+"owner/repo"]
-
-	assert.NotEqual(t, "not valid json", repopulated, "cache still has corrupt data after fallthrough")
-	assert.Contains(t, repopulated, "v1.0.0")
+	s.Require().NoError(err)
+	s.Equal("v1.0.0", rel.TagName)
+	s.Equal(1, calls)
+	s.NotEqual("not valid json", repopulated, "cache still has corrupt data after fallthrough")
+	s.Contains(repopulated, "v1.0.0")
 }
 
-func TestGetLatestRelease_CacheGetError_FallsThrough(t *testing.T) {
+func (s *ClientSuite) TestGetLatestRelease_CacheGetError_FallsThrough() {
 	const body = `{"tag_name":"v1.0.0","html_url":"https://example.com"}`
-	c, calls := failGetClient(t, func(w http.ResponseWriter, _ *http.Request) {
+	c, calls := failGetClient(s.T(), func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
 	})
 	rel, err := c.GetLatestRelease(ctx, "owner", "repo")
 
-	require.NoError(t, err)
-	assert.Equal(t, "v1.0.0", rel.TagName)
-	assert.Equal(t, 1, *calls)
+	s.Require().NoError(err)
+	s.Equal("v1.0.0", rel.TagName)
+	s.Equal(1, *calls)
 }
 
 // endregion GetLatestRelease
 
-func TestParseRetryAfter_Empty(t *testing.T) {
+func (s *ClientSuite) TestParseRetryAfter_Empty() {
 	resp := &http.Response{Header: http.Header{}}
-	assert.Equal(t, defaultRetryAfter, parseRetryAfter(resp))
+	s.Equal(defaultRetryAfter, parseRetryAfter(resp))
 }
 
-func TestParseRetryAfter_ValidSeconds(t *testing.T) {
+func (s *ClientSuite) TestParseRetryAfter_ValidSeconds() {
 	resp := &http.Response{Header: http.Header{}}
 	resp.Header.Set("Retry-After", "90")
-	assert.Equal(t, 90*time.Second, parseRetryAfter(resp))
+	s.Equal(90*time.Second, parseRetryAfter(resp))
 }
 
-func TestParseRetryAfter_InvalidString(t *testing.T) {
+func (s *ClientSuite) TestParseRetryAfter_InvalidString() {
 	resp := &http.Response{Header: http.Header{}}
 	resp.Header.Set("Retry-After", "not-a-number")
-	assert.Equal(t, defaultRetryAfter, parseRetryAfter(resp))
+	s.Equal(defaultRetryAfter, parseRetryAfter(resp))
 }
 
-func TestParseRetryAfter_RateLimitReset(t *testing.T) {
+func (s *ClientSuite) TestParseRetryAfter_RateLimitReset() {
 	resp := &http.Response{Header: http.Header{}}
 	resetAt := time.Now().Add(2 * time.Minute).Unix()
 	resp.Header.Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
 	d := parseRetryAfter(resp)
-	assert.Greater(t, d, time.Minute)
-	assert.Less(t, d, 3*time.Minute)
+	s.Greater(d, time.Minute)
+	s.Less(d, 3*time.Minute)
 }
