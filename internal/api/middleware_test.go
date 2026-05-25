@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github-release-notifier/internal/api"
 )
 
 func okHandler(w http.ResponseWriter, _ *http.Request) {
@@ -18,11 +20,11 @@ func newRequest() *http.Request {
 }
 
 func securedHandler() http.Handler {
-	return KeyAuth("secret")(http.HandlerFunc(okHandler))
+	return api.KeyAuth("secret")(http.HandlerFunc(okHandler))
 }
 
 func TestAPIKeyAuth_NoKeyConfigured_AllowsAll(t *testing.T) {
-	handler := KeyAuth("")(http.HandlerFunc(okHandler))
+	handler := api.KeyAuth("")(http.HandlerFunc(okHandler))
 
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, newRequest())
