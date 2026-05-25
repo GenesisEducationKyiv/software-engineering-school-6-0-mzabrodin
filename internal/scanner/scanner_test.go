@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/domain"
 )
@@ -29,66 +29,25 @@ func testSub(repoID uuid.UUID) *domain.Subscription {
 }
 
 func testSubRepo(repoID uuid.UUID) *mockSubRepository {
-	return &mockSubRepository{subs: []*domain.Subscription{testSub(repoID)}}
-}
-
-type mockRepoRepository struct {
-	repos       []*domain.Repository
-	updatedName string
-	updatedTag  string
-	updateErr   error
-}
-
-func (m *mockRepoRepository) GetAllWithSubscriptions(_ context.Context) ([]*domain.Repository, error) {
-	return m.repos, nil
-}
-
-func (m *mockRepoRepository) UpdateLastSeenTag(_ context.Context, name, tag string) error {
-	m.updatedName = name
-	m.updatedTag = tag
-	return m.updateErr
-}
-
-type mockSubRepository struct {
-	subs []*domain.Subscription
-	err  error
-}
-
-func (m *mockSubRepository) GetConfirmedByRepoID(_ context.Context, _ uuid.UUID) ([]*domain.Subscription, error) {
-	return m.subs, m.err
-}
-
-type mockGitHub struct {
-	release *domain.Release
-	err     error
-}
-
-func (m *mockGitHub) GetLatestRelease(_ context.Context, _, _ string) (*domain.Release, error) {
-	return m.release, m.err
-}
-
-type mockNotifier struct {
-	called   bool
-	subCount int
-	err      error
-}
-
-func (m *mockNotifier) Notify(
-	_ context.Context,
-	subs []*domain.Subscription,
-	_ *domain.Repository,
-	_ *domain.Release,
-) error {
-	m.called = true
-	m.subCount = len(subs)
-	return m.err
+	m := &mockSubRepository{}
+	m.On("GetConfirmedByRepoID", mock.Anything, repoID).
+		Return([]*domain.Subscription{testSub(repoID)}, nil)
+	return m
 }
 
 func newScanner(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, n *mockNotifier) *Scanner {
 	return NewScanner(repos, subs, gh, n, 0)
 }
 
-func TestCheckRepo_GitHubError_Skipped(t *testing.T) {
+type ScannerSuite struct {
+	suite.Suite
+}
+
+func TestScannerSuite(t *testing.T) {
+	suite.Run(t, new(ScannerSuite))
+}
+
+func (s *ScannerSuite) TestCheckRepo_GitHubError_Skipped() {
 	cases := []struct {
 		name string
 		err  error
@@ -97,110 +56,170 @@ func TestCheckRepo_GitHubError_Skipped(t *testing.T) {
 		{"no release", domain.ErrNoRelease},
 		{"unauthorized", domain.ErrUnauthorized},
 	}
-
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			gh := &mockGitHub{err: tc.err}
-			s := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
-			assert.NoError(t, s.checkRepo(ctx, testRepo("owner/repo", nil)))
+		s.Run(tc.name, func() {
+			gh := &mockGitHub{}
+			gh.On("GetLatestRelease", mock.Anything, "owner", "repo").Return(nil, tc.err)
+			defer gh.AssertExpectations(s.T())
+
+			sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
+			s.NoError(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
 		})
 	}
 }
 
-func TestCheckRepo_TagUnchanged_NoNotification(t *testing.T) {
-	gh := &mockGitHub{
-		release: &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"},
-	}
-	repos := &mockRepoRepository{}
-	n := &mockNotifier{}
-	s := newScanner(repos, &mockSubRepository{}, gh, n)
+func (s *ScannerSuite) TestCheckRepo_TagUnchanged_NoNotification() {
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+		Return(&domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"}, nil)
+	defer gh.AssertExpectations(s.T())
 
-	require.NoError(t, s.checkRepo(ctx, testRepo("owner/repo", new("v1.0.0"))))
-	assert.False(t, n.called)
-	assert.Empty(t, repos.updatedTag)
+	sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
+	s.Require().NoError(sc.checkRepo(ctx, testRepo("owner/repo", new("v1.0.0"))))
 }
 
-func TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag(t *testing.T) {
-	repo := testRepo("owner/repo", new("v1.0.0"))
+func (s *ScannerSuite) TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag() {
+	cases := []struct {
+		name       string
+		lastTag    *string
+		releaseTag string
+	}{
+		{"tag changed", new("v1.0.0"), "v2.0.0"},
+		{"first release", nil, "v1.0.0"},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			repo := testRepo("owner/repo", tc.lastTag)
+
+			gh := &mockGitHub{}
+			gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+				Return(&domain.Release{TagName: tc.releaseTag, HTMLURL: "https://github.com/owner/repo/releases/tag/" + tc.releaseTag}, nil)
+			defer gh.AssertExpectations(s.T())
+
+			subs := testSubRepo(repo.ID)
+			defer subs.AssertExpectations(s.T())
+
+			repos := &mockRepoRepository{}
+			repos.On("UpdateLastSeenTag", mock.Anything, "owner/repo", tc.releaseTag).Return(nil)
+			defer repos.AssertExpectations(s.T())
+
+			n := &mockNotifier{}
+			var subCount int
+			n.On("Notify", mock.Anything, mock.Anything, repo, mock.Anything).
+				Run(func(args mock.Arguments) {
+					v, _ := args.Get(1).([]*domain.Subscription)
+					subCount = len(v)
+				}).Return(nil)
+			defer n.AssertExpectations(s.T())
+
+			sc := newScanner(repos, subs, gh, n)
+			s.Require().NoError(sc.checkRepo(ctx, repo))
+			s.Equal(1, subCount)
+		})
+	}
+}
+
+func (s *ScannerSuite) TestCheckRepo_MailerError_TagNotUpdated() {
+	repo := testRepo("owner/repo", nil)
+
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+		Return(&domain.Release{TagName: "v2.0.0", HTMLURL: "..."}, nil)
+	defer gh.AssertExpectations(s.T())
+
+	subs := testSubRepo(repo.ID)
+	defer subs.AssertExpectations(s.T())
+
+	n := &mockNotifier{}
+	n.On("Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(errors.New("smtp error"))
+	defer n.AssertExpectations(s.T())
+
+	sc := newScanner(&mockRepoRepository{}, subs, gh, n)
+	s.Error(sc.checkRepo(ctx, repo))
+}
+
+func (s *ScannerSuite) TestCheckRepo_NoSubscribers_UpdatesTagOnly() {
 	newTag := "v2.0.0"
-	gh := &mockGitHub{
-		release: &domain.Release{TagName: newTag, HTMLURL: "https://github.com/owner/repo/releases/tag/v2.0.0"},
-	}
-	repos := &mockRepoRepository{}
-	n := &mockNotifier{}
-	s := newScanner(repos, testSubRepo(repo.ID), gh, n)
 
-	require.NoError(t, s.checkRepo(ctx, repo))
-	assert.True(t, n.called)
-	assert.Equal(t, 1, n.subCount)
-	assert.Equal(t, newTag, repos.updatedTag)
-	assert.Equal(t, "owner/repo", repos.updatedName)
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+		Return(&domain.Release{TagName: newTag, HTMLURL: "..."}, nil)
+	defer gh.AssertExpectations(s.T())
+
+	subs := &mockSubRepository{}
+	subs.On("GetConfirmedByRepoID", mock.Anything, mock.Anything).
+		Return([]*domain.Subscription{}, nil)
+	defer subs.AssertExpectations(s.T())
+
+	repos := &mockRepoRepository{}
+	repos.On("UpdateLastSeenTag", mock.Anything, "owner/repo", newTag).Return(nil)
+	defer repos.AssertExpectations(s.T())
+
+	sc := newScanner(repos, subs, gh, &mockNotifier{})
+	s.Require().NoError(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
 }
 
-func TestCheckRepo_FirstRelease_NoLastSeenTag(t *testing.T) {
+func (s *ScannerSuite) TestCheckRepo_InvalidRepo_ReturnsError() {
+	sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockNotifier{})
+	s.Error(sc.checkRepo(ctx, testRepo("notavalidrepo", nil)))
+}
+
+func (s *ScannerSuite) TestCheckRepo_SubRepoError_ReturnsError() {
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+		Return(&domain.Release{TagName: "v2.0.0", HTMLURL: "..."}, nil)
+	defer gh.AssertExpectations(s.T())
+
+	subs := &mockSubRepository{}
+	subs.On("GetConfirmedByRepoID", mock.Anything, mock.Anything).
+		Return(nil, errors.New("db error"))
+	defer subs.AssertExpectations(s.T())
+
+	sc := newScanner(&mockRepoRepository{}, subs, gh, &mockNotifier{})
+	s.Error(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
+}
+
+func (s *ScannerSuite) TestCheckRepo_UpdateTagError_NoSubs_ReturnsError() {
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+		Return(&domain.Release{TagName: "v2.0.0", HTMLURL: "..."}, nil)
+	defer gh.AssertExpectations(s.T())
+
+	subs := &mockSubRepository{}
+	subs.On("GetConfirmedByRepoID", mock.Anything, mock.Anything).
+		Return([]*domain.Subscription{}, nil)
+	defer subs.AssertExpectations(s.T())
+
+	repos := &mockRepoRepository{}
+	repos.On("UpdateLastSeenTag", mock.Anything, mock.Anything, mock.Anything).
+		Return(errors.New("db error"))
+	defer repos.AssertExpectations(s.T())
+
+	sc := newScanner(repos, subs, gh, &mockNotifier{})
+	s.Error(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
+}
+
+func (s *ScannerSuite) TestCheckRepo_UpdateTagError_WithSubs_ReturnsError() {
 	repo := testRepo("owner/repo", nil)
-	gh := &mockGitHub{
-		release: &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"},
-	}
-	repos := &mockRepoRepository{}
+
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
+		Return(&domain.Release{TagName: "v2.0.0", HTMLURL: "..."}, nil)
+	defer gh.AssertExpectations(s.T())
+
+	subs := testSubRepo(repo.ID)
+	defer subs.AssertExpectations(s.T())
+
 	n := &mockNotifier{}
-	s := newScanner(repos, testSubRepo(repo.ID), gh, n)
+	n.On("Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	defer n.AssertExpectations(s.T())
 
-	require.NoError(t, s.checkRepo(ctx, repo))
-	assert.True(t, n.called)
-	assert.Equal(t, 1, n.subCount)
-	assert.Equal(t, "v1.0.0", repos.updatedTag)
-}
-
-func TestCheckRepo_MailerError_TagNotUpdated(t *testing.T) {
-	repo := testRepo("owner/repo", nil)
-	gh := &mockGitHub{release: &domain.Release{TagName: "v2.0.0", HTMLURL: "..."}}
 	repos := &mockRepoRepository{}
-	n := &mockNotifier{err: errors.New("smtp error")}
-	s := newScanner(repos, testSubRepo(repo.ID), gh, n)
+	repos.On("UpdateLastSeenTag", mock.Anything, mock.Anything, mock.Anything).
+		Return(errors.New("db error"))
+	defer repos.AssertExpectations(s.T())
 
-	assert.Error(t, s.checkRepo(ctx, repo))
-	assert.True(t, n.called)
-	assert.Empty(t, repos.updatedTag)
-}
-
-func TestCheckRepo_NoSubscribers_UpdatesTagOnly(t *testing.T) {
-	newTag := "v2.0.0"
-	gh := &mockGitHub{release: &domain.Release{TagName: newTag, HTMLURL: "..."}}
-	subs := &mockSubRepository{subs: []*domain.Subscription{}}
-	repos := &mockRepoRepository{}
-	n := &mockNotifier{}
-	s := newScanner(repos, subs, gh, n)
-
-	require.NoError(t, s.checkRepo(ctx, testRepo("owner/repo", nil)))
-	assert.Equal(t, newTag, repos.updatedTag)
-	assert.False(t, n.called)
-}
-
-func TestCheckRepo_InvalidRepo_ReturnsError(t *testing.T) {
-	s := newScanner(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockNotifier{})
-	assert.Error(t, s.checkRepo(ctx, testRepo("notavalidrepo", nil)))
-}
-
-func TestCheckRepo_SubRepoError_ReturnsError(t *testing.T) {
-	gh := &mockGitHub{release: &domain.Release{TagName: "v2.0.0", HTMLURL: "..."}}
-	subs := &mockSubRepository{err: errors.New("db error")}
-	s := newScanner(&mockRepoRepository{}, subs, gh, &mockNotifier{})
-	assert.Error(t, s.checkRepo(ctx, testRepo("owner/repo", nil)))
-}
-
-func TestCheckRepo_UpdateTagError_NoSubs_ReturnsError(t *testing.T) {
-	gh := &mockGitHub{release: &domain.Release{TagName: "v2.0.0", HTMLURL: "..."}}
-	subs := &mockSubRepository{subs: []*domain.Subscription{}}
-	repos := &mockRepoRepository{updateErr: errors.New("db error")}
-	s := newScanner(repos, subs, gh, &mockNotifier{})
-	assert.Error(t, s.checkRepo(ctx, testRepo("owner/repo", nil)))
-}
-
-func TestCheckRepo_UpdateTagError_WithSubs_ReturnsError(t *testing.T) {
-	repo := testRepo("owner/repo", nil)
-	gh := &mockGitHub{release: &domain.Release{TagName: "v2.0.0", HTMLURL: "..."}}
-	repos := &mockRepoRepository{updateErr: errors.New("db error")}
-	s := newScanner(repos, testSubRepo(repo.ID), gh, &mockNotifier{})
-	assert.Error(t, s.checkRepo(ctx, repo))
+	sc := newScanner(repos, subs, gh, n)
+	s.Error(sc.checkRepo(ctx, repo))
 }
