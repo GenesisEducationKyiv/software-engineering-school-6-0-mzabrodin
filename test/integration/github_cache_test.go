@@ -1,0 +1,82 @@
+//go:build integration
+
+package integration
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/suite"
+
+	"github-release-notifier/internal/cache"
+	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/github"
+)
+
+type GitHubClientCacheSuite struct {
+	suite.Suite
+	ca cache.Cache
+}
+
+func TestGitHubClientCacheSuite(t *testing.T) {
+	suite.Run(t, new(GitHubClientCacheSuite))
+}
+
+func (s *GitHubClientCacheSuite) SetupSuite() {
+	var err error
+	s.ca, err = cache.NewRedisCache(context.Background(), testRedisURL)
+	s.Require().NoError(err)
+}
+
+func (s *GitHubClientCacheSuite) TearDownSuite() {
+	s.Require().NoError(s.ca.Close())
+}
+
+func (s *GitHubClientCacheSuite) client() *github.Client {
+	return github.NewClient("").WithCache(s.ca, time.Minute)
+}
+
+func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_True() {
+	ctx := context.Background()
+	s.Require().NoError(s.ca.Set(ctx, "github:repo_exists:owner/repo-exists-true", "1", time.Minute))
+
+	exists, err := s.client().RepoExists(ctx, "owner", "repo-exists-true")
+
+	s.Require().NoError(err)
+	s.True(exists)
+}
+
+func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_False() {
+	ctx := context.Background()
+	s.Require().NoError(s.ca.Set(ctx, "github:repo_exists:owner/repo-exists-false", "0", time.Minute))
+
+	exists, err := s.client().RepoExists(ctx, "owner", "repo-exists-false")
+
+	s.Require().NoError(err)
+	s.False(exists)
+}
+
+func (s *GitHubClientCacheSuite) TestGetLatestRelease_CacheHit() {
+	ctx := context.Background()
+	release := domain.Release{TagName: "v3.0.0", HTMLURL: "https://github.com/owner/repo-release/releases/tag/v3.0.0"}
+	data, err := json.Marshal(release)
+	s.Require().NoError(err)
+	s.Require().NoError(s.ca.Set(ctx, "github:latest_release:owner/repo-release", string(data), time.Minute))
+
+	rel, err := s.client().GetLatestRelease(ctx, "owner", "repo-release")
+
+	s.Require().NoError(err)
+	s.Equal("v3.0.0", rel.TagName)
+	s.Equal(release.HTMLURL, rel.HTMLURL)
+}
+
+func (s *GitHubClientCacheSuite) TestGetLatestRelease_NoReleaseSentinel() {
+	ctx := context.Background()
+	s.Require().NoError(s.ca.Set(ctx, "github:latest_release:owner/repo-no-release", "none", time.Minute))
+
+	_, err := s.client().GetLatestRelease(ctx, "owner", "repo-no-release")
+
+	s.ErrorIs(err, domain.ErrNoRelease)
+}
