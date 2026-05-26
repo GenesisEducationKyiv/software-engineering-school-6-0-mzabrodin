@@ -36,7 +36,8 @@ func (m *mockService) Unsubscribe(ctx context.Context, token string) error {
 
 func (m *mockService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
 	args := m.Called(ctx, email)
-	return args.Get(0).([]*domain.SubscriptionView), args.Error(1)
+	v, _ := args.Get(0).([]*domain.SubscriptionView)
+	return v, args.Error(1)
 }
 
 type HandlerSuite struct {
