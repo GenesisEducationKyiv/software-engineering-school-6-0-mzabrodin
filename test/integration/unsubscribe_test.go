@@ -5,53 +5,55 @@ package integration
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestUnsubscribe_Success(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
+type UnsubscribeSuite struct {
+	suite.Suite
+	srv *httptest.Server
+}
 
-	_, unsubToken := subscribeAndGetTokens(t, srv)
+func TestUnsubscribeSuite(t *testing.T) {
+	suite.Run(t, new(UnsubscribeSuite))
+}
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/unsubscribe/"+unsubToken, "", "")
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+func (s *UnsubscribeSuite) SetupTest() {
+	truncateAll(s.T())
+	s.srv = newTestServer(s.T(), true)
+}
+
+func (s *UnsubscribeSuite) TestSuccess() {
+	_, unsubToken := subscribeAndGetTokens(s.T(), s.srv)
+
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/unsubscribe/"+unsubToken, "", "")
+	s.Equal(http.StatusOK, resp.StatusCode)
 
 	var count int
 	row := testPool.QueryRow(context.Background(),
 		"SELECT COUNT(*) FROM subscriptions WHERE unsubscribe_token=$1", unsubToken)
-	require.NoError(t, row.Scan(&count))
-	assert.Zero(t, count, "subscription should be deleted after /api/unsubscribe")
+	s.Require().NoError(row.Scan(&count))
+	s.Zero(count, "subscription should be deleted after /api/unsubscribe")
 }
 
-func TestUnsubscribe_InvalidTokenLength_Returns400(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/unsubscribe/tooshort", "", "")
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+func (s *UnsubscribeSuite) TestInvalidTokenLength_Returns400() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/unsubscribe/tooshort", "", "")
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestUnsubscribe_UnknownToken_Returns404(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/unsubscribe/"+randomHex64(), "", "")
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+func (s *UnsubscribeSuite) TestUnknownToken_Returns404() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/unsubscribe/"+randomHex64(), "", "")
+	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
-func TestUnsubscribe_AlreadyUnsubscribed_Returns404(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
+func (s *UnsubscribeSuite) TestAlreadyUnsubscribed_Returns404() {
+	_, unsubToken := subscribeAndGetTokens(s.T(), s.srv)
 
-	_, unsubToken := subscribeAndGetTokens(t, srv)
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/unsubscribe/"+unsubToken, "", "")
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/unsubscribe/"+unsubToken, "", "")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp = doRequest(t, http.MethodGet, srv.URL+"/api/unsubscribe/"+unsubToken, "", "")
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp = doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/unsubscribe/"+unsubToken, "", "")
+	s.Equal(http.StatusNotFound, resp.StatusCode)
 }

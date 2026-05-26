@@ -4,72 +4,71 @@ package integration
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestGetSubscriptions_NoAPIKey_Returns401(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/subscriptions?email="+testEmail, "", "")
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+type SubscriptionsSuite struct {
+	suite.Suite
+	srv *httptest.Server
 }
 
-func TestGetSubscriptions_MissingEmailParam_Returns400(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/subscriptions", "", testAPIKey)
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+func TestSubscriptionsSuite(t *testing.T) {
+	suite.Run(t, new(SubscriptionsSuite))
 }
 
-func TestGetSubscriptions_InvalidEmail_Returns400(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/subscriptions?email=notanemail", "", testAPIKey)
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+func (s *SubscriptionsSuite) SetupTest() {
+	truncateAll(s.T())
+	s.srv = newTestServer(s.T(), true)
 }
 
-func TestGetSubscriptions_EmptyList(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
+func (s *SubscriptionsSuite) TestNoAPIKey_Returns401() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", "")
+	s.Equal(http.StatusUnauthorized, resp.StatusCode)
+}
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+func (s *SubscriptionsSuite) TestMissingEmailParam_Returns400() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions", "", testAPIKey)
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
+}
+
+func (s *SubscriptionsSuite) TestInvalidEmail_Returns400() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email=notanemail", "", testAPIKey)
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
+}
+
+func (s *SubscriptionsSuite) TestEmptyList() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
 	var result []map[string]any
-	decodeJSON(t, resp, &result)
-	assert.Empty(t, result)
+	decodeJSON(s.T(), resp, &result)
+	s.Empty(result)
 }
 
-func TestSubscribeConfirmList_EndToEnd(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
+func (s *SubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
+	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
 
-	confirmToken, _ := subscribeAndGetTokens(t, srv)
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+	s.assertSingleSubscription(resp, false)
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assertSingleSubscription(t, resp, false)
+	resp = doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	resp = doRequest(t, http.MethodGet, srv.URL+"/api/confirm/"+confirmToken, "", "")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp = doRequest(t, http.MethodGet, srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assertSingleSubscription(t, resp, true)
+	resp = doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+	s.assertSingleSubscription(resp, true)
 }
 
-func assertSingleSubscription(t *testing.T, resp *http.Response, confirmed bool) {
-	t.Helper()
+func (s *SubscriptionsSuite) assertSingleSubscription(resp *http.Response, confirmed bool) {
+	s.T().Helper()
 	var result []map[string]any
-	decodeJSON(t, resp, &result)
-	require.Len(t, result, 1)
-	assert.Equal(t, testEmail, result[0]["email"])
-	assert.Equal(t, testRepoName, result[0]["repo"])
-	assert.Equal(t, confirmed, result[0]["confirmed"])
+	decodeJSON(s.T(), resp, &result)
+	s.Require().Len(result, 1)
+	s.Equal(testEmail, result[0]["email"])
+	s.Equal(testRepoName, result[0]["repo"])
+	s.Equal(confirmed, result[0]["confirmed"])
 }

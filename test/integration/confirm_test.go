@@ -5,53 +5,55 @@ package integration
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestConfirm_Success(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
+type ConfirmSuite struct {
+	suite.Suite
+	srv *httptest.Server
+}
 
-	confirmToken, _ := subscribeAndGetTokens(t, srv)
+func TestConfirmSuite(t *testing.T) {
+	suite.Run(t, new(ConfirmSuite))
+}
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/confirm/"+confirmToken, "", "")
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+func (s *ConfirmSuite) SetupTest() {
+	truncateAll(s.T())
+	s.srv = newTestServer(s.T(), true)
+}
+
+func (s *ConfirmSuite) TestSuccess() {
+	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
+
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
+	s.Equal(http.StatusOK, resp.StatusCode)
 
 	var confirmed bool
 	row := testPool.QueryRow(context.Background(),
 		"SELECT confirmed FROM subscriptions WHERE confirm_token=$1", confirmToken)
-	require.NoError(t, row.Scan(&confirmed))
-	assert.True(t, confirmed, "subscription should be marked confirmed after /api/confirm")
+	s.Require().NoError(row.Scan(&confirmed))
+	s.True(confirmed, "subscription should be marked confirmed after /api/confirm")
 }
 
-func TestConfirm_InvalidTokenLength_Returns400(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/confirm/tooshort", "", "")
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+func (s *ConfirmSuite) TestInvalidTokenLength_Returns400() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/tooshort", "", "")
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestConfirm_UnknownToken_Returns404(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
-
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/confirm/"+randomHex64(), "", "")
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+func (s *ConfirmSuite) TestUnknownToken_Returns404() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+randomHex64(), "", "")
+	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
-func TestConfirm_AlreadyConfirmed_IsIdempotent(t *testing.T) {
-	truncateAll(t)
-	srv := newTestServer(t, true)
+func (s *ConfirmSuite) TestAlreadyConfirmed_IsIdempotent() {
+	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
 
-	confirmToken, _ := subscribeAndGetTokens(t, srv)
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/api/confirm/"+confirmToken, "", "")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp = doRequest(t, http.MethodGet, srv.URL+"/api/confirm/"+confirmToken, "", "")
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp = doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
+	s.Equal(http.StatusOK, resp.StatusCode)
 }

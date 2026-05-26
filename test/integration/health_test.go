@@ -4,19 +4,31 @@ package integration
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestHealth(t *testing.T) {
-	srv := newTestServer(t, true)
+type HealthSuite struct {
+	suite.Suite
+	srv *httptest.Server
+}
 
-	resp := doRequest(t, http.MethodGet, srv.URL+"/health", "", "")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+func TestHealthSuite(t *testing.T) {
+	suite.Run(t, new(HealthSuite))
+}
+
+func (s *HealthSuite) SetupTest() {
+	truncateAll(s.T())
+	s.srv = newTestServer(s.T(), true)
+}
+
+func (s *HealthSuite) TestHealth() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/health", "", "")
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
 	var body map[string]string
-	decodeJSON(t, resp, &body)
-	assert.Equal(t, "ok", body["status"])
+	decodeJSON(s.T(), resp, &body)
+	s.Equal("ok", body["status"])
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github-release-notifier/internal/api"
@@ -26,26 +27,35 @@ const (
 	testRepoName = "owner/repo"
 )
 
-// mockGitHub satisfies the service.gitHubClient interface via structural typing.
-type mockGitHub struct{ repoExists bool }
+type mockGitHub struct{ mock.Mock }
 
-func (m *mockGitHub) RepoExists(_ context.Context, _, _ string) (bool, error) {
-	return m.repoExists, nil
+func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
+	args := m.Called(ctx, owner, repo)
+	return args.Bool(0), args.Error(1)
 }
 
-// noopConfirmationNotifier satisfies the service.mailer interface without sending real emails.
-type noopConfirmationNotifier struct{}
+type mockConfirmationNotifier struct{ mock.Mock }
 
-func (n *noopConfirmationNotifier) SendConfirmation(_, _, _ string) error { return nil }
-func (n *noopConfirmationNotifier) Shutdown()                             {}
+func (m *mockConfirmationNotifier) SendConfirmation(email, repo, url string) error {
+	return m.Called(email, repo, url).Error(0)
+}
+
+func (m *mockConfirmationNotifier) Shutdown() {}
 
 // newTestServer builds a real HTTP server backed by real repositories against testPool.
 func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	t.Helper()
+
+	gh := &mockGitHub{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(repoExists, nil).Maybe()
+
+	notifier := &mockConfirmationNotifier{}
+	notifier.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
 	repos := repository.NewGitHubRepoRepository(testPool)
 	subs := repository.NewSubscriptionRepository(testPool)
 	urls := urlbuilder.New(testBaseURL)
-	svc := service.NewSubscriptionService(repos, subs, &mockGitHub{repoExists}, &noopConfirmationNotifier{}, urls)
+	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls)
 	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc), testAPIKey))
 	t.Cleanup(srv.Close)
 	return srv
