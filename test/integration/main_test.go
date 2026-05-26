@@ -12,11 +12,15 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
 	"github-release-notifier/internal/db"
 )
 
-var testPool *pgxpool.Pool
+var (
+	testPool     *pgxpool.Pool
+	testRedisURL string
+)
 
 func TestMain(m *testing.M) {
 	os.Exit(run(m))
@@ -68,6 +72,23 @@ func run(m *testing.M) int {
 		return 1
 	}
 	defer testPool.Close()
+
+	redisContainer, err := tcredis.Run(ctx, "redis:8-alpine")
+	if err != nil {
+		slog.Error("start redis container", "err", err)
+		return 1
+	}
+	defer func() {
+		if err := redisContainer.Terminate(ctx); err != nil {
+			slog.Error("terminate redis container", "err", err)
+		}
+	}()
+
+	testRedisURL, err = redisContainer.ConnectionString(ctx)
+	if err != nil {
+		slog.Error("get redis connection string", "err", err)
+		return 1
+	}
 
 	return m.Run()
 }
