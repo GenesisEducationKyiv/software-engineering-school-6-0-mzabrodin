@@ -7,7 +7,7 @@ import (
 )
 
 type mailer interface {
-	SendReleaseNotifications(notifications []domain.ReleaseNotification) error
+	SendReleaseNotifications(ctx context.Context, notifications []domain.ReleaseNotification) error
 }
 
 type urlBuilder interface {
@@ -24,7 +24,7 @@ func NewReleaseNotifier(m mailer, urls urlBuilder) *ReleaseNotifier {
 }
 
 func (n *ReleaseNotifier) Notify(
-	_ context.Context,
+	ctx context.Context,
 	subs []*domain.Subscription,
 	repo *domain.Repository,
 	release *domain.Release,
@@ -36,5 +36,5 @@ func (n *ReleaseNotifier) Notify(
 		)
 	}
 
-	return n.mailer.SendReleaseNotifications(notifications)
+	return n.mailer.SendReleaseNotifications(ctx, notifications)
 }

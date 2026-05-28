@@ -1,12 +1,13 @@
 package service
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 )
 
 type asyncMailer interface {
-	SendConfirmation(to, repo, confirmURL string) error
+	SendConfirmation(ctx context.Context, to, repo, confirmURL string) error
 }
 
 type ConfirmationNotifier struct {
@@ -22,7 +23,7 @@ func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) err
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		if err := c.asyncMailer.SendConfirmation(to, repo, confirmURL); err != nil {
+		if err := c.asyncMailer.SendConfirmation(context.Background(), to, repo, confirmURL); err != nil {
 			slog.Error("failed to send confirmation email", "email", to, "error", err)
 		}
 	}()

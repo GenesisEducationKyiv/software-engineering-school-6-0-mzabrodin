@@ -21,7 +21,7 @@ func TestConfirmationNotifierSuite(t *testing.T) {
 }
 
 func (s *ConfirmationNotifierSuite) TestAlwaysReturnsNil() {
-	mc := &mockMailer{}
+	mc := &mockAsyncMailer{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
@@ -31,7 +31,7 @@ func (s *ConfirmationNotifierSuite) TestAlwaysReturnsNil() {
 }
 
 func (s *ConfirmationNotifierSuite) TestMailerErrorSwallowed() {
-	mc := &mockMailer{}
+	mc := &mockAsyncMailer{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("smtp error")).Once()
 	defer mc.AssertExpectations(s.T())
@@ -46,7 +46,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 	block := make(chan struct{})
 	var goroutineDone atomic.Bool
 
-	mc := &mockMailer{}
+	mc := &mockAsyncMailer{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			close(started)
@@ -84,7 +84,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 
 func (s *ConfirmationNotifierSuite) TestConcurrentSends_Shutdown() {
 	var count atomic.Int32
-	mc := &mockMailer{}
+	mc := &mockAsyncMailer{}
 	const sends = 10
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) { count.Add(1) }).
