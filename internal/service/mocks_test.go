@@ -55,6 +55,12 @@ func (m *mockMailer) SendConfirmation(to, repo, confirmURL string) error {
 
 func (m *mockMailer) Shutdown() {}
 
+type mockAsyncMailer struct{ mock.Mock }
+
+func (m *mockAsyncMailer) SendConfirmation(_ context.Context, to, repo, confirmURL string) error {
+	return m.Called(to, repo, confirmURL).Error(0)
+}
+
 type mockURLBuilder struct{}
 
 func (m *mockURLBuilder) ConfirmURL(token string) string {

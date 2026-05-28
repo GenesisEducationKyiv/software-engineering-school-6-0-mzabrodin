@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -9,7 +10,7 @@ import (
 
 	"github-release-notifier/internal/domain"
 
-	"gopkg.in/gomail.v2"
+	"github.com/wneessen/go-mail"
 )
 
 var confirmationTemplate = template.Must(template.New("confirmation").Parse(`<!DOCTYPE html>
@@ -34,48 +35,60 @@ var releaseTemplate = template.Must(template.New("release").Parse(`<!DOCTYPE htm
 </html>`))
 
 type Mailer struct {
-	dialer    *gomail.Dialer
+	client    *mail.Client
 	fromEmail string
 }
 
-func NewMailer(host string, port int, user, password, fromEmail string) *Mailer {
-	return &Mailer{
-		dialer:    gomail.NewDialer(host, port, user, password),
-		fromEmail: fromEmail,
+func NewMailer(host string, port int, user, password, fromEmail string) (*Mailer, error) {
+	c, err := mail.NewClient(host,
+		mail.WithPort(port),
+		mail.WithSMTPAuth(mail.SMTPAuthPlain),
+		mail.WithUsername(user),
+		mail.WithPassword(password),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create mail client: %w", err)
 	}
+
+	return &Mailer{client: c, fromEmail: fromEmail}, nil
 }
 
-func (m *Mailer) SendConfirmation(to, repo, confirmURL string) error {
+func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) error {
 	body, err := renderTemplate(confirmationTemplate, map[string]string{
 		"Repo":       repo,
 		"ConfirmURL": confirmURL,
 	})
-
 	if err != nil {
 		return fmt.Errorf("render confirmation email: %w", err)
 	}
 
-	msg := gomail.NewMessage()
-	msg.SetHeader("From", m.fromEmail)
-	msg.SetHeader("To", to)
-	msg.SetHeader("Subject", fmt.Sprintf("Confirm your subscription to %s", repo))
-	msg.SetBody("text/html", body)
+	msg := mail.NewMsg()
+	if err := msg.From(m.fromEmail); err != nil {
+		return fmt.Errorf("set from: %w", err)
+	}
+	if err := msg.To(to); err != nil {
+		return fmt.Errorf("set to: %w", err)
+	}
+	msg.Subject(fmt.Sprintf("Confirm your subscription to %s", repo))
+	msg.SetBodyString(mail.TypeTextHTML, body)
 
-	return m.sendOne(msg)
+	if err := m.client.DialAndSendWithContext(ctx, msg); err != nil {
+		return fmt.Errorf("send email: %w", err)
+	}
+
+	return nil
 }
 
-func (m *Mailer) SendReleaseNotifications(notifications []domain.ReleaseNotification) error {
+func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []domain.ReleaseNotification) error {
 	if len(notifications) == 0 {
 		return nil
 	}
 
-	sender, err := m.dialer.Dial()
-	if err != nil {
+	if err := m.client.DialWithContext(ctx); err != nil {
 		return fmt.Errorf("dial SMTP: %w", err)
 	}
-
 	defer func() {
-		if err := sender.Close(); err != nil {
+		if err := m.client.Close(); err != nil {
 			slog.Error("failed to close SMTP connection", "error", err)
 		}
 	}()
@@ -83,6 +96,11 @@ func (m *Mailer) SendReleaseNotifications(notifications []domain.ReleaseNotifica
 	var errs []error
 
 	for _, n := range notifications {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
+
 		body, err := renderTemplate(releaseTemplate, map[string]string{
 			"Repo":           n.Repo,
 			"Tag":            n.Tag,
@@ -94,27 +112,25 @@ func (m *Mailer) SendReleaseNotifications(notifications []domain.ReleaseNotifica
 			continue
 		}
 
-		msg := gomail.NewMessage()
-		msg.SetHeader("From", m.fromEmail)
-		msg.SetHeader("To", n.To)
-		msg.SetHeader("Subject", fmt.Sprintf("New release %s for %s", n.Tag, n.Repo))
-		msg.SetBody("text/html", body)
+		msg := mail.NewMsg()
+		if err := msg.From(m.fromEmail); err != nil {
+			errs = append(errs, fmt.Errorf("set from for %s: %w", n.To, err))
+			continue
+		}
+		if err := msg.To(n.To); err != nil {
+			errs = append(errs, fmt.Errorf("set to for %s: %w", n.To, err))
+			continue
+		}
+		msg.Subject(fmt.Sprintf("New release %s for %s", n.Tag, n.Repo))
+		msg.SetBodyString(mail.TypeTextHTML, body)
 
-		if err := gomail.Send(sender, msg); err != nil {
+		if err := m.client.Send(msg); err != nil {
 			slog.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "error", err)
 			errs = append(errs, fmt.Errorf("send email to %s: %w", n.To, err))
 		}
 	}
 
 	return errors.Join(errs...)
-}
-
-func (m *Mailer) sendOne(msg *gomail.Message) error {
-	if err := m.dialer.DialAndSend(msg); err != nil {
-		return fmt.Errorf("send email: %w", err)
-	}
-
-	return nil
 }
 
 func renderTemplate(tmpl *template.Template, data map[string]string) (string, error) {

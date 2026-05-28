@@ -16,7 +16,7 @@ var ctx = context.Background()
 
 type mockMailer struct{ mock.Mock }
 
-func (m *mockMailer) SendReleaseNotifications(ns []domain.ReleaseNotification) error {
+func (m *mockMailer) SendReleaseNotifications(_ context.Context, ns []domain.ReleaseNotification) error {
 	return m.Called(ns).Error(0)
 }
 

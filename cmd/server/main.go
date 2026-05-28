@@ -69,7 +69,10 @@ func run() error {
 
 	gh := github.NewClient(cfg.GitHubToken).WithCache(redisCache, 10*time.Minute)
 
-	mail := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
+	mail, err := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
+	if err != nil {
+		return fmt.Errorf("create mailer: %w", err)
+	}
 
 	repos := repository.NewGitHubRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
