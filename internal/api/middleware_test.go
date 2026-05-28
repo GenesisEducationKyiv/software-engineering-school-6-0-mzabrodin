@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
+
+	"github-release-notifier/internal/api"
 )
 
 func okHandler(w http.ResponseWriter, _ *http.Request) {
@@ -17,42 +19,37 @@ func newRequest() *http.Request {
 	return httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 }
 
-func TestAPIKeyAuth_NoKeyConfigured_AllowsAll(t *testing.T) {
-	handler := KeyAuth("")(http.HandlerFunc(okHandler))
-
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, newRequest())
-
-	assert.Equal(t, http.StatusOK, w.Code)
+type KeyAuthSuite struct {
+	suite.Suite
 }
 
-func TestAPIKeyAuth_CorrectKey_Allows(t *testing.T) {
-	handler := KeyAuth("secret")(http.HandlerFunc(okHandler))
-
-	r := newRequest()
-	r.Header.Set("X-API-Key", "secret")
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusOK, w.Code)
+func TestKeyAuthSuite(t *testing.T) {
+	suite.Run(t, new(KeyAuthSuite))
 }
 
-func TestAPIKeyAuth_WrongKey_Returns401(t *testing.T) {
-	handler := KeyAuth("secret")(http.HandlerFunc(okHandler))
+func (s *KeyAuthSuite) TestKeyAuth() {
+	cases := []struct {
+		name       string
+		key        string
+		headerKey  string
+		wantStatus int
+	}{
+		{"no key configured allows all", "", "", http.StatusOK},
+		{"correct key allows", "secret", "secret", http.StatusOK},
+		{"wrong key returns 401", "secret", "wrong", http.StatusUnauthorized},
+		{"missing header returns 401", "secret", "", http.StatusUnauthorized},
+	}
 
-	r := newRequest()
-	r.Header.Set("X-API-Key", "wrong")
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestAPIKeyAuth_MissingHeader_Returns401(t *testing.T) {
-	handler := KeyAuth("secret")(http.HandlerFunc(okHandler))
-
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, newRequest())
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			handler := api.KeyAuth(tc.key)(http.HandlerFunc(okHandler))
+			r := newRequest()
+			if tc.headerKey != "" {
+				r.Header.Set("X-API-Key", tc.headerKey)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			s.Equal(tc.wantStatus, w.Code)
+		})
+	}
 }

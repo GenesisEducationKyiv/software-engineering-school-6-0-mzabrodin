@@ -1,4 +1,4 @@
-name: CI
+name: Lint
 
 on:
   push:
@@ -28,27 +28,14 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.1
+          version-file: .golangci-lint-version
 
-  build-test:
-    name: Build & Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Golang
-        uses: actions/setup-go@v6
+      - name: Run golangci-lint (integration tests)
+        uses: golangci/golangci-lint-action@v9
         with:
-          go-version-file: go.mod
-
-      - name: Build
-        run: go build ./...
-
-      - name: Run tests
-        run: go test -v -count=1 -race ./...
+          version-file: .golangci-lint-version
+          args: --build-tags integration ./test/integration/...

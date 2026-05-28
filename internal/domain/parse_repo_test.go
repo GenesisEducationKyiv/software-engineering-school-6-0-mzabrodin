@@ -1,13 +1,22 @@
-package domain
+package domain_test
 
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"github-release-notifier/internal/domain"
 )
 
-func TestParseRepo_Valid(t *testing.T) {
+type ParseRepoSuite struct {
+	suite.Suite
+}
+
+func TestParseRepoSuite(t *testing.T) {
+	suite.Run(t, new(ParseRepoSuite))
+}
+
+func (s *ParseRepoSuite) TestValid() {
 	cases := []struct {
 		input     string
 		wantOwner string
@@ -19,14 +28,16 @@ func TestParseRepo_Valid(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		owner, name, err := ParseRepo(tc.input)
-		require.NoError(t, err, "ParseRepo(%q)", tc.input)
-		assert.Equal(t, tc.wantOwner, owner, "ParseRepo(%q) owner", tc.input)
-		assert.Equal(t, tc.wantName, name, "ParseRepo(%q) name", tc.input)
+		s.Run(tc.input, func() {
+			owner, name, err := domain.ParseRepo(tc.input)
+			s.Require().NoError(err)
+			s.Equal(tc.wantOwner, owner)
+			s.Equal(tc.wantName, name)
+		})
 	}
 }
 
-func TestParseRepo_Invalid(t *testing.T) {
+func (s *ParseRepoSuite) TestInvalid() {
 	cases := []string{
 		"",
 		"noslash",
@@ -37,7 +48,9 @@ func TestParseRepo_Invalid(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_, _, err := ParseRepo(tc)
-		assert.ErrorIs(t, err, ErrInvalidRepo, "ParseRepo(%q)", tc)
+		s.Run(tc, func() {
+			_, _, err := domain.ParseRepo(tc)
+			s.ErrorIs(err, domain.ErrInvalidRepo)
+		})
 	}
 }
