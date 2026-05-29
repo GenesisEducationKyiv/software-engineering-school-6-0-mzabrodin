@@ -20,13 +20,13 @@ func TestConfirmationNotifierSuite(t *testing.T) {
 	suite.Run(t, new(ConfirmationNotifierSuite))
 }
 
-func (s *ConfirmationNotifierSuite) TestAlwaysReturnsNil() {
+func (s *ConfirmationNotifierSuite) TestSendConfirmation_FiresAsync() {
 	mc := &mockAsyncMailer{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
-	s.NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
+	n.SendConfirmation("a@example.com", "owner/repo", "url")
 	n.Shutdown()
 }
 
@@ -37,7 +37,7 @@ func (s *ConfirmationNotifierSuite) TestMailerErrorSwallowed() {
 	defer mc.AssertExpectations(s.T())
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
-	s.NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
+	n.SendConfirmation("a@example.com", "owner/repo", "url")
 	n.Shutdown()
 }
 
@@ -56,7 +56,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 	defer mc.AssertExpectations(s.T())
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
-	s.Require().NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
+	n.SendConfirmation("a@example.com", "owner/repo", "url")
 	<-started
 
 	shutdownDone := make(chan struct{})
@@ -93,7 +93,7 @@ func (s *ConfirmationNotifierSuite) TestConcurrentSends_Shutdown() {
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
 	for range sends {
-		s.Require().NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
+		n.SendConfirmation("a@example.com", "owner/repo", "url")
 	}
 
 	n.Shutdown()

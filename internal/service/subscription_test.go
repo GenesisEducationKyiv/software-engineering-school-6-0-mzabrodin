@@ -84,7 +84,7 @@ func (s *SubscriptionServiceSuite) TestSubscribe() {
 				repos.On("GetByName", mock.Anything, "owner/repo").Return(nil, domain.ErrNotFound)
 				repos.On("Create", mock.Anything, mock.Anything).Return(nil)
 				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
-				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything)
 			},
 		},
 		{
@@ -98,7 +98,7 @@ func (s *SubscriptionServiceSuite) TestSubscribe() {
 			wantAnyErr: true,
 		},
 		{
-			name:  "mailer error still returns nil",
+			name:  "subscribe succeeds, confirmation is async",
 			email: "user@example.com",
 			repo:  "owner/repo",
 			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
@@ -106,7 +106,7 @@ func (s *SubscriptionServiceSuite) TestSubscribe() {
 				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
 				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
 				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
-				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything).Return(assert.AnError)
+				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything)
 			},
 		},
 		{
@@ -118,7 +118,7 @@ func (s *SubscriptionServiceSuite) TestSubscribe() {
 				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
 				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
 				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
-				mailer.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				mailer.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything)
 			},
 		},
 		{

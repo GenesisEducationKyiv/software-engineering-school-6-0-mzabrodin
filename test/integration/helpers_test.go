@@ -39,8 +39,8 @@ func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, 
 
 type mockConfirmationNotifier struct{ mock.Mock }
 
-func (m *mockConfirmationNotifier) SendConfirmation(email, repo, url string) error {
-	return m.Called(email, repo, url).Error(0)
+func (m *mockConfirmationNotifier) SendConfirmation(email, repo, url string) {
+	m.Called(email, repo, url)
 }
 
 func (m *mockConfirmationNotifier) Shutdown() {}

@@ -20,7 +20,7 @@ func NewConfirmationNotifier(m asyncMailer, log *slog.Logger) *ConfirmationNotif
 	return &ConfirmationNotifier{asyncMailer: m, log: log.With("component", "confirmation_notifier")}
 }
 
-func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) error {
+func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -28,8 +28,6 @@ func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) err
 			c.log.Error("failed to send confirmation email", "email", to, "error", err)
 		}
 	}()
-
-	return nil
 }
 
 func (c *ConfirmationNotifier) Shutdown() {
