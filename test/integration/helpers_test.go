@@ -59,7 +59,7 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	subs := repository.NewSubscriptionRepository(testPool)
 	urls := urlbuilder.New(testBaseURL)
 	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls, testLogger)
-	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc, testLogger), testAPIKey))
+	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc, testLogger), testAPIKey, testLogger))
 	t.Cleanup(srv.Close)
 	return srv
 }
