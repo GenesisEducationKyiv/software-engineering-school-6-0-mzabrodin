@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -22,6 +24,7 @@ func newTestClient(serverURL, token string) *Client {
 		http:    &http.Client{Timeout: 5 * time.Second},
 		token:   token,
 		baseURL: serverURL,
+		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
 
