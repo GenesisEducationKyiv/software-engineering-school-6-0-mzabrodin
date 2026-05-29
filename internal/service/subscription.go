@@ -161,7 +161,7 @@ func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
 	if err := s.subs.Confirm(ctx, token); err != nil {
 		return err
 	}
-	s.log.InfoContext(ctx, "subscription confirmed", "token", token)
+	s.log.InfoContext(ctx, "subscription confirmed")
 	return nil
 }
 
@@ -169,7 +169,7 @@ func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) err
 	if err := s.subs.Delete(ctx, token); err != nil {
 		return err
 	}
-	s.log.InfoContext(ctx, "subscription deleted", "token", token)
+	s.log.InfoContext(ctx, "subscription deleted")
 	return nil
 }
 
