@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"github-release-notifier/internal/service"
 	"github-release-notifier/internal/urlbuilder"
 )
+
+var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 const (
 	testAPIKey   = "test-api-key"
@@ -55,8 +58,8 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	repos := repository.NewGitHubRepoRepository(testPool)
 	subs := repository.NewSubscriptionRepository(testPool)
 	urls := urlbuilder.New(testBaseURL)
-	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls)
-	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc), testAPIKey))
+	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls, testLogger)
+	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc, testLogger), testAPIKey))
 	t.Cleanup(srv.Close)
 	return srv
 }

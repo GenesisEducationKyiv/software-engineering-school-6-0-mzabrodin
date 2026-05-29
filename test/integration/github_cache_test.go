@@ -35,7 +35,7 @@ func (s *GitHubClientCacheSuite) TearDownSuite() {
 }
 
 func (s *GitHubClientCacheSuite) client() *github.Client {
-	return github.NewClient("").WithCache(s.ca, time.Minute)
+	return github.NewClient("", testLogger).WithCache(s.ca, time.Minute)
 }
 
 func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_True() {

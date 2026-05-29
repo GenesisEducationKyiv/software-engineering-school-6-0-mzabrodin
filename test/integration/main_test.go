@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -61,12 +62,14 @@ func run(m *testing.M) int {
 	migrationsDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations")
 	migrationsURL := "file://" + filepath.ToSlash(migrationsDir)
 
-	if err := db.RunMigrations(pgDSN, migrationsURL); err != nil {
+	integrationLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	if err := db.RunMigrations(pgDSN, migrationsURL, integrationLogger); err != nil {
 		slog.Error("run migrations", "err", err)
 		return 1
 	}
 
-	testPool, err = db.NewPool(ctx, pgDSN)
+	testPool, err = db.NewPool(ctx, pgDSN, integrationLogger)
 	if err != nil {
 		slog.Error("create pool", "err", err)
 		return 1
