@@ -1,0 +1,32 @@
+filebeat.inputs:
+  - type: filestream
+    id: docker-container-logs
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    parsers:
+      - container:
+          stream: all
+          format: docker
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+
+processors:
+  # Decode JSON only for the app container; postgres/redis write plain text
+  - decode_json_fields:
+      when:
+        equals:
+          container.name: "github_release_notifier_app"
+      fields: ["message"]
+      target: ""
+      overwrite_keys: true
+      add_error_key: false
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+
+setup.kibana:
+  host: "kibana:5601"
+
+logging.level: warning
+logging.to_files: false
