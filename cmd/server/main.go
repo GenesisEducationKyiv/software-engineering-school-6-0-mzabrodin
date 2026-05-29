@@ -42,7 +42,7 @@ func run(log *slog.Logger) error {
 
 	cfg := config.Load(log)
 
-	log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
+	log = slog.New(api.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()})))
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -99,7 +99,7 @@ func run(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: api.NewRouter(api.NewHandler(svc, log), cfg.APIKey),
+		Handler: api.NewRouter(api.NewHandler(svc, log), cfg.APIKey, log),
 	}
 
 	serverError := make(chan error, 1)
