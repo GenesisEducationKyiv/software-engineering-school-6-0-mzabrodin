@@ -37,9 +37,10 @@ var releaseTemplate = template.Must(template.New("release").Parse(`<!DOCTYPE htm
 type Mailer struct {
 	client    *mail.Client
 	fromEmail string
+	log       *slog.Logger
 }
 
-func NewMailer(host string, port int, user, password, fromEmail string) (*Mailer, error) {
+func NewMailer(host string, port int, user, password, fromEmail string, log *slog.Logger) (*Mailer, error) {
 	c, err := mail.NewClient(host,
 		mail.WithPort(port),
 		mail.WithSMTPAuth(mail.SMTPAuthPlain),
@@ -50,7 +51,7 @@ func NewMailer(host string, port int, user, password, fromEmail string) (*Mailer
 		return nil, fmt.Errorf("create mail client: %w", err)
 	}
 
-	return &Mailer{client: c, fromEmail: fromEmail}, nil
+	return &Mailer{client: c, fromEmail: fromEmail, log: log.With("component", "mailer")}, nil
 }
 
 func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) error {
@@ -89,7 +90,7 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 	}
 	defer func() {
 		if err := m.client.Close(); err != nil {
-			slog.Error("failed to close SMTP connection", "error", err)
+			m.log.Error("failed to close SMTP connection", "error", err)
 		}
 	}()
 
@@ -125,7 +126,7 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 		msg.SetBodyString(mail.TypeTextHTML, body)
 
 		if err := m.client.Send(msg); err != nil {
-			slog.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "error", err)
+			m.log.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "error", err)
 			errs = append(errs, fmt.Errorf("send email to %s: %w", n.To, err))
 		}
 	}
