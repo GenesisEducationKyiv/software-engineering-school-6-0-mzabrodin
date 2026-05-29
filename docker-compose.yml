@@ -51,6 +51,75 @@ services:
       retries: 10
     restart: unless-stopped
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.2
+    container_name: github_release_notifier_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "${ES_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -v '\"status\":\"red\"'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.4.2
+    container_name: github_release_notifier_kibana
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:5601/api/status | grep -v '\"level\":\"critical\"'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    restart: unless-stopped
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.4.2
+    container_name: github_release_notifier_filebeat
+    user: root
+    command: filebeat -e --strict.perms=false
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  kibana-setup:
+    image: curlimages/curl:8.20.0
+    container_name: github_release_notifier_kibana_setup
+    volumes:
+      - ./kibana/dashboards.ndjson:/kibana/dashboards.ndjson:ro
+    depends_on:
+      kibana:
+        condition: service_healthy
+    restart: "no"
+    command:
+      - -sf
+      - -X
+      - POST
+      - "http://kibana:5601/api/saved_objects/_import?overwrite=true"
+      - -H
+      - "kbn-xsrf: true"
+      - -F
+      - "file=@/kibana/dashboards.ndjson"
+
 volumes:
   postgres_data:
   redis_data:
+  elasticsearch_data:
