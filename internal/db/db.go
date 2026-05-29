@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+func NewPool(ctx context.Context, databaseURL string, log *slog.Logger) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
@@ -23,11 +23,11 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
-	slog.Info("database connected successfully")
+	log.Info("database connected successfully")
 	return pool, nil
 }
 
-func RunMigrations(databaseURL, migrationsURL string) error {
+func RunMigrations(databaseURL, migrationsURL string, log *slog.Logger) error {
 	migrator, err := migrate.New(migrationsURL, databaseURL)
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
@@ -36,11 +36,11 @@ func RunMigrations(databaseURL, migrationsURL string) error {
 	defer func(m *migrate.Migrate) {
 		sourceErr, databaseErr := m.Close()
 		if sourceErr != nil {
-			slog.Error("failed to close migration source", "error", sourceErr)
+			log.Error("failed to close migration source", "error", sourceErr)
 		}
 
 		if databaseErr != nil {
-			slog.Error("failed to close migration database", "error", databaseErr)
+			log.Error("failed to close migration database", "error", databaseErr)
 		}
 	}(migrator)
 
@@ -48,6 +48,6 @@ func RunMigrations(databaseURL, migrationsURL string) error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	slog.Info("migrations applied successfully")
+	log.Info("migrations applied successfully")
 	return nil
 }
