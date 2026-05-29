@@ -24,6 +24,16 @@ type Config struct {
 	RedisURL     string        `envconfig:"REDIS_URL"                                     required:"true"`
 	SMTP         SMTPConfig
 	APIKey       string `envconfig:"API_KEY"`
+	LogLevel     string `envconfig:"LOG_LEVEL"     default:"info"`
+}
+
+func (c *Config) SlogLevel() slog.Level {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(c.LogLevel)); err != nil {
+		return slog.LevelInfo
+	}
+
+	return l
 }
 
 func Load() *Config {
