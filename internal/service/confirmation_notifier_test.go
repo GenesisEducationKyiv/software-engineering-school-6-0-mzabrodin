@@ -25,7 +25,7 @@ func (s *ConfirmationNotifierSuite) TestAlwaysReturnsNil() {
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc)
+	n := service.NewConfirmationNotifier(mc, testLogger)
 	s.NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
 	n.Shutdown()
 }
@@ -36,7 +36,7 @@ func (s *ConfirmationNotifierSuite) TestMailerErrorSwallowed() {
 		Return(errors.New("smtp error")).Once()
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc)
+	n := service.NewConfirmationNotifier(mc, testLogger)
 	s.NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
 	n.Shutdown()
 }
@@ -55,7 +55,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 		}).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc)
+	n := service.NewConfirmationNotifier(mc, testLogger)
 	s.Require().NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
 	<-started
 
@@ -91,7 +91,7 @@ func (s *ConfirmationNotifierSuite) TestConcurrentSends_Shutdown() {
 		Return(nil).Times(sends)
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc)
+	n := service.NewConfirmationNotifier(mc, testLogger)
 	for range sends {
 		s.Require().NoError(n.SendConfirmation("a@example.com", "owner/repo", "url"))
 	}

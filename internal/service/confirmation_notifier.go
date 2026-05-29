@@ -13,10 +13,11 @@ type asyncMailer interface {
 type ConfirmationNotifier struct {
 	asyncMailer asyncMailer
 	wg          sync.WaitGroup
+	log         *slog.Logger
 }
 
-func NewConfirmationNotifier(m asyncMailer) *ConfirmationNotifier {
-	return &ConfirmationNotifier{asyncMailer: m}
+func NewConfirmationNotifier(m asyncMailer, log *slog.Logger) *ConfirmationNotifier {
+	return &ConfirmationNotifier{asyncMailer: m, log: log.With("component", "confirmation_notifier")}
 }
 
 func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) error {
@@ -24,7 +25,7 @@ func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) err
 	go func() {
 		defer c.wg.Done()
 		if err := c.asyncMailer.SendConfirmation(context.Background(), to, repo, confirmURL); err != nil {
-			slog.Error("failed to send confirmation email", "email", to, "error", err)
+			c.log.Error("failed to send confirmation email", "email", to, "error", err)
 		}
 	}()
 

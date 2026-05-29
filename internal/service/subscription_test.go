@@ -21,7 +21,7 @@ func newSvc(
 	gh *mockGitHub,
 	mailer *mockMailer,
 ) *service.SubscriptionService {
-	return service.NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{})
+	return service.NewSubscriptionService(repos, subs, gh, mailer, &mockURLBuilder{}, testLogger)
 }
 
 type SubscriptionServiceSuite struct {

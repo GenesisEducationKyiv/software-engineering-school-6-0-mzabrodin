@@ -46,6 +46,7 @@ type SubscriptionService struct {
 	github gitHubClient
 	mailer mailer
 	urls   urlBuilder
+	log    *slog.Logger
 }
 
 func NewSubscriptionService(
@@ -54,6 +55,7 @@ func NewSubscriptionService(
 	github gitHubClient,
 	mailer mailer,
 	urls urlBuilder,
+	log *slog.Logger,
 ) *SubscriptionService {
 	return &SubscriptionService{
 		repos:  repos,
@@ -61,6 +63,7 @@ func NewSubscriptionService(
 		github: github,
 		mailer: mailer,
 		urls:   urls,
+		log:    log.With("component", "service"),
 	}
 }
 
@@ -156,7 +159,7 @@ func (s *SubscriptionService) createSubscription(
 func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
 	confirmURL := s.urls.ConfirmURL(confirmToken)
 	if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
-		slog.Error("failed to send confirmation email", "email", email, "error", err)
+		s.log.Error("failed to send confirmation email", "email", email, "error", err)
 	}
 }
 

@@ -2,11 +2,15 @@ package service_test
 
 import (
 	"context"
+	"io"
+	"log/slog"
 
 	"github.com/stretchr/testify/mock"
 
 	"github-release-notifier/internal/domain"
 )
+
+var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type mockRepoRepository struct{ mock.Mock }
 
