@@ -77,7 +77,7 @@ func (s *Scanner) Start(ctx context.Context) {
 }
 
 func (s *Scanner) scan(ctx context.Context) {
-	s.log.Info("scanning repositories for new releases")
+	s.log.Debug("scanning repositories for new releases")
 
 	start := time.Now()
 	defer func() {
