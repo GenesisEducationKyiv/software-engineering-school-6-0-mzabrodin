@@ -36,10 +36,10 @@ func (c *Config) SlogLevel() slog.Level {
 	return l
 }
 
-func Load() *Config {
+func Load(log *slog.Logger) *Config {
 	var cfg Config
 	if err := envconfig.Process("", &cfg); err != nil {
-		slog.Error("failed to load config", "error", err)
+		log.Error("failed to load config", "error", err)
 	}
 
 	return &cfg
