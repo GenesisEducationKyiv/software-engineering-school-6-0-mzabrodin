@@ -126,7 +126,7 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 		msg.SetBodyString(mail.TypeTextHTML, body)
 
 		if err := m.client.Send(msg); err != nil {
-			m.log.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "error", err)
+			m.log.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "tag", n.Tag, "error", err)
 			errs = append(errs, fmt.Errorf("send email to %s: %w", n.To, err))
 		}
 	}

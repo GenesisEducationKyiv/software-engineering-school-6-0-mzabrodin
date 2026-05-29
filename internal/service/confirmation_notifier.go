@@ -25,7 +25,7 @@ func (c *ConfirmationNotifier) SendConfirmation(to, repo, confirmURL string) {
 	go func() {
 		defer c.wg.Done()
 		if err := c.asyncMailer.SendConfirmation(context.Background(), to, repo, confirmURL); err != nil {
-			c.log.Error("failed to send confirmation email", "email", to, "error", err)
+			c.log.Error("failed to send confirmation email", "email", to, "repo", repo, "error", err)
 		}
 	}()
 }
