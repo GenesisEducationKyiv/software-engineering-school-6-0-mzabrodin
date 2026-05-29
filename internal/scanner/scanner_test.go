@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/google/uuid"
@@ -36,7 +38,7 @@ func testSubRepo(repoID uuid.UUID) *mockSubRepository {
 }
 
 func newScanner(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, n *mockNotifier) *Scanner {
-	return NewScanner(repos, subs, gh, n, 0)
+	return NewScanner(repos, subs, gh, n, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 type ScannerSuite struct {
