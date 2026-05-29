@@ -61,7 +61,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "email already subscribed to this repository", http.StatusConflict)
 
 	case err != nil:
-		h.log.Error("subscribe failed", "error", err)
+		h.log.ErrorContext(r.Context(), "subscribe failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
@@ -82,7 +82,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "token not found", http.StatusNotFound)
 
 	case err != nil:
-		h.log.Error("confirm failed", "error", err)
+		h.log.ErrorContext(r.Context(), "confirm failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
@@ -103,7 +103,7 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "token not found", http.StatusNotFound)
 
 	case err != nil:
-		h.log.Error("unsubscribe failed", "error", err)
+		h.log.ErrorContext(r.Context(), "unsubscribe failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
@@ -124,7 +124,7 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "invalid email format", http.StatusBadRequest)
 
 	case err != nil:
-		h.log.Error("get subscriptions failed", "error", err)
+		h.log.ErrorContext(r.Context(), "get subscriptions failed", "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:

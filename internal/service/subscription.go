@@ -91,7 +91,8 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 		return err
 	}
 
-	s.sendConfirmationEmail(email, repoName, confirmToken)
+	s.log.InfoContext(ctx, "subscription created", "email", email, "repo", repoName)
+	s.sendConfirmationEmail(ctx, email, repoName, confirmToken)
 
 	return nil
 }
@@ -156,19 +157,27 @@ func (s *SubscriptionService) createSubscription(
 	return confirmToken, nil
 }
 
-func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
+func (s *SubscriptionService) sendConfirmationEmail(ctx context.Context, email, repoName, confirmToken string) {
 	confirmURL := s.urls.ConfirmURL(confirmToken)
 	if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
-		s.log.Error("failed to send confirmation email", "email", email, "error", err)
+		s.log.ErrorContext(ctx, "failed to send confirmation email", "email", email, "error", err)
 	}
 }
 
 func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
-	return s.subs.Confirm(ctx, token)
+	if err := s.subs.Confirm(ctx, token); err != nil {
+		return err
+	}
+	s.log.InfoContext(ctx, "subscription confirmed", "token", token)
+	return nil
 }
 
 func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) error {
-	return s.subs.Delete(ctx, token)
+	if err := s.subs.Delete(ctx, token); err != nil {
+		return err
+	}
+	s.log.InfoContext(ctx, "subscription deleted", "token", token)
+	return nil
 }
 
 func (s *SubscriptionService) Shutdown() {
