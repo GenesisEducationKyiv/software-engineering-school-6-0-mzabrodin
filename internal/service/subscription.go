@@ -125,6 +125,8 @@ func (s *SubscriptionService) ensureRepoStored(ctx context.Context, repoName str
 		return nil, fmt.Errorf("create repository: %w", err)
 	}
 
+	s.log.InfoContext(ctx, "repository tracked", "repo", repoName)
+
 	return repo, nil
 }
 

@@ -91,6 +91,8 @@ func (s *Scanner) scan(ctx context.Context) {
 		return
 	}
 
+	s.log.Debug("found repos to scan", "count", len(repos))
+
 	for _, repo := range repos {
 		if err := s.checkRepo(ctx, repo); err != nil {
 			s.log.Error("failed to check repository", "repo", repo.Name, "error", err)
