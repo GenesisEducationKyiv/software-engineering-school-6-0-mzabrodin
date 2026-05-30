@@ -1,4 +1,4 @@
-.PHONY: build test test-integration lint lint-integration fmt
+.PHONY: build test test-integration lint lint-integration fmt up up-build down
 
 build:
 	go build ./...
@@ -17,3 +17,12 @@ lint-integration:
 
 fmt:
 	golangci-lint fmt
+
+up:
+	docker compose up -d
+
+up-build:
+	docker compose up -d --build
+
+down:
+	docker compose down
