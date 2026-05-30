@@ -18,11 +18,13 @@ WORKDIR /app
 
 # ca-certificates: required for HTTPS requests to GitHub API and SMTP
 # tzdata: required for correct timezone handling
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata && \
+    addgroup -S app && adduser -S -G app -h /app app
 
-# Copy only necessary artifacts from builder stage
-COPY --from=builder /app/server .
-COPY --from=builder /app/migrations ./migrations
+COPY --from=builder --chown=app:app /app/server .
+COPY --from=builder --chown=app:app /app/migrations ./migrations
+
+USER app
 
 EXPOSE 8080
 
