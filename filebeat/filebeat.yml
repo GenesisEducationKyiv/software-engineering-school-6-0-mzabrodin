@@ -28,5 +28,10 @@ output.elasticsearch:
 setup.kibana:
   host: "kibana:5601"
 
+setup.ilm.enabled: true
+setup.ilm.policy_name: "filebeat-14d"
+setup.ilm.policy_file: /usr/share/filebeat/ilm-policy.json
+setup.ilm.overwrite: false
+
 logging.level: warning
 logging.to_files: false

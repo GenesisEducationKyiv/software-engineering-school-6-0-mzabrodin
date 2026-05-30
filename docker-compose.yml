@@ -147,6 +147,7 @@ services:
     volumes:
       - filebeat_data:/usr/share/filebeat/data
       - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./filebeat/ilm-policy.json:/usr/share/filebeat/ilm-policy.json:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
