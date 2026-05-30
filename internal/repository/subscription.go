@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -20,8 +21,11 @@ func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
 	return &SubscriptionRepository{pool: pool}
 }
 
-func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscription) error {
-	err := r.pool.QueryRow(ctx, `
+func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscription) (err error) {
+	start := time.Now()
+	defer func() { trackDBQuery(start, "create", "subscriptions", err) }()
+
+	err = r.pool.QueryRow(ctx, `
 		INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token, confirmed)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (email, repository_id) DO NOTHING
@@ -39,7 +43,13 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscri
 	return nil
 }
 
-func (r *SubscriptionRepository) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
+func (r *SubscriptionRepository) GetByEmail(
+	ctx context.Context,
+	email string,
+) (views []*domain.SubscriptionView, err error) {
+	start := time.Now()
+	defer func() { trackDBQuery(start, "get_by_email", "subscriptions", err) }()
+
 	rows, err := r.pool.Query(ctx, `
 		SELECT s.email, r.name, s.confirmed, r.last_seen_tag
 		FROM subscriptions s
@@ -54,7 +64,6 @@ func (r *SubscriptionRepository) GetByEmail(ctx context.Context, email string) (
 
 	defer rows.Close()
 
-	var views []*domain.SubscriptionView
 	for rows.Next() {
 		view := &domain.SubscriptionView{}
 		if err := rows.Scan(&view.Email, &view.Repo, &view.Confirmed, &view.LastSeenTag); err != nil {
@@ -73,7 +82,10 @@ func (r *SubscriptionRepository) GetByEmail(ctx context.Context, email string) (
 func (r *SubscriptionRepository) GetConfirmedByRepoID(
 	ctx context.Context,
 	repoID uuid.UUID,
-) ([]*domain.Subscription, error) {
+) (subs []*domain.Subscription, err error) {
+	start := time.Now()
+	defer func() { trackDBQuery(start, "get_confirmed_by_repo_id", "subscriptions", err) }()
+
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, repository_id, email, confirm_token, unsubscribe_token, confirmed, created_at
 		FROM subscriptions WHERE repository_id = $1 AND confirmed = true
@@ -85,7 +97,6 @@ func (r *SubscriptionRepository) GetConfirmedByRepoID(
 
 	defer rows.Close()
 
-	var subs []*domain.Subscription
 	for rows.Next() {
 		sub := &domain.Subscription{}
 		if err := rows.Scan(
@@ -106,7 +117,10 @@ func (r *SubscriptionRepository) GetConfirmedByRepoID(
 	return subs, nil
 }
 
-func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) error {
+func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) (err error) {
+	start := time.Now()
+	defer func() { trackDBQuery(start, "confirm", "subscriptions", err) }()
+
 	result, err := r.pool.Exec(ctx, `
 		UPDATE subscriptions SET confirmed = true WHERE confirm_token = $1
 	`, token)
@@ -122,7 +136,10 @@ func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) erro
 	return nil
 }
 
-func (r *SubscriptionRepository) Delete(ctx context.Context, token string) error {
+func (r *SubscriptionRepository) Delete(ctx context.Context, token string) (err error) {
+	start := time.Now()
+	defer func() { trackDBQuery(start, "delete", "subscriptions", err) }()
+
 	result, err := r.pool.Exec(ctx, `
 		DELETE FROM subscriptions WHERE unsubscribe_token = $1
 	`, token)

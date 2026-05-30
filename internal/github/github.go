@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/metrics"
 )
 
 const (
@@ -60,7 +61,13 @@ func (c *Client) WithCache(ca cacher, ttl time.Duration) *Client {
 	return c
 }
 
-func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
+func (c *Client) RepoExists(ctx context.Context, owner, repo string) (exists bool, err error) {
+	start := time.Now()
+	defer func() {
+		metrics.GitHubAPIRequestsTotal.WithLabelValues("repo_exists", metrics.ResultLabel(err)).Inc()
+		metrics.GitHubAPIRequestDuration.WithLabelValues("repo_exists").Observe(time.Since(start).Seconds())
+	}()
+
 	key := keyPrefixExists + owner + "/" + repo
 
 	if c.cache != nil {
@@ -93,7 +100,13 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 	return true, nil
 }
 
-func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error) {
+func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (release *domain.Release, err error) {
+	start := time.Now()
+	defer func() {
+		metrics.GitHubAPIRequestsTotal.WithLabelValues("latest_release", metrics.ResultLabel(err)).Inc()
+		metrics.GitHubAPIRequestDuration.WithLabelValues("latest_release").Observe(time.Since(start).Seconds())
+	}()
+
 	key := keyPrefixRelease + owner + "/" + repo
 
 	if c.cache != nil {

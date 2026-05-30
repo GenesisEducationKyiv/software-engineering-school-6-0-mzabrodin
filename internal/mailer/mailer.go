@@ -7,8 +7,10 @@ import (
 	"html/template"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/metrics"
 
 	"github.com/wneessen/go-mail"
 )
@@ -54,7 +56,13 @@ func NewMailer(host string, port int, user, password, fromEmail string, log *slo
 	return &Mailer{client: c, fromEmail: fromEmail, log: log.With("component", "mailer")}, nil
 }
 
-func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) error {
+func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) (err error) {
+	start := time.Now()
+	defer func() {
+		metrics.EmailSendsTotal.WithLabelValues("confirmation", metrics.ResultLabel(err)).Inc()
+		metrics.EmailSendDuration.WithLabelValues("confirmation").Observe(time.Since(start).Seconds())
+	}()
+
 	body, err := renderTemplate(confirmationTemplate, map[string]string{
 		"Repo":       repo,
 		"ConfirmURL": confirmURL,
@@ -80,7 +88,13 @@ func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 	return nil
 }
 
-func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []domain.ReleaseNotification) error {
+func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []domain.ReleaseNotification) (err error) {
+	start := time.Now()
+	defer func() {
+		metrics.EmailSendsTotal.WithLabelValues("notification", metrics.ResultLabel(err)).Inc()
+		metrics.EmailSendDuration.WithLabelValues("notification").Observe(time.Since(start).Seconds())
+	}()
+
 	if len(notifications) == 0 {
 		return nil
 	}
@@ -102,36 +116,41 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 			break
 		}
 
-		body, err := renderTemplate(releaseTemplate, map[string]string{
-			"Repo":           n.Repo,
-			"Tag":            n.Tag,
-			"ReleaseURL":     n.ReleaseURL,
-			"UnsubscribeURL": n.UnsubscribeURL,
-		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("render email for %s: %w", n.To, err))
-			continue
-		}
-
-		msg := mail.NewMsg()
-		if err := msg.From(m.fromEmail); err != nil {
-			errs = append(errs, fmt.Errorf("set from for %s: %w", n.To, err))
-			continue
-		}
-		if err := msg.To(n.To); err != nil {
-			errs = append(errs, fmt.Errorf("set to for %s: %w", n.To, err))
-			continue
-		}
-		msg.Subject(fmt.Sprintf("New release %s for %s", n.Tag, n.Repo))
-		msg.SetBodyString(mail.TypeTextHTML, body)
-
-		if err := m.client.Send(msg); err != nil {
+		if err := m.sendNotification(&n); err != nil {
 			m.log.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "tag", n.Tag, "error", err)
-			errs = append(errs, fmt.Errorf("send email to %s: %w", n.To, err))
+			errs = append(errs, err)
 		}
 	}
 
 	return errors.Join(errs...)
+}
+
+func (m *Mailer) sendNotification(n *domain.ReleaseNotification) error {
+	body, err := renderTemplate(releaseTemplate, map[string]string{
+		"Repo":           n.Repo,
+		"Tag":            n.Tag,
+		"ReleaseURL":     n.ReleaseURL,
+		"UnsubscribeURL": n.UnsubscribeURL,
+	})
+	if err != nil {
+		return fmt.Errorf("render email for %s: %w", n.To, err)
+	}
+
+	msg := mail.NewMsg()
+	if err := msg.From(m.fromEmail); err != nil {
+		return fmt.Errorf("set from for %s: %w", n.To, err)
+	}
+	if err := msg.To(n.To); err != nil {
+		return fmt.Errorf("set to for %s: %w", n.To, err)
+	}
+	msg.Subject(fmt.Sprintf("New release %s for %s", n.Tag, n.Repo))
+	msg.SetBodyString(mail.TypeTextHTML, body)
+
+	if err := m.client.Send(msg); err != nil {
+		return fmt.Errorf("send email to %s: %w", n.To, err)
+	}
+
+	return nil
 }
 
 func renderTemplate(tmpl *template.Template, data map[string]string) (string, error) {

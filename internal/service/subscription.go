@@ -10,6 +10,7 @@ import (
 	"net/mail"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/metrics"
 )
 
 // 32 random bytes encoded as 64-character hex string
@@ -67,7 +68,11 @@ func NewSubscriptionService(
 	}
 }
 
-func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) error {
+func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) (err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("subscribe", metrics.ResultLabel(err)).Inc()
+	}()
+
 	if _, err := mail.ParseAddress(email); err != nil {
 		return domain.ErrInvalidEmail
 	}
@@ -159,7 +164,11 @@ func (s *SubscriptionService) createSubscription(
 	return confirmToken, nil
 }
 
-func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
+func (s *SubscriptionService) Confirm(ctx context.Context, token string) (err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("confirm", metrics.ResultLabel(err)).Inc()
+	}()
+
 	if err := s.subs.Confirm(ctx, token); err != nil {
 		return err
 	}
@@ -167,7 +176,11 @@ func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
 	return nil
 }
 
-func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) error {
+func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) (err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("unsubscribe", metrics.ResultLabel(err)).Inc()
+	}()
+
 	if err := s.subs.Delete(ctx, token); err != nil {
 		return err
 	}
@@ -179,8 +192,15 @@ func (s *SubscriptionService) Shutdown() {
 	s.mailer.Shutdown()
 }
 
-func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
-	if _, err := mail.ParseAddress(email); err != nil {
+func (s *SubscriptionService) GetByEmail(
+	ctx context.Context,
+	email string,
+) (views []*domain.SubscriptionView, err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("list", metrics.ResultLabel(err)).Inc()
+	}()
+
+	if _, parseErr := mail.ParseAddress(email); parseErr != nil {
 		return nil, domain.ErrInvalidEmail
 	}
 

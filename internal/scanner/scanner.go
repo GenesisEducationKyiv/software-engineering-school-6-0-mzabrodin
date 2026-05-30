@@ -88,6 +88,7 @@ func (s *Scanner) scan(ctx context.Context) {
 	repos, err := s.repos.GetAllWithSubscriptions(ctx)
 	if err != nil {
 		s.log.Error("failed to get repositories", "error", err)
+		metrics.ScannerErrorsTotal.WithLabelValues("fetch_repos").Inc()
 		return
 	}
 
@@ -96,6 +97,7 @@ func (s *Scanner) scan(ctx context.Context) {
 	for _, repo := range repos {
 		if err := s.checkRepo(ctx, repo); err != nil {
 			s.log.Error("failed to check repository", "repo", repo.Name, "error", err)
+			metrics.ScannerErrorsTotal.WithLabelValues("check_repo").Inc()
 		}
 	}
 }
