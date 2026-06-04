@@ -15,8 +15,6 @@ import (
 	"github-release-notifier/internal/domain"
 )
 
-var ctx = context.Background()
-
 func newTestClient(serverURL, token string) *Client {
 	return &Client{
 		http:    &http.Client{Timeout: 5 * time.Second},
@@ -106,7 +104,7 @@ func (s *ClientSuite) TestRepoExists_StatusCases() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			c := statusServer(s.T(), tc.status)
-			exists, err := c.RepoExists(ctx, "owner", "repo")
+			exists, err := c.RepoExists(s.T().Context(), "owner", "repo")
 			switch {
 			case tc.wantErrIs != nil:
 				s.ErrorIs(err, tc.wantErrIs)
@@ -128,7 +126,7 @@ func (s *ClientSuite) TestRepoExists_RateLimited_429() {
 	s.T().Cleanup(srv.Close)
 
 	c := newTestClient(srv.URL, "")
-	_, err := c.RepoExists(ctx, "owner", "repo")
+	_, err := c.RepoExists(s.T().Context(), "owner", "repo")
 	s.ErrorIs(err, domain.ErrRateLimited)
 }
 
@@ -141,11 +139,11 @@ func (s *ClientSuite) TestRateLimited_403WithHeader() {
 	c := newTestClient(srv.URL, "")
 
 	s.Run("RepoExists", func() {
-		_, err := c.RepoExists(ctx, "owner", "repo")
+		_, err := c.RepoExists(s.T().Context(), "owner", "repo")
 		s.ErrorIs(err, domain.ErrRateLimited)
 	})
 	s.Run("GetLatestRelease", func() {
-		_, err := c.GetLatestRelease(ctx, "owner", "repo")
+		_, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 		s.ErrorIs(err, domain.ErrRateLimited)
 	})
 }
@@ -159,7 +157,7 @@ func (s *ClientSuite) TestRepoExists_SetsAuthHeader() {
 	s.T().Cleanup(srv.Close)
 
 	c := newTestClient(srv.URL, "mytoken")
-	_, _ = c.RepoExists(ctx, "owner", "repo")
+	_, _ = c.RepoExists(s.T().Context(), "owner", "repo")
 	s.Equal("Bearer mytoken", gotAuth)
 }
 
@@ -174,7 +172,7 @@ func (s *ClientSuite) TestRepoExists_CacheHit_True() {
 	mc.On("Get", mock.Anything, keyPrefixExists+"owner/repo").Return("1", true, nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
-	exists, err := c.RepoExists(ctx, "owner", "repo")
+	exists, err := c.RepoExists(s.T().Context(), "owner", "repo")
 	s.Require().NoError(err)
 	s.True(exists)
 }
@@ -190,7 +188,7 @@ func (s *ClientSuite) TestRepoExists_CacheHit_False() {
 	mc.On("Get", mock.Anything, keyPrefixExists+"owner/repo").Return("0", true, nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
-	exists, err := c.RepoExists(ctx, "owner", "repo")
+	exists, err := c.RepoExists(s.T().Context(), "owner", "repo")
 	s.Require().NoError(err)
 	s.False(exists)
 }
@@ -214,7 +212,7 @@ func (s *ClientSuite) TestRepoExists_CachePopulation() {
 				Run(func(args mock.Arguments) { capturedVal = args.String(2) }).
 				Return(nil)
 			c := statusServer(s.T(), tc.status).WithCache(mc, time.Minute)
-			_, _ = c.RepoExists(ctx, "owner", "repo")
+			_, _ = c.RepoExists(s.T().Context(), "owner", "repo")
 			s.Equal(tc.wantCached, capturedVal)
 		})
 	}
@@ -224,7 +222,7 @@ func (s *ClientSuite) TestRepoExists_CacheGetError_FallsThrough() {
 	c, calls := failGetClient(s.T(), func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	exists, err := c.RepoExists(ctx, "owner", "repo")
+	exists, err := c.RepoExists(s.T().Context(), "owner", "repo")
 	s.Require().NoError(err)
 	s.True(exists)
 	s.Equal(1, *calls)
@@ -238,7 +236,7 @@ func (s *ClientSuite) TestRepoExists_CacheSetError_StillReturnsResult() {
 		Return(errors.New("cache set error"))
 
 	c := statusServer(s.T(), http.StatusOK).WithCache(mc, time.Minute)
-	exists, err := c.RepoExists(ctx, "owner", "repo")
+	exists, err := c.RepoExists(s.T().Context(), "owner", "repo")
 	s.Require().NoError(err)
 	s.True(exists)
 }
@@ -266,7 +264,7 @@ func (s *ClientSuite) TestGetLatestRelease_StatusCases() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			c := responseServer(s.T(), tc.status, tc.body)
-			rel, err := c.GetLatestRelease(ctx, "owner", "repo")
+			rel, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 			switch {
 			case tc.wantTag != "":
 				s.Require().NoError(err)
@@ -282,7 +280,7 @@ func (s *ClientSuite) TestGetLatestRelease_StatusCases() {
 
 func (s *ClientSuite) TestGetLatestRelease_InvalidJSON() {
 	c := responseServer(s.T(), http.StatusOK, "not json")
-	_, err := c.GetLatestRelease(ctx, "owner", "repo")
+	_, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 	s.Error(err)
 }
 
@@ -298,7 +296,7 @@ func (s *ClientSuite) TestGetLatestRelease_CacheHit() {
 		Return(`{"TagName":"v2.0.0","HTMLURL":"https://example.com"}`, true, nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
-	rel, err := c.GetLatestRelease(ctx, "owner", "repo")
+	rel, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 
 	s.Require().NoError(err)
 	s.Equal("v2.0.0", rel.TagName)
@@ -312,7 +310,7 @@ func (s *ClientSuite) TestGetLatestRelease_CacheMiss_PopulatesCache() {
 	mc.On("Set", mock.Anything, keyPrefixRelease+"owner/repo", mock.Anything, mock.Anything).Return(nil)
 
 	c := responseServer(s.T(), http.StatusOK, body).WithCache(mc, time.Minute)
-	_, _ = c.GetLatestRelease(ctx, "owner", "repo")
+	_, _ = c.GetLatestRelease(s.T().Context(), "owner", "repo")
 }
 
 func (s *ClientSuite) TestGetLatestRelease_NoRelease_CachesSentinel() {
@@ -331,10 +329,10 @@ func (s *ClientSuite) TestGetLatestRelease_NoRelease_CachesSentinel() {
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 
-	_, err := c.GetLatestRelease(ctx, "owner", "repo")
+	_, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 	s.Require().ErrorIs(err, domain.ErrNoRelease)
 
-	_, err = c.GetLatestRelease(ctx, "owner", "repo")
+	_, err = c.GetLatestRelease(s.T().Context(), "owner", "repo")
 	s.Require().ErrorIs(err, domain.ErrNoRelease)
 
 	s.Equal(1, calls)
@@ -360,7 +358,7 @@ func (s *ClientSuite) TestGetLatestRelease_CacheCorruptedJSON_FallsThrough() {
 		Return(nil)
 
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
-	rel, err := c.GetLatestRelease(ctx, "owner", "repo")
+	rel, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 
 	s.Require().NoError(err)
 	s.Equal("v1.0.0", rel.TagName)
@@ -375,7 +373,7 @@ func (s *ClientSuite) TestGetLatestRelease_CacheGetError_FallsThrough() {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
 	})
-	rel, err := c.GetLatestRelease(ctx, "owner", "repo")
+	rel, err := c.GetLatestRelease(s.T().Context(), "owner", "repo")
 
 	s.Require().NoError(err)
 	s.Equal("v1.0.0", rel.TagName)

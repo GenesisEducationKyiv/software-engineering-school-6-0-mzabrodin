@@ -64,7 +64,7 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 // truncateAll removes all rows between tests so each test starts with a clean DB.
 func truncateAll(t *testing.T) {
 	t.Helper()
-	_, err := testPool.Exec(context.Background(), "TRUNCATE subscriptions, repositories CASCADE")
+	_, err := testPool.Exec(t.Context(), "TRUNCATE subscriptions, repositories CASCADE")
 	require.NoError(t, err)
 }
 
@@ -77,7 +77,7 @@ func doRequest(t *testing.T, method, url, body, apiKey string) *http.Response {
 		bodyReader = strings.NewReader(body)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, url, bodyReader)
+	req, err := http.NewRequestWithContext(t.Context(), method, url, bodyReader)
 	require.NoError(t, err)
 
 	if body != "" {
@@ -107,7 +107,7 @@ func subscribeAndGetTokens(t *testing.T, srv *httptest.Server) (confirmToken, un
 	resp := doRequest(t, http.MethodPost, srv.URL+"/api/subscribe", body, testAPIKey)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	row := testPool.QueryRow(context.Background(),
+	row := testPool.QueryRow(t.Context(),
 		"SELECT confirm_token, unsubscribe_token FROM subscriptions WHERE email=$1", testEmail)
 	require.NoError(t, row.Scan(&confirmToken, &unsubToken))
 

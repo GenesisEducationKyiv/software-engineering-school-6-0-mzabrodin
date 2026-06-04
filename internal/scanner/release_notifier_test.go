@@ -12,8 +12,6 @@ import (
 	"github-release-notifier/internal/scanner"
 )
 
-var ctx = context.Background()
-
 type mockMailer struct{ mock.Mock }
 
 func (m *mockMailer) SendReleaseNotifications(_ context.Context, ns []domain.ReleaseNotification) error {
@@ -56,7 +54,7 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 	defer m.AssertExpectations(s.T())
 
 	n := scanner.NewReleaseNotifier(m, u)
-	s.Require().NoError(n.Notify(ctx, subs, repo, release))
+	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
 
 	s.Require().Len(capturedNotifications, 2)
 	s.Equal("a@example.com", capturedNotifications[0].To)
@@ -85,7 +83,7 @@ func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
 	m.On("SendReleaseNotifications", mock.Anything).Return(nil)
 
 	n := scanner.NewReleaseNotifier(m, u)
-	s.Require().NoError(n.Notify(ctx, subs, repo, release))
+	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
 }
 
 func (s *ReleaseNotifierSuite) TestMailerError_Propagated() {
@@ -101,5 +99,5 @@ func (s *ReleaseNotifierSuite) TestMailerError_Propagated() {
 	defer m.AssertExpectations(s.T())
 
 	n := scanner.NewReleaseNotifier(m, u)
-	s.Error(n.Notify(ctx, subs, repo, release))
+	s.Error(n.Notify(s.T().Context(), subs, repo, release))
 }

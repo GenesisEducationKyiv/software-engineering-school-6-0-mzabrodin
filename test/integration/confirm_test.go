@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +31,7 @@ func (s *ConfirmSuite) TestSuccess() {
 	s.Equal(http.StatusOK, resp.StatusCode)
 
 	var confirmed bool
-	row := testPool.QueryRow(context.Background(),
+	row := testPool.QueryRow(s.T().Context(),
 		"SELECT confirmed FROM subscriptions WHERE confirm_token=$1", confirmToken)
 	s.Require().NoError(row.Scan(&confirmed))
 	s.True(confirmed, "subscription should be marked confirmed after /api/confirm")
