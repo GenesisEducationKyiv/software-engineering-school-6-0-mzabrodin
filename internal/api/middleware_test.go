@@ -1,7 +1,6 @@
 package api_test
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,8 +14,9 @@ func okHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newRequest() *http.Request {
-	return httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+func newRequest(t *testing.T) *http.Request {
+	t.Helper()
+	return httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 }
 
 type KeyAuthSuite struct {
@@ -43,7 +43,7 @@ func (s *KeyAuthSuite) TestKeyAuth() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			handler := api.KeyAuth(tc.key)(http.HandlerFunc(okHandler))
-			r := newRequest()
+			r := newRequest(s.T())
 			if tc.headerKey != "" {
 				r.Header.Set("X-API-Key", tc.headerKey)
 			}

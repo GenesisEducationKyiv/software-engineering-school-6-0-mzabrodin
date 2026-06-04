@@ -1,7 +1,6 @@
 package service_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,8 +11,6 @@ import (
 	"github-release-notifier/internal/domain"
 	"github-release-notifier/internal/service"
 )
-
-var ctx = context.Background()
 
 func newSvc(
 	repos *mockRepoRepository,
@@ -151,7 +148,7 @@ func (s *SubscriptionServiceSuite) TestSubscribe() {
 			}
 
 			svc := newSvc(repos, subs, gh, mailer)
-			err := svc.Subscribe(ctx, tc.email, tc.repo)
+			err := svc.Subscribe(s.T().Context(), tc.email, tc.repo)
 			switch {
 			case tc.wantErrIs != nil:
 				s.ErrorIs(err, tc.wantErrIs)
@@ -183,7 +180,7 @@ func (s *SubscriptionServiceSuite) TestConfirm() {
 			defer subs.AssertExpectations(s.T())
 
 			svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-			err := svc.Confirm(ctx, "sometoken")
+			err := svc.Confirm(s.T().Context(), "sometoken")
 			if tc.wantErrIs != nil {
 				s.ErrorIs(err, tc.wantErrIs)
 			} else {
@@ -209,7 +206,7 @@ func (s *SubscriptionServiceSuite) TestUnsubscribe() {
 			defer subs.AssertExpectations(s.T())
 
 			svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-			err := svc.Unsubscribe(ctx, "sometoken")
+			err := svc.Unsubscribe(s.T().Context(), "sometoken")
 			if tc.wantErrIs != nil {
 				s.ErrorIs(err, tc.wantErrIs)
 			} else {
@@ -263,7 +260,7 @@ func (s *SubscriptionServiceSuite) TestGetByEmail() {
 			}
 
 			svc := newSvc(&mockRepoRepository{}, subs, &mockGitHub{}, &mockMailer{})
-			result, err := svc.GetByEmail(ctx, tc.email)
+			result, err := svc.GetByEmail(s.T().Context(), tc.email)
 			switch {
 			case tc.wantErrIs != nil:
 				s.ErrorIs(err, tc.wantErrIs)

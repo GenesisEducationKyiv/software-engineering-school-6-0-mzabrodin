@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +31,7 @@ func (s *SubscribeSuite) TestSuccess() {
 
 	var email, repo string
 	var confirmed bool
-	row := testPool.QueryRow(context.Background(), `
+	row := testPool.QueryRow(s.T().Context(), `
 		SELECT s.email, r.name, s.confirmed
 		FROM subscriptions s
 		JOIN repositories r ON r.id = s.repository_id

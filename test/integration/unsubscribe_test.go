@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +31,7 @@ func (s *UnsubscribeSuite) TestSuccess() {
 	s.Equal(http.StatusOK, resp.StatusCode)
 
 	var count int
-	row := testPool.QueryRow(context.Background(),
+	row := testPool.QueryRow(s.T().Context(),
 		"SELECT COUNT(*) FROM subscriptions WHERE unsubscribe_token=$1", unsubToken)
 	s.Require().NoError(row.Scan(&count))
 	s.Zero(count, "subscription should be deleted after /api/unsubscribe")

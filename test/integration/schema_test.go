@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -25,7 +24,7 @@ func (s *SchemaSuite) SetupTest() {
 func (s *SchemaSuite) TestTablesExist() {
 	for _, table := range []string{"repositories", "subscriptions"} {
 		var exists bool
-		row := testPool.QueryRow(context.Background(),
+		row := testPool.QueryRow(s.T().Context(),
 			"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name=$1)", table)
 		s.Require().NoError(row.Scan(&exists))
 		s.True(exists, "table %q should exist", table)
@@ -34,17 +33,17 @@ func (s *SchemaSuite) TestTablesExist() {
 
 func (s *SchemaSuite) TestUniqueConstraint_EmailRepository() {
 	repoID := uuid.New()
-	_, err := testPool.Exec(context.Background(),
+	_, err := testPool.Exec(s.T().Context(),
 		"INSERT INTO repositories (id, name) VALUES ($1, $2)", repoID, testRepoName)
 	s.Require().NoError(err)
 
-	_, err = testPool.Exec(context.Background(),
+	_, err = testPool.Exec(s.T().Context(),
 		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
 		 VALUES ($1, $2, $3, $4)`,
 		repoID, testEmail, "token-a"+uuid.NewString(), "unsub-a"+uuid.NewString())
 	s.Require().NoError(err)
 
-	_, err = testPool.Exec(context.Background(),
+	_, err = testPool.Exec(s.T().Context(),
 		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
 		 VALUES ($1, $2, $3, $4)`,
 		repoID, testEmail, "token-b"+uuid.NewString(), "unsub-b"+uuid.NewString())
@@ -52,7 +51,7 @@ func (s *SchemaSuite) TestUniqueConstraint_EmailRepository() {
 }
 
 func (s *SchemaSuite) TestForeignKey_RepositoryID() {
-	_, err := testPool.Exec(context.Background(),
+	_, err := testPool.Exec(s.T().Context(),
 		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
 		 VALUES ($1, $2, $3, $4)`,
 		uuid.New(), testEmail, uuid.NewString(), uuid.NewString())
@@ -61,22 +60,22 @@ func (s *SchemaSuite) TestForeignKey_RepositoryID() {
 
 func (s *SchemaSuite) TestCascadeDelete() {
 	repoID := uuid.New()
-	_, err := testPool.Exec(context.Background(),
+	_, err := testPool.Exec(s.T().Context(),
 		"INSERT INTO repositories (id, name) VALUES ($1, $2)", repoID, testRepoName)
 	s.Require().NoError(err)
 
-	_, err = testPool.Exec(context.Background(),
+	_, err = testPool.Exec(s.T().Context(),
 		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
 		 VALUES ($1, $2, $3, $4)`,
 		repoID, testEmail, uuid.NewString(), uuid.NewString())
 	s.Require().NoError(err)
 
-	_, err = testPool.Exec(context.Background(),
+	_, err = testPool.Exec(s.T().Context(),
 		"DELETE FROM repositories WHERE id=$1", repoID)
 	s.Require().NoError(err)
 
 	var count int
-	row := testPool.QueryRow(context.Background(),
+	row := testPool.QueryRow(s.T().Context(),
 		"SELECT COUNT(*) FROM subscriptions WHERE repository_id=$1", repoID)
 	s.Require().NoError(row.Scan(&count))
 	s.Zero(count, "subscriptions should be deleted when repository is deleted")
