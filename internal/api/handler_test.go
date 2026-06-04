@@ -80,7 +80,7 @@ const validToken = "7453d94668d17cf6adfc2b37045347fa14907a007786ed791865d1754b57
 func (s *HandlerSuite) TestSubscribe() {
 	cases := []struct {
 		name       string
-		body       any
+		body       map[string]string
 		rawBody    string
 		setupMock  func(*mockService)
 		wantStatus int
