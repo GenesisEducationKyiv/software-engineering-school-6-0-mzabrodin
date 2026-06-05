@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log/slog"
+	"fmt"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -26,11 +26,11 @@ type Config struct {
 	APIKey       string `envconfig:"API_KEY"`
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 	var cfg Config
 	if err := envconfig.Process("", &cfg); err != nil {
-		slog.Error("failed to load config", "error", err)
+		return nil, fmt.Errorf("process config: %w", err)
 	}
 
-	return &cfg
+	return &cfg, nil
 }
