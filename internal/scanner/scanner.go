@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/logging"
 	"github-release-notifier/internal/metrics"
 )
 
@@ -77,7 +78,8 @@ func (s *Scanner) Start(ctx context.Context) {
 }
 
 func (s *Scanner) scan(ctx context.Context) {
-	s.log.Debug("scanning repositories for new releases")
+	ctx = logging.WithScanID(ctx, uuid.NewString())
+	s.log.DebugContext(ctx, "scanning repositories for new releases")
 
 	start := time.Now()
 	defer func() {
@@ -87,16 +89,16 @@ func (s *Scanner) scan(ctx context.Context) {
 
 	repos, err := s.repos.GetAllWithSubscriptions(ctx)
 	if err != nil {
-		s.log.Error("failed to get repositories", "error", err)
+		s.log.ErrorContext(ctx, "failed to get repositories", "error", err)
 		metrics.ScannerErrorsTotal.WithLabelValues("fetch_repos").Inc()
 		return
 	}
 
-	s.log.Debug("found repos to scan", "count", len(repos))
+	s.log.DebugContext(ctx, "found repos to scan", "count", len(repos))
 
 	for _, repo := range repos {
 		if err := s.checkRepo(ctx, repo); err != nil {
-			s.log.Error("failed to check repository", "repo", repo.Name, "error", err)
+			s.log.ErrorContext(ctx, "failed to check repository", "repo", repo.Name, "error", err)
 			metrics.ScannerErrorsTotal.WithLabelValues("check_repo").Inc()
 		}
 	}
@@ -121,7 +123,7 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 		return nil
 	}
 
-	s.log.Info("new release detected", "repo", repo.Name, "tag", release.TagName)
+	s.log.InfoContext(ctx, "new release detected", "repo", repo.Name, "tag", release.TagName)
 
 	return s.notify(ctx, repo, release)
 }
@@ -129,22 +131,22 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) (*domain.Release, error) {
 	release, err := s.github.GetLatestRelease(ctx, owner, name)
 	if err != nil {
-		return nil, s.handleReleaseError(err, repoName)
+		return nil, s.handleReleaseError(ctx, err, repoName)
 	}
 
 	return release, nil
 }
 
-func (s *Scanner) handleReleaseError(err error, repoName string) error {
+func (s *Scanner) handleReleaseError(ctx context.Context, err error, repoName string) error {
 	switch {
 	case errors.Is(err, domain.ErrUnauthorized):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
-		s.log.Warn("GitHub token is invalid or missing, skipping scan", "repo", repoName)
+		s.log.WarnContext(ctx, "GitHub token is invalid or missing, skipping scan", "repo", repoName)
 		return nil
 
 	case errors.Is(err, domain.ErrRateLimited):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
-		s.log.Warn("rate limited by GitHub, skipping scan", "repo", repoName)
+		s.log.WarnContext(ctx, "rate limited by GitHub, skipping scan", "repo", repoName)
 		return nil
 
 	case errors.Is(err, domain.ErrNoRelease):
@@ -179,7 +181,7 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 	}
 
 	metrics.NotificationsSentTotal.Add(float64(len(subs)))
-	s.log.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(subs))
+	s.log.InfoContext(ctx, "notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(subs))
 
 	return nil
 }

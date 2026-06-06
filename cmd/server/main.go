@@ -16,6 +16,7 @@ import (
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/db"
 	"github-release-notifier/internal/github"
+	"github-release-notifier/internal/logging"
 	"github-release-notifier/internal/mailer"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/scanner"
@@ -42,7 +43,11 @@ func run(log *slog.Logger) error {
 
 	cfg := config.Load(log)
 
-	log = slog.New(api.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()})))
+	log = slog.New(
+		logging.NewRequestIDHandler(
+			logging.NewScanIDHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()})),
+		),
+	)
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

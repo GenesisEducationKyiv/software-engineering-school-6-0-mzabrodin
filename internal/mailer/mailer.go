@@ -104,7 +104,7 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 	}
 	defer func() {
 		if err := m.client.Close(); err != nil {
-			m.log.Error("failed to close SMTP connection", "error", err)
+			m.log.ErrorContext(ctx, "failed to close SMTP connection", "error", err)
 		}
 	}()
 
@@ -117,7 +117,18 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 		}
 
 		if err := m.sendNotification(&n); err != nil {
-			m.log.Error("failed to send release notification", "to", n.To, "repo", n.Repo, "tag", n.Tag, "error", err)
+			m.log.ErrorContext(
+				ctx,
+				"failed to send release notification",
+				"to",
+				n.To,
+				"repo",
+				n.Repo,
+				"tag",
+				n.Tag,
+				"error",
+				err,
+			)
 			errs = append(errs, err)
 		}
 	}
