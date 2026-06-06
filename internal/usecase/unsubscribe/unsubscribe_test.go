@@ -1,9 +1,6 @@
 package unsubscribe_test
 
 import (
-	"context"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -12,14 +9,6 @@ import (
 	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/usecase/unsubscribe"
 )
-
-var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
-
-type mockSubRepository struct{ mock.Mock }
-
-func (m *mockSubRepository) Delete(ctx context.Context, token string) error {
-	return m.Called(ctx, token).Error(0)
-}
 
 type UnsubscribeSuite struct {
 	suite.Suite
