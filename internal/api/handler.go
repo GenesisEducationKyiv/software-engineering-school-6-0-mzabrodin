@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -19,7 +19,7 @@ type subscriptionService interface {
 	Subscribe(ctx context.Context, email, repo string) error
 	Confirm(ctx context.Context, token string) error
 	Unsubscribe(ctx context.Context, token string) error
-	GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error)
+	GetByEmail(ctx context.Context, email string) ([]*entity.SubscriptionView, error)
 }
 
 type Handler struct {
@@ -48,16 +48,16 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.Subscribe(r.Context(), req.Email, req.Repo)
 	switch {
-	case errors.Is(err, domain.ErrInvalidEmail):
+	case errors.Is(err, entity.ErrInvalidEmail):
 		jsonErr(w, "invalid email format", http.StatusBadRequest)
 
-	case errors.Is(err, domain.ErrInvalidRepo):
+	case errors.Is(err, entity.ErrInvalidRepo):
 		jsonErr(w, "invalid repo format, expected owner/repo", http.StatusBadRequest)
 
-	case errors.Is(err, domain.ErrRepoNotFound):
+	case errors.Is(err, entity.ErrRepoNotFound):
 		jsonErr(w, "repository not found on GitHub", http.StatusNotFound)
 
-	case errors.Is(err, domain.ErrAlreadyExists):
+	case errors.Is(err, entity.ErrAlreadyExists):
 		jsonErr(w, "email already subscribed to this repository", http.StatusConflict)
 
 	case err != nil:
@@ -78,7 +78,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.Confirm(r.Context(), token)
 	switch {
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, entity.ErrNotFound):
 		jsonErr(w, "token not found", http.StatusNotFound)
 
 	case err != nil:
@@ -99,7 +99,7 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.Unsubscribe(r.Context(), token)
 	switch {
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, entity.ErrNotFound):
 		jsonErr(w, "token not found", http.StatusNotFound)
 
 	case err != nil:
@@ -120,7 +120,7 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 	subs, err := h.service.GetByEmail(r.Context(), email)
 	switch {
-	case errors.Is(err, domain.ErrInvalidEmail):
+	case errors.Is(err, entity.ErrInvalidEmail):
 		jsonErr(w, "invalid email format", http.StatusBadRequest)
 
 	case err != nil:

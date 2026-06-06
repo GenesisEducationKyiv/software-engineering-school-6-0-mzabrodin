@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/metrics"
 )
 
@@ -100,7 +100,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (exists boo
 	return true, nil
 }
 
-func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (release *domain.Release, err error) {
+func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (release *entity.Release, err error) {
 	start := time.Now()
 	defer func() {
 		metrics.GitHubAPIRequestsTotal.WithLabelValues("latest_release", metrics.ResultLabel(err)).Inc()
@@ -122,7 +122,7 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (rele
 
 	if status == http.StatusNotFound {
 		c.cacheString(ctx, key, cacheNoRelease)
-		return nil, domain.ErrNoRelease
+		return nil, entity.ErrNoRelease
 	}
 
 	if status != http.StatusOK {
@@ -132,7 +132,7 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (rele
 	return c.parseAndCacheRelease(ctx, key, body)
 }
 
-func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Release, bool, error) {
+func (c *Client) getCachedRelease(ctx context.Context, key string) (*entity.Release, bool, error) {
 	val, found, err := c.cache.Get(ctx, key)
 	if err != nil {
 		c.log.WarnContext(ctx, "cache get failed, falling through to GitHub API", "key", key, "error", err)
@@ -144,10 +144,10 @@ func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Rele
 	}
 
 	if val == cacheNoRelease {
-		return nil, true, domain.ErrNoRelease
+		return nil, true, entity.ErrNoRelease
 	}
 
-	var r domain.Release
+	var r entity.Release
 	if err := json.Unmarshal([]byte(val), &r); err != nil {
 		c.log.WarnContext(ctx, "failed to unmarshal cached release", "key", key, "error", err)
 		return nil, false, nil
@@ -156,13 +156,13 @@ func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Rele
 	return &r, true, nil
 }
 
-func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []byte) (*domain.Release, error) {
+func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []byte) (*entity.Release, error) {
 	var r githubRelease
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("decode release: %w", err)
 	}
 
-	release := &domain.Release{TagName: r.TagName, HTMLURL: r.HTMLURL}
+	release := &entity.Release{TagName: r.TagName, HTMLURL: r.HTMLURL}
 
 	data, err := json.Marshal(release)
 	if err != nil {
@@ -215,13 +215,13 @@ func (c *Client) do(ctx context.Context, url string) (statusCode int, responseDa
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return 0, nil, domain.ErrUnauthorized
+		return 0, nil, entity.ErrUnauthorized
 	}
 
 	if isRateLimited(resp) {
 		resource := resp.Header.Get("X-RateLimit-Resource")
 		retryAfter := parseRetryAfter(resp)
-		return 0, nil, fmt.Errorf("%w: resource=%s, retry after %s", domain.ErrRateLimited, resource, retryAfter)
+		return 0, nil, fmt.Errorf("%w: resource=%s, retry after %s", entity.ErrRateLimited, resource, retryAfter)
 	}
 
 	return resp.StatusCode, body, nil

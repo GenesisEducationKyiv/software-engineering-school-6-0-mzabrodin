@@ -7,32 +7,32 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type mockRepoRepository struct{ mock.Mock }
 
-func (m *mockRepoRepository) Create(ctx context.Context, repo *domain.Repository) error {
+func (m *mockRepoRepository) Create(ctx context.Context, repo *entity.Repository) error {
 	return m.Called(ctx, repo).Error(0)
 }
 
-func (m *mockRepoRepository) GetByName(ctx context.Context, name string) (*domain.Repository, error) {
+func (m *mockRepoRepository) GetByName(ctx context.Context, name string) (*entity.Repository, error) {
 	args := m.Called(ctx, name)
-	v, _ := args.Get(0).(*domain.Repository)
+	v, _ := args.Get(0).(*entity.Repository)
 	return v, args.Error(1)
 }
 
 type mockSubRepository struct{ mock.Mock }
 
-func (m *mockSubRepository) Create(ctx context.Context, sub *domain.Subscription) error {
+func (m *mockSubRepository) Create(ctx context.Context, sub *entity.Subscription) error {
 	return m.Called(ctx, sub).Error(0)
 }
 
-func (m *mockSubRepository) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
+func (m *mockSubRepository) GetByEmail(ctx context.Context, email string) ([]*entity.SubscriptionView, error) {
 	args := m.Called(ctx, email)
-	v, _ := args.Get(0).([]*domain.SubscriptionView)
+	v, _ := args.Get(0).([]*entity.SubscriptionView)
 	return v, args.Error(1)
 }
 

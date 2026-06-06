@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/api"
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 type mockService struct {
@@ -36,9 +36,9 @@ func (m *mockService) Unsubscribe(ctx context.Context, token string) error {
 	return m.Called(ctx, token).Error(0)
 }
 
-func (m *mockService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
+func (m *mockService) GetByEmail(ctx context.Context, email string) ([]*entity.SubscriptionView, error) {
 	args := m.Called(ctx, email)
-	v, _ := args.Get(0).([]*domain.SubscriptionView)
+	v, _ := args.Get(0).([]*entity.SubscriptionView)
 	return v, args.Error(1)
 }
 
@@ -114,7 +114,7 @@ func (s *HandlerSuite) TestSubscribe() {
 			name: "invalid email",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
 			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(domain.ErrInvalidEmail)
+				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrInvalidEmail)
 			},
 			wantStatus: http.StatusBadRequest,
 		},
@@ -122,7 +122,7 @@ func (s *HandlerSuite) TestSubscribe() {
 			name: "invalid repo",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
 			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(domain.ErrInvalidRepo)
+				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrInvalidRepo)
 			},
 			wantStatus: http.StatusBadRequest,
 		},
@@ -130,7 +130,7 @@ func (s *HandlerSuite) TestSubscribe() {
 			name: "repo not found",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
 			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(domain.ErrRepoNotFound)
+				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrRepoNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
@@ -138,7 +138,7 @@ func (s *HandlerSuite) TestSubscribe() {
 			name: "already exists",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
 			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(domain.ErrAlreadyExists)
+				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrAlreadyExists)
 			},
 			wantStatus: http.StatusConflict,
 		},
@@ -197,7 +197,7 @@ func (s *HandlerSuite) TestConfirm() {
 			name:  "not found",
 			token: validToken,
 			setupMock: func(svc *mockService) {
-				svc.On("Confirm", mock.Anything, validToken).Return(domain.ErrNotFound)
+				svc.On("Confirm", mock.Anything, validToken).Return(entity.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
@@ -249,7 +249,7 @@ func (s *HandlerSuite) TestUnsubscribe() {
 			name:  "not found",
 			token: validToken,
 			setupMock: func(svc *mockService) {
-				svc.On("Unsubscribe", mock.Anything, validToken).Return(domain.ErrNotFound)
+				svc.On("Unsubscribe", mock.Anything, validToken).Return(entity.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
@@ -296,7 +296,7 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 			name:  "returns subscriptions",
 			email: "user@example.com",
 			setupMock: func(svc *mockService) {
-				views := []*domain.SubscriptionView{
+				views := []*entity.SubscriptionView{
 					{Email: "user@example.com", Repo: "owner/repo", Confirmed: true},
 				}
 				svc.On("GetByEmail", mock.Anything, "user@example.com").Return(views, nil)
@@ -314,7 +314,7 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 			email: "notanemail",
 			setupMock: func(svc *mockService) {
 				svc.On("GetByEmail", mock.Anything, "notanemail").
-					Return([]*domain.SubscriptionView{}, domain.ErrInvalidEmail)
+					Return([]*entity.SubscriptionView{}, entity.ErrInvalidEmail)
 			},
 			wantStatus: http.StatusBadRequest,
 		},
@@ -323,7 +323,7 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 			email: "user@example.com",
 			setupMock: func(svc *mockService) {
 				svc.On("GetByEmail", mock.Anything, "user@example.com").
-					Return([]*domain.SubscriptionView{}, assert.AnError)
+					Return([]*entity.SubscriptionView{}, assert.AnError)
 			},
 			wantStatus: http.StatusInternalServerError,
 		},

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/metrics"
 
 	"github.com/wneessen/go-mail"
@@ -88,7 +88,7 @@ func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 	return nil
 }
 
-func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []domain.ReleaseNotification) (err error) {
+func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) (err error) {
 	start := time.Now()
 	defer func() {
 		metrics.EmailSendsTotal.WithLabelValues("notification", metrics.ResultLabel(err)).Inc()
@@ -136,7 +136,7 @@ func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []d
 	return errors.Join(errs...)
 }
 
-func (m *Mailer) sendNotification(n *domain.ReleaseNotification) error {
+func (m *Mailer) sendNotification(n *entity.ReleaseNotification) error {
 	body, err := renderTemplate(releaseTemplate, map[string]string{
 		"Repo":           n.Repo,
 		"Tag":            n.Tag,

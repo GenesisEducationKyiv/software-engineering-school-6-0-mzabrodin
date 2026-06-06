@@ -1,6 +1,6 @@
 package api
 
-import "github-release-notifier/internal/domain"
+import "github-release-notifier/internal/entity"
 
 type SubscribeRequest struct {
 	Email string `json:"email"`
@@ -22,7 +22,7 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func toSubscriptionResponse(view *domain.SubscriptionView) SubscriptionResponse {
+func toSubscriptionResponse(view *entity.SubscriptionView) SubscriptionResponse {
 	return SubscriptionResponse{
 		Email:       view.Email,
 		Repo:        view.Repo,
@@ -31,7 +31,7 @@ func toSubscriptionResponse(view *domain.SubscriptionView) SubscriptionResponse 
 	}
 }
 
-func toSubscriptionResponses(views []*domain.SubscriptionView) []SubscriptionResponse {
+func toSubscriptionResponses(views []*entity.SubscriptionView) []SubscriptionResponse {
 	if views == nil {
 		return []SubscriptionResponse{}
 	}

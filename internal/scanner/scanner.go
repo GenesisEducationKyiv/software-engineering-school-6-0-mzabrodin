@@ -9,26 +9,26 @@ import (
 
 	"github.com/google/uuid"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/logging"
 	"github-release-notifier/internal/metrics"
 )
 
 type notifier interface {
-	Notify(ctx context.Context, subs []*domain.Subscription, repo *domain.Repository, release *domain.Release) error
+	Notify(ctx context.Context, subs []*entity.Subscription, repo *entity.Repository, release *entity.Release) error
 }
 
 type gitHubClient interface {
-	GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error)
+	GetLatestRelease(ctx context.Context, owner, repo string) (*entity.Release, error)
 }
 
 type gitHubRepoRepository interface {
-	GetAllWithSubscriptions(ctx context.Context) ([]*domain.Repository, error)
+	GetAllWithSubscriptions(ctx context.Context) ([]*entity.Repository, error)
 	UpdateLastSeenTag(ctx context.Context, name string, tag string) error
 }
 
 type subscriptionRepository interface {
-	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*domain.Subscription, error)
+	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*entity.Subscription, error)
 }
 
 type Scanner struct {
@@ -106,8 +106,8 @@ func (s *Scanner) scan(ctx context.Context) {
 	s.log.InfoContext(ctx, "scan completed", "repos", len(repos), "duration_ms", time.Since(start).Milliseconds())
 }
 
-func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error {
-	owner, name, err := domain.ParseRepo(repo.Name)
+func (s *Scanner) checkRepo(ctx context.Context, repo *entity.Repository) error {
+	owner, name, err := entity.ParseRepo(repo.Name)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 	return s.notify(ctx, repo, release)
 }
 
-func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) (*domain.Release, error) {
+func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) (*entity.Release, error) {
 	release, err := s.github.GetLatestRelease(ctx, owner, name)
 	if err != nil {
 		return nil, s.handleReleaseError(ctx, err, repoName)
@@ -141,17 +141,17 @@ func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) 
 
 func (s *Scanner) handleReleaseError(ctx context.Context, err error, repoName string) error {
 	switch {
-	case errors.Is(err, domain.ErrUnauthorized):
+	case errors.Is(err, entity.ErrUnauthorized):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
 		s.log.WarnContext(ctx, "GitHub token is invalid or missing, skipping scan", "repo", repoName)
 		return nil
 
-	case errors.Is(err, domain.ErrRateLimited):
+	case errors.Is(err, entity.ErrRateLimited):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
 		s.log.WarnContext(ctx, "rate limited by GitHub, skipping scan", "repo", repoName)
 		return nil
 
-	case errors.Is(err, domain.ErrNoRelease):
+	case errors.Is(err, entity.ErrNoRelease):
 		return nil
 
 	default:
@@ -160,7 +160,7 @@ func (s *Scanner) handleReleaseError(ctx context.Context, err error, repoName st
 	}
 }
 
-func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *domain.Release) error {
+func (s *Scanner) notify(ctx context.Context, repo *entity.Repository, release *entity.Release) error {
 	subs, err := s.subs.GetConfirmedByRepoID(ctx, repo.ID)
 	if err != nil {
 		return fmt.Errorf("get subscribers: %w", err)

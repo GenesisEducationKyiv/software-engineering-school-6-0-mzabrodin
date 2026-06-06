@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 type SubscriptionRepository struct {
@@ -21,7 +21,7 @@ func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
 	return &SubscriptionRepository{pool: pool}
 }
 
-func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscription) (err error) {
+func (r *SubscriptionRepository) Create(ctx context.Context, sub *entity.Subscription) (err error) {
 	start := time.Now()
 	defer func() { trackDBQuery(start, "create", "subscriptions", err) }()
 
@@ -33,7 +33,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscri
 	`, sub.RepositoryID, sub.Email, sub.ConfirmToken, sub.UnsubscribeToken, sub.Confirmed).Scan(&sub.ID, &sub.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.ErrAlreadyExists
+		return entity.ErrAlreadyExists
 	}
 
 	if err != nil {
@@ -46,7 +46,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *domain.Subscri
 func (r *SubscriptionRepository) GetByEmail(
 	ctx context.Context,
 	email string,
-) (views []*domain.SubscriptionView, err error) {
+) (views []*entity.SubscriptionView, err error) {
 	start := time.Now()
 	defer func() { trackDBQuery(start, "get_by_email", "subscriptions", err) }()
 
@@ -65,7 +65,7 @@ func (r *SubscriptionRepository) GetByEmail(
 	defer rows.Close()
 
 	for rows.Next() {
-		view := &domain.SubscriptionView{}
+		view := &entity.SubscriptionView{}
 		if err := rows.Scan(&view.Email, &view.Repo, &view.Confirmed, &view.LastSeenTag); err != nil {
 			return nil, fmt.Errorf("scan subscription view: %w", err)
 		}
@@ -82,7 +82,7 @@ func (r *SubscriptionRepository) GetByEmail(
 func (r *SubscriptionRepository) GetConfirmedByRepoID(
 	ctx context.Context,
 	repoID uuid.UUID,
-) (subs []*domain.Subscription, err error) {
+) (subs []*entity.Subscription, err error) {
 	start := time.Now()
 	defer func() { trackDBQuery(start, "get_confirmed_by_repo_id", "subscriptions", err) }()
 
@@ -98,7 +98,7 @@ func (r *SubscriptionRepository) GetConfirmedByRepoID(
 	defer rows.Close()
 
 	for rows.Next() {
-		sub := &domain.Subscription{}
+		sub := &entity.Subscription{}
 		if err := rows.Scan(
 			&sub.ID, &sub.RepositoryID, &sub.Email,
 			&sub.ConfirmToken, &sub.UnsubscribeToken,
@@ -130,7 +130,7 @@ func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) (err
 	}
 
 	if result.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return entity.ErrNotFound
 	}
 
 	return nil
@@ -149,7 +149,7 @@ func (r *SubscriptionRepository) Delete(ctx context.Context, token string) (err 
 	}
 
 	if result.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return entity.ErrNotFound
 	}
 
 	return nil

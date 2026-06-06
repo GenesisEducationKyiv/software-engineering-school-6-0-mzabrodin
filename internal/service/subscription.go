@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"net/mail"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/metrics"
 )
 
@@ -17,13 +17,13 @@ import (
 const tokenBytes = 32
 
 type gitHubRepoRepository interface {
-	Create(ctx context.Context, repo *domain.Repository) error
-	GetByName(ctx context.Context, name string) (*domain.Repository, error)
+	Create(ctx context.Context, repo *entity.Repository) error
+	GetByName(ctx context.Context, name string) (*entity.Repository, error)
 }
 
 type subscriptionRepository interface {
-	Create(ctx context.Context, sub *domain.Subscription) error
-	GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error)
+	Create(ctx context.Context, sub *entity.Subscription) error
+	GetByEmail(ctx context.Context, email string) ([]*entity.SubscriptionView, error)
 	Confirm(ctx context.Context, token string) error
 	Delete(ctx context.Context, token string) error
 }
@@ -74,10 +74,10 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 	}()
 
 	if _, err := mail.ParseAddress(email); err != nil {
-		return domain.ErrInvalidEmail
+		return entity.ErrInvalidEmail
 	}
 
-	owner, name, err := domain.ParseRepo(repoName)
+	owner, name, err := entity.ParseRepo(repoName)
 	if err != nil {
 		return err
 	}
@@ -109,23 +109,23 @@ func (s *SubscriptionService) ensureRepoExists(ctx context.Context, owner, name 
 	}
 
 	if !exists {
-		return domain.ErrRepoNotFound
+		return entity.ErrRepoNotFound
 	}
 
 	return nil
 }
 
-func (s *SubscriptionService) ensureRepoStored(ctx context.Context, repoName string) (*domain.Repository, error) {
+func (s *SubscriptionService) ensureRepoStored(ctx context.Context, repoName string) (*entity.Repository, error) {
 	repo, err := s.repos.GetByName(ctx, repoName)
 	if err == nil {
 		return repo, nil
 	}
 
-	if !errors.Is(err, domain.ErrNotFound) {
+	if !errors.Is(err, entity.ErrNotFound) {
 		return nil, fmt.Errorf("get repository: %w", err)
 	}
 
-	repo = &domain.Repository{Name: repoName}
+	repo = &entity.Repository{Name: repoName}
 	if err := s.repos.Create(ctx, repo); err != nil {
 		return nil, fmt.Errorf("create repository: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *SubscriptionService) ensureRepoStored(ctx context.Context, repoName str
 func (s *SubscriptionService) createSubscription(
 	ctx context.Context,
 	email string,
-	repo *domain.Repository,
+	repo *entity.Repository,
 ) (string, error) {
 	confirmToken, err := randomToken()
 	if err != nil {
@@ -150,7 +150,7 @@ func (s *SubscriptionService) createSubscription(
 		return "", fmt.Errorf("generate unsubscribe token: %w", err)
 	}
 
-	sub := &domain.Subscription{
+	sub := &entity.Subscription{
 		RepositoryID:     repo.ID,
 		Email:            email,
 		ConfirmToken:     confirmToken,
@@ -195,13 +195,13 @@ func (s *SubscriptionService) Shutdown() {
 func (s *SubscriptionService) GetByEmail(
 	ctx context.Context,
 	email string,
-) (views []*domain.SubscriptionView, err error) {
+) (views []*entity.SubscriptionView, err error) {
 	defer func() {
 		metrics.SubscriptionOperationsTotal.WithLabelValues("list", metrics.ResultLabel(err)).Inc()
 	}()
 
 	if _, parseErr := mail.ParseAddress(email); parseErr != nil {
-		return nil, domain.ErrInvalidEmail
+		return nil, entity.ErrInvalidEmail
 	}
 
 	return s.subs.GetByEmail(ctx, email)

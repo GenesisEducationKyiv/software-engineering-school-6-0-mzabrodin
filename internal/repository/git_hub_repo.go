@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +20,7 @@ func NewGitHubRepoRepository(pool *pgxpool.Pool) *GitHubRepoRepository {
 	return &GitHubRepoRepository{pool: pool}
 }
 
-func (r *GitHubRepoRepository) Create(ctx context.Context, repo *domain.Repository) (err error) {
+func (r *GitHubRepoRepository) Create(ctx context.Context, repo *entity.Repository) (err error) {
 	start := time.Now()
 	defer func() { trackDBQuery(start, "create", "repositories", err) }()
 
@@ -37,18 +37,18 @@ func (r *GitHubRepoRepository) Create(ctx context.Context, repo *domain.Reposito
 	return nil
 }
 
-func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (result *domain.Repository, err error) {
+func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (result *entity.Repository, err error) {
 	start := time.Now()
 	defer func() { trackDBQuery(start, "get_by_name", "repositories", err) }()
 
-	repo := &domain.Repository{}
+	repo := &entity.Repository{}
 	err = r.pool.QueryRow(ctx, `
 		SELECT id, name, last_seen_tag, checked_at, created_at
 		FROM repositories WHERE name = $1
 	`, name).Scan(&repo.ID, &repo.Name, &repo.LastSeenTag, &repo.CheckedAt, &repo.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrNotFound
+		return nil, entity.ErrNotFound
 	}
 
 	if err != nil {
@@ -58,7 +58,7 @@ func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (resu
 	return repo, nil
 }
 
-func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (repos []*domain.Repository, err error) {
+func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (repos []*entity.Repository, err error) {
 	start := time.Now()
 	defer func() { trackDBQuery(start, "get_all_with_subscriptions", "repositories", err) }()
 
@@ -75,7 +75,7 @@ func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (rep
 	defer rows.Close()
 
 	for rows.Next() {
-		repo := &domain.Repository{}
+		repo := &entity.Repository{}
 		if err := rows.Scan(&repo.ID, &repo.Name, &repo.LastSeenTag, &repo.CheckedAt, &repo.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan repository: %w", err)
 		}
@@ -103,7 +103,7 @@ func (r *GitHubRepoRepository) UpdateLastSeenTag(ctx context.Context, name, tag 
 	}
 
 	if cmd.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return entity.ErrNotFound
 	}
 
 	return nil

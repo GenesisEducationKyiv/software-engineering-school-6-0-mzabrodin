@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 type MailerSuite struct {
@@ -54,5 +54,5 @@ func (s *MailerSuite) TestSendReleaseNotifications_EmptySlice_NoError() {
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	s.Require().NoError(err)
-	s.NoError(m.SendReleaseNotifications(s.T().Context(), []domain.ReleaseNotification{}))
+	s.NoError(m.SendReleaseNotifications(s.T().Context(), []entity.ReleaseNotification{}))
 }

@@ -1,11 +1,11 @@
-package domain_test
+package entity_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 type ParseRepoSuite struct {
@@ -29,7 +29,7 @@ func (s *ParseRepoSuite) TestValid() {
 
 	for _, tc := range cases {
 		s.Run(tc.input, func() {
-			owner, name, err := domain.ParseRepo(tc.input)
+			owner, name, err := entity.ParseRepo(tc.input)
 			s.Require().NoError(err)
 			s.Equal(tc.wantOwner, owner)
 			s.Equal(tc.wantName, name)
@@ -49,8 +49,8 @@ func (s *ParseRepoSuite) TestInvalid() {
 
 	for _, tc := range cases {
 		s.Run(tc, func() {
-			_, _, err := domain.ParseRepo(tc)
-			s.ErrorIs(err, domain.ErrInvalidRepo)
+			_, _, err := entity.ParseRepo(tc)
+			s.ErrorIs(err, entity.ErrInvalidRepo)
 		})
 	}
 }

@@ -3,11 +3,11 @@ package scanner
 import (
 	"context"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 type mailer interface {
-	SendReleaseNotifications(ctx context.Context, notifications []domain.ReleaseNotification) error
+	SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) error
 }
 
 type urlBuilder interface {
@@ -25,14 +25,14 @@ func NewReleaseNotifier(m mailer, urls urlBuilder) *ReleaseNotifier {
 
 func (n *ReleaseNotifier) Notify(
 	ctx context.Context,
-	subs []*domain.Subscription,
-	repo *domain.Repository,
-	release *domain.Release,
+	subs []*entity.Subscription,
+	repo *entity.Repository,
+	release *entity.Release,
 ) error {
-	notifications := make([]domain.ReleaseNotification, 0, len(subs))
+	notifications := make([]entity.ReleaseNotification, 0, len(subs))
 	for _, sub := range subs {
 		notifications = append(notifications,
-			domain.NewReleaseNotification(sub, repo, release, n.urls.UnsubscribeURL(sub.UnsubscribeToken)),
+			entity.NewReleaseNotification(sub, repo, release, n.urls.UnsubscribeURL(sub.UnsubscribeToken)),
 		)
 	}
 

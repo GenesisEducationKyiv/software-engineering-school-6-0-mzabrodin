@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/metrics"
 )
 
@@ -17,5 +17,5 @@ func trackDBQuery(start time.Time, operation, table string, err error) {
 }
 
 func isDomainError(err error) bool {
-	return errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrAlreadyExists)
+	return errors.Is(err, entity.ErrNotFound) || errors.Is(err, entity.ErrAlreadyExists)
 }

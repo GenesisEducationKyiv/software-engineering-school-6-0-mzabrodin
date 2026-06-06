@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/entity"
 )
 
 type mockMailer struct{ mock.Mock }
 
-func (m *mockMailer) SendReleaseNotifications(_ context.Context, ns []domain.ReleaseNotification) error {
+func (m *mockMailer) SendReleaseNotifications(_ context.Context, ns []entity.ReleaseNotification) error {
 	return m.Called(ns).Error(0)
 }
 
@@ -32,9 +32,9 @@ func TestReleaseNotifierSuite(t *testing.T) {
 }
 
 func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
-	repo := &domain.Repository{Name: "owner/repo"}
-	release := &domain.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"}
-	subs := []*domain.Subscription{
+	repo := &entity.Repository{Name: "owner/repo"}
+	release := &entity.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"}
+	subs := []*entity.Subscription{
 		{Email: "a@example.com", UnsubscribeToken: "tok-a"},
 		{Email: "b@example.com", UnsubscribeToken: "tok-b"},
 	}
@@ -45,10 +45,10 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 	defer u.AssertExpectations(s.T())
 
 	m := &mockMailer{}
-	var capturedNotifications []domain.ReleaseNotification
+	var capturedNotifications []entity.ReleaseNotification
 	m.On("SendReleaseNotifications", mock.Anything).
 		Run(func(args mock.Arguments) {
-			capturedNotifications, _ = args.Get(0).([]domain.ReleaseNotification)
+			capturedNotifications, _ = args.Get(0).([]entity.ReleaseNotification)
 		}).Return(nil)
 	defer m.AssertExpectations(s.T())
 
@@ -66,9 +66,9 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 }
 
 func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
-	repo := &domain.Repository{Name: "owner/repo"}
-	release := &domain.Release{TagName: "v1.0.0", HTMLURL: "..."}
-	subs := []*domain.Subscription{
+	repo := &entity.Repository{Name: "owner/repo"}
+	release := &entity.Release{TagName: "v1.0.0", HTMLURL: "..."}
+	subs := []*entity.Subscription{
 		{Email: "a@example.com", UnsubscribeToken: "tok-a"},
 		{Email: "b@example.com", UnsubscribeToken: "tok-b"},
 	}
@@ -86,9 +86,9 @@ func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
 }
 
 func (s *ReleaseNotifierSuite) TestMailerError_Propagated() {
-	repo := &domain.Repository{Name: "owner/repo"}
-	release := &domain.Release{TagName: "v1.0.0", HTMLURL: "..."}
-	subs := []*domain.Subscription{{Email: "a@example.com", UnsubscribeToken: "tok"}}
+	repo := &entity.Repository{Name: "owner/repo"}
+	release := &entity.Release{TagName: "v1.0.0", HTMLURL: "..."}
+	subs := []*entity.Subscription{{Email: "a@example.com", UnsubscribeToken: "tok"}}
 
 	u := &mockURLBuilder{}
 	u.On("UnsubscribeURL", "tok").Return("https://example.com/unsubscribe/tok")
