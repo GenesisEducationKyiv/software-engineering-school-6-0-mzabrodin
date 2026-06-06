@@ -33,7 +33,7 @@ type gitHubClient interface {
 }
 
 type mailer interface {
-	SendConfirmation(to, repo, confirmURL string)
+	SendConfirmation(ctx context.Context, to, repo, confirmURL string)
 	Shutdown()
 }
 
@@ -97,7 +97,7 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 	}
 
 	s.log.InfoContext(ctx, "subscription created", "email", email, "repo", repoName)
-	s.mailer.SendConfirmation(email, repoName, s.urls.ConfirmURL(confirmToken))
+	s.mailer.SendConfirmation(ctx, email, repoName, s.urls.ConfirmURL(confirmToken))
 
 	return nil
 }

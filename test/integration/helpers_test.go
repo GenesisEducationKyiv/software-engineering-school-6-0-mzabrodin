@@ -39,7 +39,7 @@ func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, 
 
 type mockConfirmationNotifier struct{ mock.Mock }
 
-func (m *mockConfirmationNotifier) SendConfirmation(email, repo, url string) {
+func (m *mockConfirmationNotifier) SendConfirmation(_ context.Context, email, repo, url string) {
 	m.Called(email, repo, url)
 }
 

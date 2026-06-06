@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -26,7 +27,7 @@ func (s *ConfirmationNotifierSuite) TestSendConfirmation_FiresAsync() {
 	defer mc.AssertExpectations(s.T())
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
-	n.SendConfirmation("a@example.com", "owner/repo", "url")
+	n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	n.Shutdown()
 }
 
@@ -37,7 +38,7 @@ func (s *ConfirmationNotifierSuite) TestMailerErrorSwallowed() {
 	defer mc.AssertExpectations(s.T())
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
-	n.SendConfirmation("a@example.com", "owner/repo", "url")
+	n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	n.Shutdown()
 }
 
@@ -56,7 +57,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 	defer mc.AssertExpectations(s.T())
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
-	n.SendConfirmation("a@example.com", "owner/repo", "url")
+	n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	<-started
 
 	shutdownDone := make(chan struct{})
@@ -93,7 +94,7 @@ func (s *ConfirmationNotifierSuite) TestConcurrentSends_Shutdown() {
 
 	n := service.NewConfirmationNotifier(mc, testLogger)
 	for range sends {
-		n.SendConfirmation("a@example.com", "owner/repo", "url")
+		n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	}
 
 	n.Shutdown()

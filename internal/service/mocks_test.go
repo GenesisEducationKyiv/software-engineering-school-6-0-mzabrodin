@@ -53,7 +53,7 @@ func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, 
 
 type mockMailer struct{ mock.Mock }
 
-func (m *mockMailer) SendConfirmation(to, repo, confirmURL string) {
+func (m *mockMailer) SendConfirmation(_ context.Context, to, repo, confirmURL string) {
 	m.Called(to, repo, confirmURL)
 }
 
