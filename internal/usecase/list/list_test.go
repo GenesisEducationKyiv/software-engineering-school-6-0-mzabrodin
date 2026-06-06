@@ -26,14 +26,8 @@ func (s *ListSuite) TestExecute() {
 		email     string
 		setupMock func(*mockSubRepository)
 		wantLen   int
-		wantErrIs error
 		wantErr   bool
 	}{
-		{
-			name:      "invalid email",
-			email:     "not-an-email",
-			wantErrIs: entity.ErrInvalidEmail,
-		},
 		{
 			name:  "returns list",
 			email: "user@example.com",
@@ -66,8 +60,6 @@ func (s *ListSuite) TestExecute() {
 			uc := list.New(subs)
 			out, err := uc.Execute(s.T().Context(), list.Input{Email: tc.email})
 			switch {
-			case tc.wantErrIs != nil:
-				s.ErrorIs(err, tc.wantErrIs)
 			case tc.wantErr:
 				s.Error(err)
 			default:

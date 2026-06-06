@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/mail"
 
 	"github-release-notifier/internal/entity"
 )
@@ -71,10 +70,6 @@ func New(
 }
 
 func (uc *UseCase) Execute(ctx context.Context, in Input) (Output, error) {
-	if _, err := mail.ParseAddress(in.Email); err != nil {
-		return Output{}, entity.ErrInvalidEmail
-	}
-
 	owner, name, err := entity.ParseRepo(in.Repo)
 	if err != nil {
 		return Output{}, err

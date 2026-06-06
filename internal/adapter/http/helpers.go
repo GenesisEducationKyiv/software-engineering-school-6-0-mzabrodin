@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github-release-notifier/internal/adapter/http/dto"
 )
 
 func jsonOK(w http.ResponseWriter, v any) {
@@ -13,5 +15,5 @@ func jsonOK(w http.ResponseWriter, v any) {
 func jsonErr(w http.ResponseWriter, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{Error: msg})
+	_ = json.NewEncoder(w).Encode(dto.ErrorResponse{Error: msg})
 }

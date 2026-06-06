@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github-release-notifier/internal/adapter/http/dto"
 	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/usecase/confirm"
 	"github-release-notifier/internal/usecase/list"
@@ -60,7 +61,7 @@ func NewHandler(
 }
 
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
-	var req SubscribeRequest
+	var req dto.SubscribeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonErr(w, "invalid JSON body", http.StatusBadRequest)
 		return
@@ -69,16 +70,13 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Repo = strings.TrimSpace(req.Repo)
 
-	if req.Email == "" || req.Repo == "" {
-		jsonErr(w, "email and repo are required", http.StatusBadRequest)
+	if err := dto.Validate(req); err != nil {
+		jsonErr(w, dto.ValidationMessage(err), http.StatusBadRequest)
 		return
 	}
 
 	_, err := h.subscribe.Execute(r.Context(), subscribe.Input{Email: req.Email, Repo: req.Repo})
 	switch {
-	case errors.Is(err, entity.ErrInvalidEmail):
-		jsonErr(w, "invalid email format", http.StatusBadRequest)
-
 	case errors.Is(err, entity.ErrInvalidRepo):
 		jsonErr(w, "invalid repo format, expected owner/repo", http.StatusBadRequest)
 
@@ -93,7 +91,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
-		jsonOK(w, MessageResponse{Message: "subscription successful, confirmation email sent"})
+		jsonOK(w, dto.MessageResponse{Message: "subscription successful, confirmation email sent"})
 	}
 }
 
@@ -114,7 +112,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
-		jsonOK(w, MessageResponse{Message: "subscription confirmed successfully"})
+		jsonOK(w, dto.MessageResponse{Message: "subscription confirmed successfully"})
 	}
 }
 
@@ -135,27 +133,24 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
-		jsonOK(w, MessageResponse{Message: "unsubscribed successfully"})
+		jsonOK(w, dto.MessageResponse{Message: "unsubscribed successfully"})
 	}
 }
 
 func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.URL.Query().Get("email"))
-	if email == "" {
-		jsonErr(w, "email is required", http.StatusBadRequest)
+	if err := dto.ValidateEmail(email); err != nil {
+		jsonErr(w, "invalid email format", http.StatusBadRequest)
 		return
 	}
 
 	out, err := h.list.Execute(r.Context(), list.Input{Email: email})
 	switch {
-	case errors.Is(err, entity.ErrInvalidEmail):
-		jsonErr(w, "invalid email format", http.StatusBadRequest)
-
 	case err != nil:
 		h.log.ErrorContext(r.Context(), "get subscriptions failed", "email", email, "error", err)
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
-		jsonOK(w, toSubscriptionResponses(out.Views))
+		jsonOK(w, dto.ToSubscriptionResponses(out.Views))
 	}
 }

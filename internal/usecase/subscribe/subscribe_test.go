@@ -31,12 +31,6 @@ func (s *SubscribeSuite) TestExecute() {
 		check      func(*SubscribeSuite, error)
 	}{
 		{
-			name:      "invalid email",
-			email:     "not-an-email",
-			repo:      "owner/repo",
-			wantErrIs: entity.ErrInvalidEmail,
-		},
-		{
 			name:      "invalid repo format",
 			email:     "user@example.com",
 			repo:      "invalid",

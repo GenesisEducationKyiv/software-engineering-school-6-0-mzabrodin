@@ -109,21 +109,13 @@ func (s *HandlerSuite) TestSubscribe() {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name: "invalid email",
-			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(m *mockSubscribe) {
-				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
-					Return(subscribe.Output{}, entity.ErrInvalidEmail)
-			},
+			name:       "malformed email rejected at edge",
+			body:       map[string]string{"email": "notanemail", "repo": "owner/repo"},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name: "invalid repo",
-			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(m *mockSubscribe) {
-				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
-					Return(subscribe.Output{}, entity.ErrInvalidRepo)
-			},
+			name:       "malformed repo rejected at edge",
+			body:       map[string]string{"email": "user@example.com", "repo": "noslash"},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
@@ -178,121 +170,68 @@ func (s *HandlerSuite) TestSubscribe() {
 	}
 }
 
-func (s *HandlerSuite) TestConfirm() {
+// runTokenEndpointTests drives the shared cases for the two token endpoints (confirm/unsubscribe).
+// Invoke calls the handler method; expect configures that endpoint's mock to return err for validToken.
+// Both are closures so s.handler and the mocks resolve after SetupSubTest.
+func (s *HandlerSuite) runTokenEndpointTests(invoke http.HandlerFunc, expect func(err error)) {
 	cases := []struct {
 		name       string
 		token      string
-		setupMock  func(*mockConfirm)
+		callMock   bool
+		mockErr    error
 		wantStatus int
 	}{
+		{name: "success", token: validToken, callMock: true, wantStatus: http.StatusOK},
+		{name: "short token", token: "tooshort", wantStatus: http.StatusBadRequest},
 		{
-			name:  "success",
-			token: validToken,
-			setupMock: func(m *mockConfirm) {
-				m.On("Execute", mock.Anything, confirm.Input{Token: validToken}).Return(confirm.Output{}, nil)
-			},
-			wantStatus: http.StatusOK,
-		},
-		{
-			name:       "short token",
-			token:      "tooshort",
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:  "not found",
-			token: validToken,
-			setupMock: func(m *mockConfirm) {
-				m.On("Execute", mock.Anything, confirm.Input{Token: validToken}).
-					Return(confirm.Output{}, entity.ErrNotFound)
-			},
+			name:       "not found",
+			token:      validToken,
+			callMock:   true,
+			mockErr:    entity.ErrNotFound,
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:  "internal error",
-			token: validToken,
-			setupMock: func(m *mockConfirm) {
-				m.On("Execute", mock.Anything, confirm.Input{Token: validToken}).
-					Return(confirm.Output{}, assert.AnError)
-			},
+			name:       "internal error",
+			token:      validToken,
+			callMock:   true,
+			mockErr:    assert.AnError,
 			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			if tc.setupMock != nil {
-				tc.setupMock(s.confirm)
+			if tc.callMock {
+				expect(tc.mockErr)
 			}
 
-			r := httptest.NewRequestWithContext(s.T().Context(), http.MethodGet, "/api/confirm/"+tc.token, http.NoBody)
+			r := httptest.NewRequestWithContext(s.T().Context(), http.MethodGet, "/api/"+tc.token, http.NoBody)
 			r = withToken(r, tc.token)
 			w := httptest.NewRecorder()
-			s.handler.Confirm(w, r)
+			invoke(w, r)
 
 			s.Equal(tc.wantStatus, w.Code)
 		})
 	}
 }
 
+func (s *HandlerSuite) TestConfirm() {
+	s.runTokenEndpointTests(
+		func(w http.ResponseWriter, r *http.Request) { s.handler.Confirm(w, r) },
+		func(err error) {
+			s.confirm.On("Execute", mock.Anything, confirm.Input{Token: validToken}).Return(confirm.Output{}, err)
+		},
+	)
+}
+
 func (s *HandlerSuite) TestUnsubscribe() {
-	cases := []struct {
-		name       string
-		token      string
-		setupMock  func(*mockUnsubscribe)
-		wantStatus int
-	}{
-		{
-			name:  "success",
-			token: validToken,
-			setupMock: func(m *mockUnsubscribe) {
-				m.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).Return(unsubscribe.Output{}, nil)
-			},
-			wantStatus: http.StatusOK,
+	s.runTokenEndpointTests(
+		func(w http.ResponseWriter, r *http.Request) { s.handler.Unsubscribe(w, r) },
+		func(err error) {
+			s.unsubscribe.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).
+				Return(unsubscribe.Output{}, err)
 		},
-		{
-			name:       "short token",
-			token:      "tooshort",
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:  "not found",
-			token: validToken,
-			setupMock: func(m *mockUnsubscribe) {
-				m.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).
-					Return(unsubscribe.Output{}, entity.ErrNotFound)
-			},
-			wantStatus: http.StatusNotFound,
-		},
-		{
-			name:  "internal error",
-			token: validToken,
-			setupMock: func(m *mockUnsubscribe) {
-				m.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).
-					Return(unsubscribe.Output{}, assert.AnError)
-			},
-			wantStatus: http.StatusInternalServerError,
-		},
-	}
-
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			if tc.setupMock != nil {
-				tc.setupMock(s.unsubscribe)
-			}
-
-			r := httptest.NewRequestWithContext(
-				s.T().Context(),
-				http.MethodGet,
-				"/api/unsubscribe/"+tc.token,
-				http.NoBody,
-			)
-			r = withToken(r, tc.token)
-			w := httptest.NewRecorder()
-			s.handler.Unsubscribe(w, r)
-
-			s.Equal(tc.wantStatus, w.Code)
-		})
-	}
+	)
 }
 
 func (s *HandlerSuite) TestGetSubscriptions() {
@@ -322,12 +261,8 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:  "invalid email",
-			email: "notanemail",
-			setupMock: func(m *mockList) {
-				m.On("Execute", mock.Anything, list.Input{Email: "notanemail"}).
-					Return(list.Output{}, entity.ErrInvalidEmail)
-			},
+			name:       "invalid email rejected at edge",
+			email:      "notanemail",
 			wantStatus: http.StatusBadRequest,
 		},
 		{

@@ -2,7 +2,6 @@ package list
 
 import (
 	"context"
-	"net/mail"
 
 	"github-release-notifier/internal/entity"
 )
@@ -28,10 +27,6 @@ func New(subs subRepository) *UseCase {
 }
 
 func (uc *UseCase) Execute(ctx context.Context, in Input) (Output, error) {
-	if _, err := mail.ParseAddress(in.Email); err != nil {
-		return Output{}, entity.ErrInvalidEmail
-	}
-
 	views, err := uc.subs.GetByEmail(ctx, in.Email)
 	if err != nil {
 		return Output{}, err
