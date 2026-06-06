@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/api"
+	api "github-release-notifier/internal/adapter/http"
 )
 
 func okHandler(w http.ResponseWriter, _ *http.Request) {

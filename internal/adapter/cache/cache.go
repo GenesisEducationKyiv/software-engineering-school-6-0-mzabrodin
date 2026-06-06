@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github-release-notifier/internal/metrics"
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 type Cache interface {

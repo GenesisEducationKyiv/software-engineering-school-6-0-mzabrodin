@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/entity"
-	"github-release-notifier/internal/metrics"
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 const (

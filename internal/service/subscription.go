@@ -10,7 +10,7 @@ import (
 	"net/mail"
 
 	"github-release-notifier/internal/entity"
-	"github-release-notifier/internal/metrics"
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 // 32 random bytes encoded as 64-character hex string

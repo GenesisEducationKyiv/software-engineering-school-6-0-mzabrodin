@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/api"
+	api "github-release-notifier/internal/adapter/http"
 	"github-release-notifier/internal/entity"
 )
 

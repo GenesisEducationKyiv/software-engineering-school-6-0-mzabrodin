@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/config"
+	"github-release-notifier/internal/infrastructure/config"
 )
 
 // requiredEnv lists every variable marked required:"true" in the config structs.

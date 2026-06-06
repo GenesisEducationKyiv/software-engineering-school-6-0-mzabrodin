@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"github-release-notifier/internal/entity"
-	"github-release-notifier/internal/logging"
-	"github-release-notifier/internal/metrics"
+	"github-release-notifier/internal/infrastructure/logging"
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 type notifier interface {

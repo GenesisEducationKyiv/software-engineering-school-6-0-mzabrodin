@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github-release-notifier/internal/metrics"
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 type metricsWriter struct {

@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github-release-notifier/internal/api"
-	"github-release-notifier/internal/repository"
+	api "github-release-notifier/internal/adapter/http"
+	"github-release-notifier/internal/adapter/repository"
+	"github-release-notifier/internal/adapter/urlbuilder"
 	"github-release-notifier/internal/service"
-	"github-release-notifier/internal/urlbuilder"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))

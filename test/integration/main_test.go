@@ -15,7 +15,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
-	"github-release-notifier/internal/db"
+	"github-release-notifier/internal/infrastructure/db"
 )
 
 var (

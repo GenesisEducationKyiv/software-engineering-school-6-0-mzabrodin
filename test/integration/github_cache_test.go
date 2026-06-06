@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/cache"
+	"github-release-notifier/internal/adapter/cache"
+	"github-release-notifier/internal/adapter/github"
 	"github-release-notifier/internal/entity"
-	"github-release-notifier/internal/github"
 )
 
 type GitHubClientCacheSuite struct {
