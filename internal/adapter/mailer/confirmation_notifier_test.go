@@ -1,8 +1,10 @@
-package service_test
+package mailer_test
 
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,8 +12,16 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/service"
+	"github-release-notifier/internal/adapter/mailer"
 )
+
+var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+type mockAsyncMailer struct{ mock.Mock }
+
+func (m *mockAsyncMailer) SendConfirmation(_ context.Context, to, repo, confirmURL string) error {
+	return m.Called(to, repo, confirmURL).Error(0)
+}
 
 type ConfirmationNotifierSuite struct {
 	suite.Suite
@@ -26,7 +36,7 @@ func (s *ConfirmationNotifierSuite) TestSendConfirmation_FiresAsync() {
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc, testLogger)
+	n := mailer.NewConfirmationNotifier(mc, testLogger)
 	n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	n.Shutdown()
 }
@@ -37,7 +47,7 @@ func (s *ConfirmationNotifierSuite) TestMailerErrorSwallowed() {
 		Return(errors.New("smtp error")).Once()
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc, testLogger)
+	n := mailer.NewConfirmationNotifier(mc, testLogger)
 	n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	n.Shutdown()
 }
@@ -56,7 +66,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 		}).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc, testLogger)
+	n := mailer.NewConfirmationNotifier(mc, testLogger)
 	n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	<-started
 
@@ -92,7 +102,7 @@ func (s *ConfirmationNotifierSuite) TestConcurrentSends_Shutdown() {
 		Return(nil).Times(sends)
 	defer mc.AssertExpectations(s.T())
 
-	n := service.NewConfirmationNotifier(mc, testLogger)
+	n := mailer.NewConfirmationNotifier(mc, testLogger)
 	for range sends {
 		n.SendConfirmation(context.Background(), "a@example.com", "owner/repo", "url")
 	}
