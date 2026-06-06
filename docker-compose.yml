@@ -220,7 +220,7 @@ services:
     image: grafana/grafana:13.0.1
     container_name: github_release_notifier_grafana
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD required}
       - GF_USERS_ALLOW_SIGN_UP=false
