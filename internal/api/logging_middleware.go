@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func NewSlogMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
@@ -23,9 +25,14 @@ func NewSlogMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 
+			path := chi.RouteContext(r.Context()).RoutePattern()
+			if path == "" {
+				path = r.URL.Path
+			}
+
 			log.InfoContext(r.Context(), "http request",
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", path,
 				"status_code", status,
 				"duration_ms", time.Since(start).Milliseconds(),
 				"remote_addr", r.RemoteAddr,
