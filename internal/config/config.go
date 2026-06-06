@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -36,11 +37,11 @@ func (c *Config) SlogLevel() slog.Level {
 	return l
 }
 
-func Load(log *slog.Logger) *Config {
+func Load() (*Config, error) {
 	var cfg Config
 	if err := envconfig.Process("", &cfg); err != nil {
-		log.Error("failed to load config", "error", err)
+		return nil, fmt.Errorf("process config: %w", err)
 	}
 
-	return &cfg
+	return &cfg, nil
 }

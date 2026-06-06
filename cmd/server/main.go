@@ -41,7 +41,10 @@ func run(log *slog.Logger) error {
 		log.Warn("could not load .env file", "error", err)
 	}
 
-	cfg := config.Load(log)
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 
 	log = slog.New(
 		logging.NewRequestIDHandler(

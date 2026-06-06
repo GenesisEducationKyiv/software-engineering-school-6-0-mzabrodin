@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -26,7 +25,7 @@ func TestGitHubClientCacheSuite(t *testing.T) {
 
 func (s *GitHubClientCacheSuite) SetupSuite() {
 	var err error
-	s.ca, err = cache.NewRedisCache(context.Background(), testRedisURL)
+	s.ca, err = cache.NewRedisCache(s.T().Context(), testRedisURL)
 	s.Require().NoError(err)
 }
 
@@ -39,7 +38,7 @@ func (s *GitHubClientCacheSuite) client() *github.Client {
 }
 
 func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_True() {
-	ctx := context.Background()
+	ctx := s.T().Context()
 	s.Require().NoError(s.ca.Set(ctx, "github:repo_exists:owner/repo-exists-true", "1", time.Minute))
 
 	exists, err := s.client().RepoExists(ctx, "owner", "repo-exists-true")
@@ -49,7 +48,7 @@ func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_True() {
 }
 
 func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_False() {
-	ctx := context.Background()
+	ctx := s.T().Context()
 	s.Require().NoError(s.ca.Set(ctx, "github:repo_exists:owner/repo-exists-false", "0", time.Minute))
 
 	exists, err := s.client().RepoExists(ctx, "owner", "repo-exists-false")
@@ -59,7 +58,7 @@ func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_False() {
 }
 
 func (s *GitHubClientCacheSuite) TestGetLatestRelease_CacheHit() {
-	ctx := context.Background()
+	ctx := s.T().Context()
 	release := domain.Release{TagName: "v3.0.0", HTMLURL: "https://github.com/owner/repo-release/releases/tag/v3.0.0"}
 	data, err := json.Marshal(release)
 	s.Require().NoError(err)
@@ -73,7 +72,7 @@ func (s *GitHubClientCacheSuite) TestGetLatestRelease_CacheHit() {
 }
 
 func (s *GitHubClientCacheSuite) TestGetLatestRelease_NoReleaseSentinel() {
-	ctx := context.Background()
+	ctx := s.T().Context()
 	s.Require().NoError(s.ca.Set(ctx, "github:latest_release:owner/repo-no-release", "none", time.Minute))
 
 	_, err := s.client().GetLatestRelease(ctx, "owner", "repo-no-release")

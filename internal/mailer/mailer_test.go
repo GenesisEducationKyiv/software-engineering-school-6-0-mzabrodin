@@ -1,7 +1,6 @@
 package mailer
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -55,5 +54,5 @@ func (s *MailerSuite) TestSendReleaseNotifications_EmptySlice_NoError() {
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	s.Require().NoError(err)
-	s.NoError(m.SendReleaseNotifications(context.Background(), []domain.ReleaseNotification{}))
+	s.NoError(m.SendReleaseNotifications(s.T().Context(), []domain.ReleaseNotification{}))
 }

@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +13,6 @@ import (
 
 	"github-release-notifier/internal/domain"
 )
-
-var ctx = context.Background()
 
 func testRepo(name string, lastTag *string) *domain.Repository {
 	return &domain.Repository{ID: uuid.New(), Name: name, LastSeenTag: lastTag}
@@ -65,7 +62,7 @@ func (s *ScannerSuite) TestCheckRepo_GitHubError_Skipped() {
 			defer gh.AssertExpectations(s.T())
 
 			sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
-			s.NoError(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
+			s.NoError(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
 		})
 	}
 }
@@ -77,7 +74,7 @@ func (s *ScannerSuite) TestCheckRepo_TagUnchanged_NoNotification() {
 	defer gh.AssertExpectations(s.T())
 
 	sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
-	s.Require().NoError(sc.checkRepo(ctx, testRepo("owner/repo", new("v1.0.0"))))
+	s.Require().NoError(sc.checkRepo(s.T().Context(), testRepo("owner/repo", new("v1.0.0"))))
 }
 
 func (s *ScannerSuite) TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag() {
@@ -115,7 +112,7 @@ func (s *ScannerSuite) TestCheckRepo_NewRelease_SendsNotificationAndUpdatesTag()
 			defer n.AssertExpectations(s.T())
 
 			sc := newScanner(repos, subs, gh, n)
-			s.Require().NoError(sc.checkRepo(ctx, repo))
+			s.Require().NoError(sc.checkRepo(s.T().Context(), repo))
 			s.Equal(1, subCount)
 		})
 	}
@@ -138,7 +135,7 @@ func (s *ScannerSuite) TestCheckRepo_MailerError_TagNotUpdated() {
 	defer n.AssertExpectations(s.T())
 
 	sc := newScanner(&mockRepoRepository{}, subs, gh, n)
-	s.Error(sc.checkRepo(ctx, repo))
+	s.Error(sc.checkRepo(s.T().Context(), repo))
 }
 
 func (s *ScannerSuite) TestCheckRepo_NoSubscribers_UpdatesTagOnly() {
@@ -159,12 +156,12 @@ func (s *ScannerSuite) TestCheckRepo_NoSubscribers_UpdatesTagOnly() {
 	defer repos.AssertExpectations(s.T())
 
 	sc := newScanner(repos, subs, gh, &mockNotifier{})
-	s.Require().NoError(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
+	s.Require().NoError(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
 }
 
 func (s *ScannerSuite) TestCheckRepo_InvalidRepo_ReturnsError() {
 	sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, &mockGitHub{}, &mockNotifier{})
-	s.Error(sc.checkRepo(ctx, testRepo("notavalidrepo", nil)))
+	s.Error(sc.checkRepo(s.T().Context(), testRepo("notavalidrepo", nil)))
 }
 
 func (s *ScannerSuite) TestCheckRepo_SubRepoError_ReturnsError() {
@@ -179,7 +176,7 @@ func (s *ScannerSuite) TestCheckRepo_SubRepoError_ReturnsError() {
 	defer subs.AssertExpectations(s.T())
 
 	sc := newScanner(&mockRepoRepository{}, subs, gh, &mockNotifier{})
-	s.Error(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
+	s.Error(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
 }
 
 func (s *ScannerSuite) TestCheckRepo_UpdateTagError_NoSubs_ReturnsError() {
@@ -199,7 +196,7 @@ func (s *ScannerSuite) TestCheckRepo_UpdateTagError_NoSubs_ReturnsError() {
 	defer repos.AssertExpectations(s.T())
 
 	sc := newScanner(repos, subs, gh, &mockNotifier{})
-	s.Error(sc.checkRepo(ctx, testRepo("owner/repo", nil)))
+	s.Error(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
 }
 
 func (s *ScannerSuite) TestCheckRepo_UpdateTagError_WithSubs_ReturnsError() {
@@ -223,5 +220,5 @@ func (s *ScannerSuite) TestCheckRepo_UpdateTagError_WithSubs_ReturnsError() {
 	defer repos.AssertExpectations(s.T())
 
 	sc := newScanner(repos, subs, gh, n)
-	s.Error(sc.checkRepo(ctx, repo))
+	s.Error(sc.checkRepo(s.T().Context(), repo))
 }
