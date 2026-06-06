@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -48,7 +50,7 @@ type HandlerSuite struct {
 
 func (s *HandlerSuite) SetupSubTest() {
 	s.svc = &mockService{}
-	s.handler = api.NewHandler(s.svc)
+	s.handler = api.NewHandler(s.svc, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func (s *HandlerSuite) TearDownSubTest() {

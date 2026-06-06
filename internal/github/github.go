@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/metrics"
 )
 
 const (
@@ -41,13 +42,15 @@ type Client struct {
 	baseURL string
 	cache   cacher
 	ttl     time.Duration
+	log     *slog.Logger
 }
 
-func NewClient(token string) *Client {
+func NewClient(token string, log *slog.Logger) *Client {
 	return &Client{
 		http:    &http.Client{Timeout: defaultTimeout},
 		token:   token,
 		baseURL: apiBaseURL,
+		log:     log.With("component", "github_client"),
 	}
 }
 
@@ -58,12 +61,18 @@ func (c *Client) WithCache(ca cacher, ttl time.Duration) *Client {
 	return c
 }
 
-func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
+func (c *Client) RepoExists(ctx context.Context, owner, repo string) (exists bool, err error) {
+	start := time.Now()
+	defer func() {
+		metrics.GitHubAPIRequestsTotal.WithLabelValues("repo_exists", metrics.ResultLabel(err)).Inc()
+		metrics.GitHubAPIRequestDuration.WithLabelValues("repo_exists").Observe(time.Since(start).Seconds())
+	}()
+
 	key := keyPrefixExists + owner + "/" + repo
 
 	if c.cache != nil {
 		if val, found, err := c.cache.Get(ctx, key); err != nil {
-			slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
+			c.log.WarnContext(ctx, "cache get failed, falling through to GitHub API", "key", key, "error", err)
 		} else if found {
 			return val == cacheTrue, nil
 		}
@@ -91,7 +100,13 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 	return true, nil
 }
 
-func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error) {
+func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (release *domain.Release, err error) {
+	start := time.Now()
+	defer func() {
+		metrics.GitHubAPIRequestsTotal.WithLabelValues("latest_release", metrics.ResultLabel(err)).Inc()
+		metrics.GitHubAPIRequestDuration.WithLabelValues("latest_release").Observe(time.Since(start).Seconds())
+	}()
+
 	key := keyPrefixRelease + owner + "/" + repo
 
 	if c.cache != nil {
@@ -120,7 +135,7 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (*dom
 func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Release, bool, error) {
 	val, found, err := c.cache.Get(ctx, key)
 	if err != nil {
-		slog.Warn("cache get failed, falling through to GitHub API", "key", key, "error", err)
+		c.log.WarnContext(ctx, "cache get failed, falling through to GitHub API", "key", key, "error", err)
 		return nil, false, nil
 	}
 
@@ -134,7 +149,7 @@ func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Rele
 
 	var r domain.Release
 	if err := json.Unmarshal([]byte(val), &r); err != nil {
-		slog.Warn("failed to unmarshal cached release", "key", key, "error", err)
+		c.log.WarnContext(ctx, "failed to unmarshal cached release", "key", key, "error", err)
 		return nil, false, nil
 	}
 
@@ -151,7 +166,7 @@ func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []by
 
 	data, err := json.Marshal(release)
 	if err != nil {
-		slog.Warn("failed to marshal release for cache", "error", err)
+		c.log.WarnContext(ctx, "failed to marshal release for cache", "error", err)
 	} else {
 		c.cacheString(ctx, key, string(data))
 	}
@@ -167,7 +182,7 @@ func (c *Client) cacheString(ctx context.Context, key, value string) {
 	saveCtx := context.WithoutCancel(ctx)
 
 	if err := c.cache.Set(saveCtx, key, value, c.ttl); err != nil {
-		slog.Warn("cache set failed", "key", key, "error", err)
+		c.log.WarnContext(saveCtx, "cache set failed", "key", key, "error", err)
 	}
 }
 
@@ -190,7 +205,7 @@ func (c *Client) do(ctx context.Context, url string) (statusCode int, responseDa
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Error("failed to close response body", "error", err)
+			c.log.ErrorContext(ctx, "failed to close response body", "error", err)
 		}
 	}()
 

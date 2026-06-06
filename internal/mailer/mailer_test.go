@@ -1,6 +1,8 @@
 package mailer
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -43,7 +45,14 @@ func (s *MailerSuite) TestReleaseTemplate() {
 }
 
 func (s *MailerSuite) TestSendReleaseNotifications_EmptySlice_NoError() {
-	m, err := NewMailer("localhost", 587, "user", "pass", "from@example.com")
+	m, err := NewMailer(
+		"localhost",
+		587,
+		"user",
+		"pass",
+		"from@example.com",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
 	s.Require().NoError(err)
 	s.NoError(m.SendReleaseNotifications(s.T().Context(), []domain.ReleaseNotification{}))
 }

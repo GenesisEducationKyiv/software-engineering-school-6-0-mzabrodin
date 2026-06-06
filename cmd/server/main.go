@@ -16,6 +16,7 @@ import (
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/db"
 	"github-release-notifier/internal/github"
+	"github-release-notifier/internal/logging"
 	"github-release-notifier/internal/mailer"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/scanner"
@@ -26,17 +27,18 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	bootstrap := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(bootstrap)
 
-	if err := run(); err != nil {
-		slog.Error("application failed", "error", err)
+	if err := run(bootstrap); err != nil {
+		bootstrap.Error("application failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(log *slog.Logger) error {
 	if err := godotenv.Load(); err != nil {
-		slog.Warn("could not load .env file", "error", err)
+		log.Warn("could not load .env file", "error", err)
 	}
 
 	cfg, err := config.Load()
@@ -44,14 +46,21 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	log = slog.New(
+		logging.NewRequestIDHandler(
+			logging.NewScanIDHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()})),
+		),
+	)
+	slog.SetDefault(log)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := db.RunMigrations(cfg.DatabaseURL, "file://migrations"); err != nil {
+	if err := db.RunMigrations(cfg.DatabaseURL, "file://migrations", log); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL, log)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
@@ -64,15 +73,22 @@ func run() error {
 
 	defer func() {
 		if err := redisCache.Close(); err != nil {
-			slog.Warn("failed to close redis connection", "error", err)
+			log.Warn("failed to close redis connection", "error", err)
 		}
 	}()
 
-	slog.Info("redis connected")
+	log.Info("redis connected")
 
-	gh := github.NewClient(cfg.GitHubToken).WithCache(redisCache, 10*time.Minute)
+	gh := github.NewClient(cfg.GitHubToken, log).WithCache(redisCache, 10*time.Minute)
 
-	mail, err := mailer.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.FromEmail)
+	mail, err := mailer.NewMailer(
+		cfg.SMTP.Host,
+		cfg.SMTP.Port,
+		cfg.SMTP.User,
+		cfg.SMTP.Password,
+		cfg.SMTP.FromEmail,
+		log,
+	)
 	if err != nil {
 		return fmt.Errorf("create mailer: %w", err)
 	}
@@ -81,22 +97,22 @@ func run() error {
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
 
-	confirmationNotifier := service.NewConfirmationNotifier(mail)
+	confirmationNotifier := service.NewConfirmationNotifier(mail, log)
 	releaseNotifier := scanner.NewReleaseNotifier(mail, urls)
 
-	svc := service.NewSubscriptionService(repos, subs, gh, confirmationNotifier, urls)
+	svc := service.NewSubscriptionService(repos, subs, gh, confirmationNotifier, urls, log)
 
-	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval)
+	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval, log)
 	go scan.Start(ctx)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: api.NewRouter(api.NewHandler(svc), cfg.APIKey),
+		Handler: api.NewRouter(api.NewHandler(svc, log), cfg.APIKey, log),
 	}
 
 	serverError := make(chan error, 1)
 	go func() {
-		slog.Info("server started", "port", cfg.Port)
+		log.Info("server started", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
@@ -106,7 +122,7 @@ func run() error {
 	case err := <-serverError:
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
-		slog.Info("shutting down")
+		log.Info("shutting down")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -118,6 +134,6 @@ func run() error {
 
 	svc.Shutdown()
 
-	slog.Info("server stopped")
+	log.Info("server stopped")
 	return nil
 }

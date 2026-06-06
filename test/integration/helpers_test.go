@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"github-release-notifier/internal/service"
 	"github-release-notifier/internal/urlbuilder"
 )
+
+var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 const (
 	testAPIKey   = "test-api-key"
@@ -36,8 +39,8 @@ func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, 
 
 type mockConfirmationNotifier struct{ mock.Mock }
 
-func (m *mockConfirmationNotifier) SendConfirmation(email, repo, url string) error {
-	return m.Called(email, repo, url).Error(0)
+func (m *mockConfirmationNotifier) SendConfirmation(_ context.Context, email, repo, url string) {
+	m.Called(email, repo, url)
 }
 
 func (m *mockConfirmationNotifier) Shutdown() {}
@@ -55,8 +58,8 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	repos := repository.NewGitHubRepoRepository(testPool)
 	subs := repository.NewSubscriptionRepository(testPool)
 	urls := urlbuilder.New(testBaseURL)
-	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls)
-	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc), testAPIKey))
+	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls, testLogger)
+	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc, testLogger), testAPIKey, testLogger))
 	t.Cleanup(srv.Close)
 	return srv
 }

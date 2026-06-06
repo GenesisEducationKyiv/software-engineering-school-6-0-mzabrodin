@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/logging"
 	"github-release-notifier/internal/metrics"
 )
 
@@ -36,6 +37,7 @@ type Scanner struct {
 	github   gitHubClient
 	notifier notifier
 	interval time.Duration
+	log      *slog.Logger
 }
 
 func NewScanner(
@@ -44,6 +46,7 @@ func NewScanner(
 	gh gitHubClient,
 	notifier notifier,
 	interval time.Duration,
+	log *slog.Logger,
 ) *Scanner {
 	return &Scanner{
 		repos:    repos,
@@ -51,11 +54,12 @@ func NewScanner(
 		github:   gh,
 		notifier: notifier,
 		interval: interval,
+		log:      log.With("component", "scanner"),
 	}
 }
 
 func (s *Scanner) Start(ctx context.Context) {
-	slog.Info("scanner started", "interval", s.interval)
+	s.log.Info("scanner started", "interval", s.interval)
 
 	s.scan(ctx)
 
@@ -65,7 +69,7 @@ func (s *Scanner) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("scanner stopped")
+			s.log.Info("scanner stopped")
 			return
 		case <-ticker.C:
 			s.scan(ctx)
@@ -74,7 +78,8 @@ func (s *Scanner) Start(ctx context.Context) {
 }
 
 func (s *Scanner) scan(ctx context.Context) {
-	slog.Info("scanning repositories for new releases")
+	ctx = logging.WithScanID(ctx, uuid.NewString())
+	s.log.InfoContext(ctx, "scanning repositories for new releases")
 
 	start := time.Now()
 	defer func() {
@@ -84,15 +89,21 @@ func (s *Scanner) scan(ctx context.Context) {
 
 	repos, err := s.repos.GetAllWithSubscriptions(ctx)
 	if err != nil {
-		slog.Error("failed to get repositories", "error", err)
+		s.log.ErrorContext(ctx, "failed to get repositories", "error", err)
+		metrics.ScannerErrorsTotal.WithLabelValues("fetch_repos").Inc()
 		return
 	}
 
+	s.log.InfoContext(ctx, "found repos to scan", "count", len(repos))
+
 	for _, repo := range repos {
 		if err := s.checkRepo(ctx, repo); err != nil {
-			slog.Error("failed to check repository", "repo", repo.Name, "error", err)
+			s.log.ErrorContext(ctx, "failed to check repository", "repo", repo.Name, "error", err)
+			metrics.ScannerErrorsTotal.WithLabelValues("check_repo").Inc()
 		}
 	}
+
+	s.log.InfoContext(ctx, "scan completed", "repos", len(repos), "duration_ms", time.Since(start).Milliseconds())
 }
 
 func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error {
@@ -114,7 +125,7 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 		return nil
 	}
 
-	slog.Info("new release detected", "repo", repo.Name, "tag", release.TagName)
+	s.log.InfoContext(ctx, "new release detected", "repo", repo.Name, "tag", release.TagName)
 
 	return s.notify(ctx, repo, release)
 }
@@ -122,22 +133,22 @@ func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error 
 func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) (*domain.Release, error) {
 	release, err := s.github.GetLatestRelease(ctx, owner, name)
 	if err != nil {
-		return nil, s.handleReleaseError(err, repoName)
+		return nil, s.handleReleaseError(ctx, err, repoName)
 	}
 
 	return release, nil
 }
 
-func (s *Scanner) handleReleaseError(err error, repoName string) error {
+func (s *Scanner) handleReleaseError(ctx context.Context, err error, repoName string) error {
 	switch {
 	case errors.Is(err, domain.ErrUnauthorized):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
-		slog.Warn("GitHub token is invalid or missing, skipping scan", "repo", repoName)
+		s.log.WarnContext(ctx, "GitHub token is invalid or missing, skipping scan", "repo", repoName)
 		return nil
 
 	case errors.Is(err, domain.ErrRateLimited):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
-		slog.Warn("rate limited by GitHub, skipping scan", "repo", repoName)
+		s.log.WarnContext(ctx, "rate limited by GitHub, skipping scan", "repo", repoName)
 		return nil
 
 	case errors.Is(err, domain.ErrNoRelease):
@@ -172,7 +183,7 @@ func (s *Scanner) notify(ctx context.Context, repo *domain.Repository, release *
 	}
 
 	metrics.NotificationsSentTotal.Add(float64(len(subs)))
-	slog.Info("notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(subs))
+	s.log.InfoContext(ctx, "notifications sent", "repo", repo.Name, "tag", release.TagName, "count", len(subs))
 
 	return nil
 }

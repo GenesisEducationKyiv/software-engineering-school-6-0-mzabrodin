@@ -1,0 +1,66 @@
+filebeat.inputs:
+  - type: filestream
+    id: docker-container-logs
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    parsers:
+      - container:
+          stream: all
+          format: docker
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+
+processors:
+  # Ship only the application stack.
+  - drop_event:
+      when:
+        not:
+          regexp:
+            container.name: "^github_release_notifier_(app|postgres|redis)$"
+
+  # Decode JSON only for the app container. postgres/redis write plain text.
+  - decode_json_fields:
+      when:
+        equals:
+          container.name: "github_release_notifier_app"
+      fields: ["message"]
+      target: ""
+      overwrite_keys: true
+      add_error_key: false
+
+  # The raw JSON is now duplicated by the decoded root fields.
+  # drop it for the app only, but keep it for postgres/redis since they write plain text.
+  - drop_fields:
+      when:
+        equals:
+          container.name: "github_release_notifier_app"
+      ignore_missing: true
+      fields:
+        - message
+
+  # Strip boilerplate and redundant identifiers we never query.
+  # @timestamp already comes from the container parser, so the slog `time` field is a duplicate.
+  - drop_fields:
+      ignore_missing: true
+      fields:
+        - agent
+        - ecs
+        - input
+        - host
+        - log
+        - time
+        - container.labels
+        - container.id
+        - container.image
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+
+setup.ilm.enabled: true
+setup.ilm.policy_name: "filebeat-14d"
+setup.ilm.policy_file: /usr/share/filebeat/ilm-policy.json
+setup.ilm.overwrite: false
+
+logging.level: warning
+logging.to_files: false

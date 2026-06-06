@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github-release-notifier/internal/metrics"
 )
 
 type Cache interface {
@@ -35,6 +37,18 @@ func NewRedisCache(ctx context.Context, redisURL string) (Cache, error) {
 }
 
 func (c *redisCache) Get(ctx context.Context, key string) (value string, found bool, err error) {
+	start := time.Now()
+	defer func() {
+		result := "hit"
+		if err != nil {
+			result = "error"
+		} else if !found {
+			result = "miss"
+		}
+		metrics.CacheOperationsTotal.WithLabelValues("get", result).Inc()
+		metrics.CacheOperationDuration.WithLabelValues("get").Observe(time.Since(start).Seconds())
+	}()
+
 	val, err := c.client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
 		return "", false, nil
@@ -47,8 +61,14 @@ func (c *redisCache) Get(ctx context.Context, key string) (value string, found b
 	return val, true, nil
 }
 
-func (c *redisCache) Set(ctx context.Context, key, value string, ttl time.Duration) error {
-	if err := c.client.Set(ctx, key, value, ttl).Err(); err != nil {
+func (c *redisCache) Set(ctx context.Context, key, value string, ttl time.Duration) (err error) {
+	start := time.Now()
+	defer func() {
+		metrics.CacheOperationsTotal.WithLabelValues("set", metrics.ResultLabel(err)).Inc()
+		metrics.CacheOperationDuration.WithLabelValues("set").Observe(time.Since(start).Seconds())
+	}()
+
+	if err = c.client.Set(ctx, key, value, ttl).Err(); err != nil {
 		return fmt.Errorf("redis set: %w", err)
 	}
 

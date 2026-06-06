@@ -1,0 +1,17 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+.env
+.env.*
+*.md
+.vscode
+.idea
+*.log
+docs/
+test/
+filebeat/
+grafana/
+kibana/
+prometheus/

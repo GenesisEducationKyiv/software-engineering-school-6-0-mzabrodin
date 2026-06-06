@@ -10,6 +10,7 @@ import (
 	"net/mail"
 
 	"github-release-notifier/internal/domain"
+	"github-release-notifier/internal/metrics"
 )
 
 // 32 random bytes encoded as 64-character hex string
@@ -32,7 +33,7 @@ type gitHubClient interface {
 }
 
 type mailer interface {
-	SendConfirmation(to, repo, confirmURL string) error
+	SendConfirmation(ctx context.Context, to, repo, confirmURL string)
 	Shutdown()
 }
 
@@ -46,6 +47,7 @@ type SubscriptionService struct {
 	github gitHubClient
 	mailer mailer
 	urls   urlBuilder
+	log    *slog.Logger
 }
 
 func NewSubscriptionService(
@@ -54,6 +56,7 @@ func NewSubscriptionService(
 	github gitHubClient,
 	mailer mailer,
 	urls urlBuilder,
+	log *slog.Logger,
 ) *SubscriptionService {
 	return &SubscriptionService{
 		repos:  repos,
@@ -61,10 +64,15 @@ func NewSubscriptionService(
 		github: github,
 		mailer: mailer,
 		urls:   urls,
+		log:    log.With("component", "service"),
 	}
 }
 
-func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) error {
+func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName string) (err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("subscribe", metrics.ResultLabel(err)).Inc()
+	}()
+
 	if _, err := mail.ParseAddress(email); err != nil {
 		return domain.ErrInvalidEmail
 	}
@@ -88,7 +96,8 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repoName str
 		return err
 	}
 
-	s.sendConfirmationEmail(email, repoName, confirmToken)
+	s.log.InfoContext(ctx, "subscription created", "email", email, "repo", repoName)
+	s.mailer.SendConfirmation(ctx, email, repoName, s.urls.ConfirmURL(confirmToken))
 
 	return nil
 }
@@ -120,6 +129,8 @@ func (s *SubscriptionService) ensureRepoStored(ctx context.Context, repoName str
 	if err := s.repos.Create(ctx, repo); err != nil {
 		return nil, fmt.Errorf("create repository: %w", err)
 	}
+
+	s.log.InfoContext(ctx, "repository tracked", "repo", repoName)
 
 	return repo, nil
 }
@@ -153,27 +164,43 @@ func (s *SubscriptionService) createSubscription(
 	return confirmToken, nil
 }
 
-func (s *SubscriptionService) sendConfirmationEmail(email, repoName, confirmToken string) {
-	confirmURL := s.urls.ConfirmURL(confirmToken)
-	if err := s.mailer.SendConfirmation(email, repoName, confirmURL); err != nil {
-		slog.Error("failed to send confirmation email", "email", email, "error", err)
+func (s *SubscriptionService) Confirm(ctx context.Context, token string) (err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("confirm", metrics.ResultLabel(err)).Inc()
+	}()
+
+	if err := s.subs.Confirm(ctx, token); err != nil {
+		return err
 	}
+	s.log.InfoContext(ctx, "subscription confirmed")
+	return nil
 }
 
-func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
-	return s.subs.Confirm(ctx, token)
-}
+func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) (err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("unsubscribe", metrics.ResultLabel(err)).Inc()
+	}()
 
-func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) error {
-	return s.subs.Delete(ctx, token)
+	if err := s.subs.Delete(ctx, token); err != nil {
+		return err
+	}
+	s.log.InfoContext(ctx, "subscription deleted")
+	return nil
 }
 
 func (s *SubscriptionService) Shutdown() {
 	s.mailer.Shutdown()
 }
 
-func (s *SubscriptionService) GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error) {
-	if _, err := mail.ParseAddress(email); err != nil {
+func (s *SubscriptionService) GetByEmail(
+	ctx context.Context,
+	email string,
+) (views []*domain.SubscriptionView, err error) {
+	defer func() {
+		metrics.SubscriptionOperationsTotal.WithLabelValues("list", metrics.ResultLabel(err)).Inc()
+	}()
+
+	if _, parseErr := mail.ParseAddress(email); parseErr != nil {
 		return nil, domain.ErrInvalidEmail
 	}
 
