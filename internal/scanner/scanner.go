@@ -79,7 +79,7 @@ func (s *Scanner) Start(ctx context.Context) {
 
 func (s *Scanner) scan(ctx context.Context) {
 	ctx = logging.WithScanID(ctx, uuid.NewString())
-	s.log.DebugContext(ctx, "scanning repositories for new releases")
+	s.log.InfoContext(ctx, "scanning repositories for new releases")
 
 	start := time.Now()
 	defer func() {
@@ -94,7 +94,7 @@ func (s *Scanner) scan(ctx context.Context) {
 		return
 	}
 
-	s.log.DebugContext(ctx, "found repos to scan", "count", len(repos))
+	s.log.InfoContext(ctx, "found repos to scan", "count", len(repos))
 
 	for _, repo := range repos {
 		if err := s.checkRepo(ctx, repo); err != nil {
@@ -102,6 +102,8 @@ func (s *Scanner) scan(ctx context.Context) {
 			metrics.ScannerErrorsTotal.WithLabelValues("check_repo").Inc()
 		}
 	}
+
+	s.log.InfoContext(ctx, "scan completed", "repos", len(repos), "duration_ms", time.Since(start).Milliseconds())
 }
 
 func (s *Scanner) checkRepo(ctx context.Context, repo *domain.Repository) error {
