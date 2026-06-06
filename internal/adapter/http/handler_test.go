@@ -18,43 +18,72 @@ import (
 
 	api "github-release-notifier/internal/adapter/http"
 	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/usecase/confirm"
+	"github-release-notifier/internal/usecase/list"
+	"github-release-notifier/internal/usecase/subscribe"
+	"github-release-notifier/internal/usecase/unsubscribe"
 )
 
-type mockService struct {
-	mock.Mock
+type mockSubscribe struct{ mock.Mock }
+
+func (m *mockSubscribe) Execute(ctx context.Context, in subscribe.Input) (subscribe.Output, error) {
+	args := m.Called(ctx, in)
+	out, _ := args.Get(0).(subscribe.Output)
+	return out, args.Error(1)
 }
 
-func (m *mockService) Subscribe(ctx context.Context, email, repo string) error {
-	return m.Called(ctx, email, repo).Error(0)
+type mockConfirm struct{ mock.Mock }
+
+func (m *mockConfirm) Execute(ctx context.Context, in confirm.Input) (confirm.Output, error) {
+	args := m.Called(ctx, in)
+	out, _ := args.Get(0).(confirm.Output)
+	return out, args.Error(1)
 }
 
-func (m *mockService) Confirm(ctx context.Context, token string) error {
-	return m.Called(ctx, token).Error(0)
+type mockUnsubscribe struct{ mock.Mock }
+
+func (m *mockUnsubscribe) Execute(ctx context.Context, in unsubscribe.Input) (unsubscribe.Output, error) {
+	args := m.Called(ctx, in)
+	out, _ := args.Get(0).(unsubscribe.Output)
+	return out, args.Error(1)
 }
 
-func (m *mockService) Unsubscribe(ctx context.Context, token string) error {
-	return m.Called(ctx, token).Error(0)
-}
+type mockList struct{ mock.Mock }
 
-func (m *mockService) GetByEmail(ctx context.Context, email string) ([]*entity.SubscriptionView, error) {
-	args := m.Called(ctx, email)
-	v, _ := args.Get(0).([]*entity.SubscriptionView)
-	return v, args.Error(1)
+func (m *mockList) Execute(ctx context.Context, in list.Input) (list.Output, error) {
+	args := m.Called(ctx, in)
+	out, _ := args.Get(0).(list.Output)
+	return out, args.Error(1)
 }
 
 type HandlerSuite struct {
 	suite.Suite
-	handler *api.Handler
-	svc     *mockService
+	handler     *api.Handler
+	subscribe   *mockSubscribe
+	confirm     *mockConfirm
+	unsubscribe *mockUnsubscribe
+	list        *mockList
 }
 
 func (s *HandlerSuite) SetupSubTest() {
-	s.svc = &mockService{}
-	s.handler = api.NewHandler(s.svc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.subscribe = &mockSubscribe{}
+	s.confirm = &mockConfirm{}
+	s.unsubscribe = &mockUnsubscribe{}
+	s.list = &mockList{}
+	s.handler = api.NewHandler(
+		s.subscribe,
+		s.confirm,
+		s.unsubscribe,
+		s.list,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
 }
 
 func (s *HandlerSuite) TearDownSubTest() {
-	s.svc.AssertExpectations(s.T())
+	s.subscribe.AssertExpectations(s.T())
+	s.confirm.AssertExpectations(s.T())
+	s.unsubscribe.AssertExpectations(s.T())
+	s.list.AssertExpectations(s.T())
 }
 
 func TestHandlerSuite(t *testing.T) {
@@ -84,14 +113,15 @@ func (s *HandlerSuite) TestSubscribe() {
 		name       string
 		body       map[string]string
 		rawBody    string
-		setupMock  func(*mockService)
+		setupMock  func(*mockSubscribe)
 		wantStatus int
 	}{
 		{
 			name: "success",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(nil)
+			setupMock: func(m *mockSubscribe) {
+				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
+					Return(subscribe.Output{}, nil)
 			},
 			wantStatus: http.StatusOK,
 		},
@@ -113,40 +143,45 @@ func (s *HandlerSuite) TestSubscribe() {
 		{
 			name: "invalid email",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrInvalidEmail)
+			setupMock: func(m *mockSubscribe) {
+				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
+					Return(subscribe.Output{}, entity.ErrInvalidEmail)
 			},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name: "invalid repo",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrInvalidRepo)
+			setupMock: func(m *mockSubscribe) {
+				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
+					Return(subscribe.Output{}, entity.ErrInvalidRepo)
 			},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name: "repo not found",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrRepoNotFound)
+			setupMock: func(m *mockSubscribe) {
+				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
+					Return(subscribe.Output{}, entity.ErrRepoNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name: "already exists",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(entity.ErrAlreadyExists)
+			setupMock: func(m *mockSubscribe) {
+				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
+					Return(subscribe.Output{}, entity.ErrAlreadyExists)
 			},
 			wantStatus: http.StatusConflict,
 		},
 		{
 			name: "internal error",
 			body: map[string]string{"email": "user@example.com", "repo": "owner/repo"},
-			setupMock: func(svc *mockService) {
-				svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(assert.AnError)
+			setupMock: func(m *mockSubscribe) {
+				m.On("Execute", mock.Anything, subscribe.Input{Email: "user@example.com", Repo: "owner/repo"}).
+					Return(subscribe.Output{}, assert.AnError)
 			},
 			wantStatus: http.StatusInternalServerError,
 		},
@@ -155,7 +190,7 @@ func (s *HandlerSuite) TestSubscribe() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			if tc.setupMock != nil {
-				tc.setupMock(s.svc)
+				tc.setupMock(s.subscribe)
 			}
 
 			var bodyReader *bytes.Buffer
@@ -179,13 +214,15 @@ func (s *HandlerSuite) TestConfirm() {
 	cases := []struct {
 		name       string
 		token      string
-		setupMock  func(*mockService)
+		setupMock  func(*mockConfirm)
 		wantStatus int
 	}{
 		{
-			name:       "success",
-			token:      validToken,
-			setupMock:  func(svc *mockService) { svc.On("Confirm", mock.Anything, validToken).Return(nil) },
+			name:  "success",
+			token: validToken,
+			setupMock: func(m *mockConfirm) {
+				m.On("Execute", mock.Anything, confirm.Input{Token: validToken}).Return(confirm.Output{}, nil)
+			},
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -196,16 +233,18 @@ func (s *HandlerSuite) TestConfirm() {
 		{
 			name:  "not found",
 			token: validToken,
-			setupMock: func(svc *mockService) {
-				svc.On("Confirm", mock.Anything, validToken).Return(entity.ErrNotFound)
+			setupMock: func(m *mockConfirm) {
+				m.On("Execute", mock.Anything, confirm.Input{Token: validToken}).
+					Return(confirm.Output{}, entity.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:  "internal error",
 			token: validToken,
-			setupMock: func(svc *mockService) {
-				svc.On("Confirm", mock.Anything, validToken).Return(assert.AnError)
+			setupMock: func(m *mockConfirm) {
+				m.On("Execute", mock.Anything, confirm.Input{Token: validToken}).
+					Return(confirm.Output{}, assert.AnError)
 			},
 			wantStatus: http.StatusInternalServerError,
 		},
@@ -214,7 +253,7 @@ func (s *HandlerSuite) TestConfirm() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			if tc.setupMock != nil {
-				tc.setupMock(s.svc)
+				tc.setupMock(s.confirm)
 			}
 
 			r := httptest.NewRequestWithContext(s.T().Context(), http.MethodGet, "/api/confirm/"+tc.token, http.NoBody)
@@ -231,13 +270,15 @@ func (s *HandlerSuite) TestUnsubscribe() {
 	cases := []struct {
 		name       string
 		token      string
-		setupMock  func(*mockService)
+		setupMock  func(*mockUnsubscribe)
 		wantStatus int
 	}{
 		{
-			name:       "success",
-			token:      validToken,
-			setupMock:  func(svc *mockService) { svc.On("Unsubscribe", mock.Anything, validToken).Return(nil) },
+			name:  "success",
+			token: validToken,
+			setupMock: func(m *mockUnsubscribe) {
+				m.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).Return(unsubscribe.Output{}, nil)
+			},
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -248,16 +289,18 @@ func (s *HandlerSuite) TestUnsubscribe() {
 		{
 			name:  "not found",
 			token: validToken,
-			setupMock: func(svc *mockService) {
-				svc.On("Unsubscribe", mock.Anything, validToken).Return(entity.ErrNotFound)
+			setupMock: func(m *mockUnsubscribe) {
+				m.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).
+					Return(unsubscribe.Output{}, entity.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:  "internal error",
 			token: validToken,
-			setupMock: func(svc *mockService) {
-				svc.On("Unsubscribe", mock.Anything, validToken).Return(assert.AnError)
+			setupMock: func(m *mockUnsubscribe) {
+				m.On("Execute", mock.Anything, unsubscribe.Input{Token: validToken}).
+					Return(unsubscribe.Output{}, assert.AnError)
 			},
 			wantStatus: http.StatusInternalServerError,
 		},
@@ -266,7 +309,7 @@ func (s *HandlerSuite) TestUnsubscribe() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			if tc.setupMock != nil {
-				tc.setupMock(s.svc)
+				tc.setupMock(s.unsubscribe)
 			}
 
 			r := httptest.NewRequestWithContext(
@@ -288,18 +331,19 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 	cases := []struct {
 		name       string
 		email      string
-		setupMock  func(*mockService)
+		setupMock  func(*mockList)
 		wantStatus int
 		wantLen    int
 	}{
 		{
 			name:  "returns subscriptions",
 			email: "user@example.com",
-			setupMock: func(svc *mockService) {
+			setupMock: func(m *mockList) {
 				views := []*entity.SubscriptionView{
 					{Email: "user@example.com", Repo: "owner/repo", Confirmed: true},
 				}
-				svc.On("GetByEmail", mock.Anything, "user@example.com").Return(views, nil)
+				m.On("Execute", mock.Anything, list.Input{Email: "user@example.com"}).
+					Return(list.Output{Views: views}, nil)
 			},
 			wantStatus: http.StatusOK,
 			wantLen:    1,
@@ -312,18 +356,18 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 		{
 			name:  "invalid email",
 			email: "notanemail",
-			setupMock: func(svc *mockService) {
-				svc.On("GetByEmail", mock.Anything, "notanemail").
-					Return([]*entity.SubscriptionView{}, entity.ErrInvalidEmail)
+			setupMock: func(m *mockList) {
+				m.On("Execute", mock.Anything, list.Input{Email: "notanemail"}).
+					Return(list.Output{}, entity.ErrInvalidEmail)
 			},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:  "internal error",
 			email: "user@example.com",
-			setupMock: func(svc *mockService) {
-				svc.On("GetByEmail", mock.Anything, "user@example.com").
-					Return([]*entity.SubscriptionView{}, assert.AnError)
+			setupMock: func(m *mockList) {
+				m.On("Execute", mock.Anything, list.Input{Email: "user@example.com"}).
+					Return(list.Output{}, assert.AnError)
 			},
 			wantStatus: http.StatusInternalServerError,
 		},
@@ -332,7 +376,7 @@ func (s *HandlerSuite) TestGetSubscriptions() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			if tc.setupMock != nil {
-				tc.setupMock(s.svc)
+				tc.setupMock(s.list)
 			}
 
 			url := "/api/subscriptions"

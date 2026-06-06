@@ -20,8 +20,11 @@ import (
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/logging"
-	"github-release-notifier/internal/service"
+	"github-release-notifier/internal/usecase/confirm"
+	"github-release-notifier/internal/usecase/list"
 	"github-release-notifier/internal/usecase/scanner"
+	"github-release-notifier/internal/usecase/subscribe"
+	"github-release-notifier/internal/usecase/unsubscribe"
 
 	"github.com/joho/godotenv"
 )
@@ -97,17 +100,15 @@ func run(log *slog.Logger) error {
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
 
-	confirmationNotifier := service.NewConfirmationNotifier(mail, log)
+	confirmationNotifier := mailer.NewConfirmationNotifier(mail, log)
 	releaseNotifier := scanner.NewReleaseNotifier(mail, urls)
-
-	svc := service.NewSubscriptionService(repos, subs, gh, confirmationNotifier, urls, log)
 
 	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval, log)
 	go scan.Start(ctx)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: api.NewRouter(api.NewHandler(svc, log), cfg.APIKey, log),
+		Handler: api.NewRouter(buildHandler(repos, subs, gh, confirmationNotifier, urls, log), cfg.APIKey, log),
 	}
 
 	serverError := make(chan error, 1)
@@ -132,8 +133,24 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
-	svc.Shutdown()
+	confirmationNotifier.Shutdown()
 
 	log.Info("server stopped")
 	return nil
+}
+
+func buildHandler(
+	repos *repository.GitHubRepoRepository,
+	subs *repository.SubscriptionRepository,
+	gh *github.Client,
+	confirmationNotifier *mailer.ConfirmationNotifier,
+	urls *urlbuilder.URLBuilder,
+	log *slog.Logger,
+) *api.Handler {
+	subscribeUseCase := subscribe.New(repos, subs, gh, confirmationNotifier, urls, log)
+	confirmUseCase := confirm.New(subs, log)
+	unsubscribeUseCase := unsubscribe.New(subs, log)
+	listUseCase := list.New(subs)
+
+	return api.NewHandler(subscribeUseCase, confirmUseCase, unsubscribeUseCase, listUseCase, log)
 }

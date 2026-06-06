@@ -8,27 +8,55 @@ import (
 	"net/http"
 	"strings"
 
-	"github-release-notifier/internal/entity"
-
 	"github.com/go-chi/chi/v5"
+
+	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/usecase/confirm"
+	"github-release-notifier/internal/usecase/list"
+	"github-release-notifier/internal/usecase/subscribe"
+	"github-release-notifier/internal/usecase/unsubscribe"
 )
 
 const tokenHexLen = 64
 
-type subscriptionService interface {
-	Subscribe(ctx context.Context, email, repo string) error
-	Confirm(ctx context.Context, token string) error
-	Unsubscribe(ctx context.Context, token string) error
-	GetByEmail(ctx context.Context, email string) ([]*entity.SubscriptionView, error)
+type subscriber interface {
+	Execute(ctx context.Context, in subscribe.Input) (subscribe.Output, error)
+}
+
+type confirmer interface {
+	Execute(ctx context.Context, in confirm.Input) (confirm.Output, error)
+}
+
+type unsubscriber interface {
+	Execute(ctx context.Context, in unsubscribe.Input) (unsubscribe.Output, error)
+}
+
+type lister interface {
+	Execute(ctx context.Context, in list.Input) (list.Output, error)
 }
 
 type Handler struct {
-	service subscriptionService
-	log     *slog.Logger
+	subscribe   subscriber
+	confirm     confirmer
+	unsubscribe unsubscriber
+	list        lister
+	log         *slog.Logger
 }
 
-func NewHandler(svc subscriptionService, log *slog.Logger) *Handler {
-	return &Handler{service: svc, log: log.With("component", "handler")}
+func NewHandler(
+	sub subscriber,
+	conf confirmer,
+	unsub unsubscriber,
+	lst lister,
+	log *slog.Logger,
+) *Handler {
+	return &Handler{
+		subscribe:   sub,
+		confirm:     conf,
+		unsubscribe: unsub,
+		list:        lst,
+		log:         log.With("component", "handler"),
+	}
 }
 
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +74,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.Subscribe(r.Context(), req.Email, req.Repo)
+	_, err := h.subscribe.Execute(r.Context(), subscribe.Input{Email: req.Email, Repo: req.Repo})
 	switch {
 	case errors.Is(err, entity.ErrInvalidEmail):
 		jsonErr(w, "invalid email format", http.StatusBadRequest)
@@ -76,7 +104,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.Confirm(r.Context(), token)
+	_, err := h.confirm.Execute(r.Context(), confirm.Input{Token: token})
 	switch {
 	case errors.Is(err, entity.ErrNotFound):
 		jsonErr(w, "token not found", http.StatusNotFound)
@@ -97,7 +125,7 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.Unsubscribe(r.Context(), token)
+	_, err := h.unsubscribe.Execute(r.Context(), unsubscribe.Input{Token: token})
 	switch {
 	case errors.Is(err, entity.ErrNotFound):
 		jsonErr(w, "token not found", http.StatusNotFound)
@@ -118,7 +146,7 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subs, err := h.service.GetByEmail(r.Context(), email)
+	out, err := h.list.Execute(r.Context(), list.Input{Email: email})
 	switch {
 	case errors.Is(err, entity.ErrInvalidEmail):
 		jsonErr(w, "invalid email format", http.StatusBadRequest)
@@ -128,6 +156,6 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "internal server error", http.StatusInternalServerError)
 
 	default:
-		jsonOK(w, toSubscriptionResponses(subs))
+		jsonOK(w, toSubscriptionResponses(out.Views))
 	}
 }
