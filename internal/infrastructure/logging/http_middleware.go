@@ -1,4 +1,4 @@
-package api
+package logging
 
 import (
 	"log/slog"
