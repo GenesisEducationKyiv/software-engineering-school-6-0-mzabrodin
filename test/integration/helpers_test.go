@@ -46,8 +46,6 @@ func (m *mockConfirmationNotifier) SendConfirmation(_ context.Context, email, re
 	m.Called(email, repo, url)
 }
 
-func (m *mockConfirmationNotifier) Shutdown() {}
-
 // newTestServer builds a real HTTP server backed by real repositories against testPool.
 func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	t.Helper()
