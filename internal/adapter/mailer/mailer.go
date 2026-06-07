@@ -2,17 +2,24 @@ package mailer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/wneessen/go-mail"
 
 	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/metrics"
+)
 
-	"github.com/wneessen/go-mail"
+const (
+	sendTimeout      = time.Minute
+	jobBufferSize    = 64
+	kindConfirmation = "confirmation"
+	kindNotification = "notification"
 )
 
 var confirmationTemplate = template.Must(template.New("confirmation").Parse(`<!DOCTYPE html>
@@ -36,14 +43,27 @@ var releaseTemplate = template.Must(template.New("release").Parse(`<!DOCTYPE htm
 </body>
 </html>`))
 
+type sender interface {
+	sendBatch(ctx context.Context, messages []*mail.Msg) []error
+}
+
+type mailJob struct {
+	ctx      context.Context
+	kind     string
+	messages []*mail.Msg
+	result   chan<- []error
+}
+
 type Mailer struct {
-	client    *mail.Client
+	sender    sender
 	fromEmail string
+	jobs      chan mailJob
+	wg        sync.WaitGroup
 	log       *slog.Logger
 }
 
 func NewMailer(host string, port int, user, password, fromEmail string, log *slog.Logger) (*Mailer, error) {
-	c, err := mail.NewClient(host,
+	client, err := mail.NewClient(host,
 		mail.WithPort(port),
 		mail.WithSMTPAuth(mail.SMTPAuthPlain),
 		mail.WithUsername(user),
@@ -53,90 +73,145 @@ func NewMailer(host string, port int, user, password, fromEmail string, log *slo
 		return nil, fmt.Errorf("create mail client: %w", err)
 	}
 
-	return &Mailer{client: c, fromEmail: fromEmail, log: log.With("component", "mailer")}, nil
+	return newMailer(&smtpSender{client: client, log: log}, fromEmail, log), nil
 }
 
-func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) (err error) {
-	start := time.Now()
-	defer func() {
-		metrics.EmailSendsTotal.WithLabelValues("confirmation", metrics.ResultLabel(err)).Inc()
-		metrics.EmailSendDuration.WithLabelValues("confirmation").Observe(time.Since(start).Seconds())
-	}()
+func newMailer(s sender, fromEmail string, log *slog.Logger) *Mailer {
+	m := &Mailer{
+		sender:    s,
+		fromEmail: fromEmail,
+		jobs:      make(chan mailJob, jobBufferSize),
+		log:       log.With("component", "mailer"),
+	}
 
+	m.wg.Add(1)
+	go m.dispatch()
+
+	return m
+}
+
+func (m *Mailer) dispatch() {
+	defer m.wg.Done()
+
+	for job := range m.jobs {
+		m.deliver(job)
+	}
+}
+
+func (m *Mailer) deliver(job mailJob) {
+	ctx, cancel := context.WithTimeout(job.ctx, sendTimeout)
+	defer cancel()
+
+	start := time.Now()
+	errs := m.sender.sendBatch(ctx, job.messages)
+	metrics.EmailSendDuration.WithLabelValues(job.kind).Observe(time.Since(start).Seconds())
+
+	for i, err := range errs {
+		metrics.EmailSendsTotal.WithLabelValues(job.kind, metrics.ResultLabel(err)).Inc()
+		if err != nil {
+			m.log.ErrorContext(
+				ctx,
+				"failed to send email",
+				"kind",
+				job.kind,
+				"to",
+				recipient(job.messages[i]),
+				"error",
+				err,
+			)
+		}
+	}
+
+	if job.result != nil {
+		job.result <- errs
+	}
+}
+
+func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) {
 	body, err := renderTemplate(confirmationTemplate, map[string]string{
 		"Repo":       repo,
 		"ConfirmURL": confirmURL,
 	})
 	if err != nil {
-		return fmt.Errorf("render confirmation email: %w", err)
+		m.log.ErrorContext(ctx, "failed to render confirmation email", "to", to, "repo", repo, "error", err)
+		return
 	}
 
-	msg := mail.NewMsg()
-	if err := msg.From(m.fromEmail); err != nil {
-		return fmt.Errorf("set from: %w", err)
-	}
-	if err := msg.To(to); err != nil {
-		return fmt.Errorf("set to: %w", err)
-	}
-	msg.Subject(fmt.Sprintf("Confirm your subscription to %s", repo))
-	msg.SetBodyString(mail.TypeTextHTML, body)
-
-	if err := m.client.DialAndSendWithContext(ctx, msg); err != nil {
-		return fmt.Errorf("send email: %w", err)
+	msg, err := m.buildMessage(to, fmt.Sprintf("Confirm your subscription to %s", repo), body)
+	if err != nil {
+		m.log.ErrorContext(ctx, "failed to build confirmation email", "to", to, "repo", repo, "error", err)
+		return
 	}
 
-	return nil
+	job := mailJob{ctx: context.WithoutCancel(ctx), kind: kindConfirmation, messages: []*mail.Msg{msg}}
+
+	select {
+	case m.jobs <- job:
+	case <-ctx.Done():
+		m.log.WarnContext(ctx, "context done before confirmation could be queued", "to", to, "repo", repo)
+	}
 }
 
-func (m *Mailer) SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) (err error) {
-	start := time.Now()
-	defer func() {
-		metrics.EmailSendsTotal.WithLabelValues("notification", metrics.ResultLabel(err)).Inc()
-		metrics.EmailSendDuration.WithLabelValues("notification").Observe(time.Since(start).Seconds())
-	}()
+func (m *Mailer) SendReleaseNotifications(
+	ctx context.Context,
+	notifications []entity.ReleaseNotification,
+) entity.BatchResult {
+	var result entity.BatchResult
 
-	if len(notifications) == 0 {
-		return nil
-	}
+	messages := make([]*mail.Msg, 0, len(notifications))
+	recipients := make([]string, 0, len(notifications))
 
-	if err := m.client.DialWithContext(ctx); err != nil {
-		return fmt.Errorf("dial SMTP: %w", err)
-	}
-	defer func() {
-		if err := m.client.Close(); err != nil {
-			m.log.ErrorContext(ctx, "failed to close SMTP connection", "error", err)
-		}
-	}()
+	for i := range notifications {
+		n := &notifications[i]
 
-	var errs []error
-
-	for _, n := range notifications {
-		if err := ctx.Err(); err != nil {
-			errs = append(errs, err)
-			break
+		msg, err := m.buildReleaseMessage(n)
+		if err != nil {
+			m.log.ErrorContext(ctx, "failed to build release email", "to", n.To, "error", err)
+			result.Failed = append(result.Failed, n.To)
+			continue
 		}
 
-		if err := m.sendNotification(&n); err != nil {
-			m.log.ErrorContext(
-				ctx,
-				"failed to send release notification",
-				"to",
-				n.To,
-				"repo",
-				n.Repo,
-				"tag",
-				n.Tag,
-				"error",
-				err,
-			)
-			errs = append(errs, err)
+		messages = append(messages, msg)
+		recipients = append(recipients, n.To)
+	}
+
+	if len(messages) == 0 {
+		return result
+	}
+
+	resultCh := make(chan []error, 1)
+	m.jobs <- mailJob{ctx: ctx, kind: kindNotification, messages: messages, result: resultCh}
+	errs := <-resultCh
+
+	for i, err := range errs {
+		if err != nil {
+			result.Failed = append(result.Failed, recipients[i])
+		} else {
+			result.Sent++
 		}
 	}
 
-	return errors.Join(errs...)
+	return result
 }
 
-func (m *Mailer) sendNotification(n *entity.ReleaseNotification) error {
+func (m *Mailer) Shutdown(ctx context.Context) {
+	close(m.jobs)
+
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		m.log.Info("mailer stopped")
+	case <-ctx.Done():
+		m.log.WarnContext(ctx, "mailer shutdown timed out, queued emails may be dropped")
+	}
+}
+
+func (m *Mailer) buildReleaseMessage(n *entity.ReleaseNotification) (*mail.Msg, error) {
 	body, err := renderTemplate(releaseTemplate, map[string]string{
 		"Repo":           n.Repo,
 		"Tag":            n.Tag,
@@ -144,24 +219,35 @@ func (m *Mailer) sendNotification(n *entity.ReleaseNotification) error {
 		"UnsubscribeURL": n.UnsubscribeURL,
 	})
 	if err != nil {
-		return fmt.Errorf("render email for %s: %w", n.To, err)
+		return nil, fmt.Errorf("render release email: %w", err)
 	}
 
+	return m.buildMessage(n.To, fmt.Sprintf("New release %s for %s", n.Tag, n.Repo), body)
+}
+
+func (m *Mailer) buildMessage(to, subject, body string) (*mail.Msg, error) {
 	msg := mail.NewMsg()
 	if err := msg.From(m.fromEmail); err != nil {
-		return fmt.Errorf("set from for %s: %w", n.To, err)
+		return nil, fmt.Errorf("set from: %w", err)
 	}
-	if err := msg.To(n.To); err != nil {
-		return fmt.Errorf("set to for %s: %w", n.To, err)
+
+	if err := msg.To(to); err != nil {
+		return nil, fmt.Errorf("set to: %w", err)
 	}
-	msg.Subject(fmt.Sprintf("New release %s for %s", n.Tag, n.Repo))
+
+	msg.Subject(subject)
 	msg.SetBodyString(mail.TypeTextHTML, body)
 
-	if err := m.client.Send(msg); err != nil {
-		return fmt.Errorf("send email to %s: %w", n.To, err)
+	return msg, nil
+}
+
+func recipient(msg *mail.Msg) string {
+	to := msg.GetTo()
+	if len(to) == 0 {
+		return ""
 	}
 
-	return nil
+	return to[0].Address
 }
 
 func renderTemplate(tmpl *template.Template, data map[string]string) (string, error) {
