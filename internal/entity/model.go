@@ -43,3 +43,8 @@ type ReleaseNotification struct {
 	ReleaseURL     string
 	UnsubscribeURL string
 }
+
+type BatchResult struct {
+	Sent   int
+	Failed []string
+}
