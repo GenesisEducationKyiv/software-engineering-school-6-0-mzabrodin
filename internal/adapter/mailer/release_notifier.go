@@ -2,12 +2,14 @@ package mailer
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 
 	"github-release-notifier/internal/entity"
 )
 
 type releaseSender interface {
-	SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) error
+	SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) entity.BatchResult
 }
 
 type unsubscribeURLBuilder interface {
@@ -17,10 +19,11 @@ type unsubscribeURLBuilder interface {
 type ReleaseNotifier struct {
 	sender releaseSender
 	urls   unsubscribeURLBuilder
+	log    *slog.Logger
 }
 
-func NewReleaseNotifier(sender releaseSender, urls unsubscribeURLBuilder) *ReleaseNotifier {
-	return &ReleaseNotifier{sender: sender, urls: urls}
+func NewReleaseNotifier(sender releaseSender, urls unsubscribeURLBuilder, log *slog.Logger) *ReleaseNotifier {
+	return &ReleaseNotifier{sender: sender, urls: urls, log: log.With("component", "release_notifier")}
 }
 
 func (n *ReleaseNotifier) Notify(
@@ -36,5 +39,16 @@ func (n *ReleaseNotifier) Notify(
 		)
 	}
 
-	return n.sender.SendReleaseNotifications(ctx, notifications)
+	result := n.sender.SendReleaseNotifications(ctx, notifications)
+
+	if len(result.Failed) > 0 {
+		n.log.WarnContext(ctx, "some release notifications failed",
+			"repo", repo.Name, "tag", release.TagName, "sent", result.Sent, "failed", len(result.Failed))
+	}
+
+	if result.Sent == 0 && len(result.Failed) > 0 {
+		return fmt.Errorf("all %d release notifications failed", len(result.Failed))
+	}
+
+	return nil
 }

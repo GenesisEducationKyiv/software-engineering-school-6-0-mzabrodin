@@ -2,7 +2,8 @@ package mailer_test
 
 import (
 	"context"
-	"errors"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -12,10 +13,17 @@ import (
 	"github-release-notifier/internal/entity"
 )
 
+var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
 type mockReleaseSender struct{ mock.Mock }
 
-func (m *mockReleaseSender) SendReleaseNotifications(_ context.Context, ns []entity.ReleaseNotification) error {
-	return m.Called(ns).Error(0)
+func (m *mockReleaseSender) SendReleaseNotifications(
+	_ context.Context,
+	ns []entity.ReleaseNotification,
+) entity.BatchResult {
+	args := m.Called(ns)
+	res, _ := args.Get(0).(entity.BatchResult)
+	return res
 }
 
 type mockURLBuilder struct{ mock.Mock }
@@ -46,24 +54,24 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 	defer u.AssertExpectations(s.T())
 
 	m := &mockReleaseSender{}
-	var capturedNotifications []entity.ReleaseNotification
+	var captured []entity.ReleaseNotification
 	m.On("SendReleaseNotifications", mock.Anything).
 		Run(func(args mock.Arguments) {
-			capturedNotifications, _ = args.Get(0).([]entity.ReleaseNotification)
-		}).Return(nil)
+			captured, _ = args.Get(0).([]entity.ReleaseNotification)
+		}).Return(entity.BatchResult{Sent: 2})
 	defer m.AssertExpectations(s.T())
 
-	n := mailer.NewReleaseNotifier(m, u)
+	n := mailer.NewReleaseNotifier(m, u, testLogger)
 	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
 
-	s.Require().Len(capturedNotifications, 2)
-	s.Equal("a@example.com", capturedNotifications[0].To)
-	s.Equal("owner/repo", capturedNotifications[0].Repo)
-	s.Equal("v1.0.0", capturedNotifications[0].Tag)
-	s.Equal(release.HTMLURL, capturedNotifications[0].ReleaseURL)
-	s.Equal("https://example.com/unsubscribe/tok-a", capturedNotifications[0].UnsubscribeURL)
-	s.Equal("b@example.com", capturedNotifications[1].To)
-	s.Equal("https://example.com/unsubscribe/tok-b", capturedNotifications[1].UnsubscribeURL)
+	s.Require().Len(captured, 2)
+	s.Equal("a@example.com", captured[0].To)
+	s.Equal("owner/repo", captured[0].Repo)
+	s.Equal("v1.0.0", captured[0].Tag)
+	s.Equal(release.HTMLURL, captured[0].ReleaseURL)
+	s.Equal("https://example.com/unsubscribe/tok-a", captured[0].UnsubscribeURL)
+	s.Equal("b@example.com", captured[1].To)
+	s.Equal("https://example.com/unsubscribe/tok-b", captured[1].UnsubscribeURL)
 }
 
 func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
@@ -80,13 +88,13 @@ func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
 	defer u.AssertExpectations(s.T())
 
 	m := &mockReleaseSender{}
-	m.On("SendReleaseNotifications", mock.Anything).Return(nil)
+	m.On("SendReleaseNotifications", mock.Anything).Return(entity.BatchResult{Sent: 2})
 
-	n := mailer.NewReleaseNotifier(m, u)
+	n := mailer.NewReleaseNotifier(m, u, testLogger)
 	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
 }
 
-func (s *ReleaseNotifierSuite) TestMailerError_Propagated() {
+func (s *ReleaseNotifierSuite) TestAllFailed_ReturnsError() {
 	repo := &entity.Repository{Name: "owner/repo"}
 	release := &entity.Release{TagName: "v1.0.0", HTMLURL: "..."}
 	subs := []*entity.Subscription{{Email: "a@example.com", UnsubscribeToken: "tok"}}
@@ -95,9 +103,31 @@ func (s *ReleaseNotifierSuite) TestMailerError_Propagated() {
 	u.On("UnsubscribeURL", "tok").Return("https://example.com/unsubscribe/tok")
 
 	m := &mockReleaseSender{}
-	m.On("SendReleaseNotifications", mock.Anything).Return(errors.New("smtp error"))
+	m.On("SendReleaseNotifications", mock.Anything).
+		Return(entity.BatchResult{Failed: []string{"a@example.com"}})
 	defer m.AssertExpectations(s.T())
 
-	n := mailer.NewReleaseNotifier(m, u)
+	n := mailer.NewReleaseNotifier(m, u, testLogger)
 	s.Error(n.Notify(s.T().Context(), subs, repo, release))
+}
+
+func (s *ReleaseNotifierSuite) TestPartialFailure_NoError() {
+	repo := &entity.Repository{Name: "owner/repo"}
+	release := &entity.Release{TagName: "v1.0.0", HTMLURL: "..."}
+	subs := []*entity.Subscription{
+		{Email: "a@example.com", UnsubscribeToken: "tok-a"},
+		{Email: "b@example.com", UnsubscribeToken: "tok-b"},
+	}
+
+	u := &mockURLBuilder{}
+	u.On("UnsubscribeURL", "tok-a").Return("https://example.com/unsubscribe/tok-a")
+	u.On("UnsubscribeURL", "tok-b").Return("https://example.com/unsubscribe/tok-b")
+
+	m := &mockReleaseSender{}
+	m.On("SendReleaseNotifications", mock.Anything).
+		Return(entity.BatchResult{Sent: 1, Failed: []string{"b@example.com"}})
+	defer m.AssertExpectations(s.T())
+
+	n := mailer.NewReleaseNotifier(m, u, testLogger)
+	s.NoError(n.Notify(s.T().Context(), subs, repo, release))
 }
