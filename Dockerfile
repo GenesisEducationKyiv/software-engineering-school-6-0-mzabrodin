@@ -26,6 +26,6 @@ COPY --from=builder --chown=app:app /app/migrations ./migrations
 
 USER app
 
-EXPOSE 8080
+EXPOSE 8080 50051
 
 CMD ["./server"]
