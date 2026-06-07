@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
-	"github-release-notifier/internal/entity"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 type GitHubRepoRepository struct {
@@ -20,16 +20,14 @@ func NewGitHubRepoRepository(pool *pgxpool.Pool) *GitHubRepoRepository {
 	return &GitHubRepoRepository{pool: pool}
 }
 
-func (r *GitHubRepoRepository) Create(ctx context.Context, repo *entity.Repository) (err error) {
-	start := time.Now()
-	defer func() { trackDBQuery(start, "create", "repositories", err) }()
+func (r *GitHubRepoRepository) Create(ctx context.Context, repo *entity.Repository) error {
+	ctx = metrics.WithDBOp(ctx, "create", "repositories")
 
-	err = r.pool.QueryRow(ctx, `
+	err := r.pool.QueryRow(ctx, `
 		INSERT INTO repositories (name)
 		VALUES ($1)
 		RETURNING id, created_at
 	`, repo.Name).Scan(&repo.ID, &repo.CreatedAt)
-
 	if err != nil {
 		return fmt.Errorf("create repository: %w", err)
 	}
@@ -37,9 +35,8 @@ func (r *GitHubRepoRepository) Create(ctx context.Context, repo *entity.Reposito
 	return nil
 }
 
-func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (result *entity.Repository, err error) {
-	start := time.Now()
-	defer func() { trackDBQuery(start, "get_by_name", "repositories", err) }()
+func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (*entity.Repository, error) {
+	ctx = metrics.WithDBOp(ctx, "get_by_name", "repositories")
 
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, name, last_seen_tag, checked_at, created_at
@@ -61,9 +58,8 @@ func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (resu
 	return row.toEntity(), nil
 }
 
-func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (repos []*entity.Repository, err error) {
-	start := time.Now()
-	defer func() { trackDBQuery(start, "get_all_with_subscriptions", "repositories", err) }()
+func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) ([]*entity.Repository, error) {
+	ctx = metrics.WithDBOp(ctx, "get_all_with_subscriptions", "repositories")
 
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT r.id, r.name, r.last_seen_tag, r.checked_at, r.created_at
@@ -83,14 +79,12 @@ func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (rep
 	return toRepositoryEntities(collected), nil
 }
 
-func (r *GitHubRepoRepository) UpdateLastSeenTag(ctx context.Context, name, tag string) (err error) {
-	start := time.Now()
-	defer func() { trackDBQuery(start, "update_last_seen_tag", "repositories", err) }()
+func (r *GitHubRepoRepository) UpdateLastSeenTag(ctx context.Context, name, tag string) error {
+	ctx = metrics.WithDBOp(ctx, "update_last_seen_tag", "repositories")
 
 	cmd, err := r.pool.Exec(ctx, `
-       UPDATE repositories SET last_seen_tag = $1, checked_at = NOW() WHERE name = $2
-    `, tag, name)
-
+		UPDATE repositories SET last_seen_tag = $1, checked_at = NOW() WHERE name = $2
+	`, tag, name)
 	if err != nil {
 		return fmt.Errorf("update last seen tag: %w", err)
 	}
