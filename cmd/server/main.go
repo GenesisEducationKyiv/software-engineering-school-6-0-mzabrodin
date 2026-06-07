@@ -21,6 +21,7 @@ import (
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/infrastructure/scheduler"
 	"github-release-notifier/internal/usecase/confirm"
 	"github-release-notifier/internal/usecase/list"
 	"github-release-notifier/internal/usecase/scanner"
@@ -102,10 +103,10 @@ func run(log *slog.Logger) error {
 	urls := urlbuilder.New(cfg.BaseURL)
 
 	confirmationNotifier := mailer.NewConfirmationNotifier(mail, log)
-	releaseNotifier := scanner.NewReleaseNotifier(mail, urls)
+	releaseNotifier := mailer.NewReleaseNotifier(mail, urls)
 
-	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval, log)
-	go scan.Start(ctx)
+	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.WorkerCount, log)
+	go scheduler.New(scan, cfg.ScanInterval, log).Start(ctx)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
