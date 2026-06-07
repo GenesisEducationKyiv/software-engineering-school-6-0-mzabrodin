@@ -153,5 +153,11 @@ func buildHandler(
 	unsubscribeUseCase := unsubscribe.New(subs, log)
 	listUseCase := list.New(subs)
 
-	return api.NewHandler(subscribeUseCase, confirmUseCase, unsubscribeUseCase, listUseCase, log)
+	return api.NewHandler(
+		metrics.NewMetered[subscribe.Input, subscribe.Output]("subscribe", subscribeUseCase),
+		metrics.NewMetered[confirm.Input, confirm.Output]("confirm", confirmUseCase),
+		metrics.NewMetered[unsubscribe.Input, unsubscribe.Output]("unsubscribe", unsubscribeUseCase),
+		metrics.NewMetered[list.Input, list.Output]("list", listUseCase),
+		log,
+	)
 }
