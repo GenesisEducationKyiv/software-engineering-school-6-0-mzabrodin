@@ -20,6 +20,7 @@ import (
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/logging"
+	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/usecase/confirm"
 	"github-release-notifier/internal/usecase/list"
 	"github-release-notifier/internal/usecase/scanner"
@@ -63,7 +64,7 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL, log)
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL, metrics.NewPgxTracer(), log)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
