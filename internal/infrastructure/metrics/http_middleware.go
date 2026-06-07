@@ -1,4 +1,4 @@
-package api
+package metrics
 
 import (
 	"fmt"
@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 type metricsWriter struct {
@@ -33,7 +31,7 @@ func (mw *metricsWriter) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-func MetricsMiddleware(next http.Handler) http.Handler {
+func HTTPMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
@@ -55,13 +53,13 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 
-		metrics.HTTPRequestsTotal.WithLabelValues(
+		HTTPRequestsTotal.WithLabelValues(
 			r.Method,
 			path,
 			fmt.Sprintf("%d", status),
 		).Inc()
 
-		metrics.HTTPRequestDuration.WithLabelValues(
+		HTTPRequestDuration.WithLabelValues(
 			r.Method,
 			path,
 		).Observe(time.Since(start).Seconds())
