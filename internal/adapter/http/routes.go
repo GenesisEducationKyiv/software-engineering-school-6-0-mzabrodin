@@ -27,13 +27,13 @@ func NewRouter(h *Handler, apiKey string, log *slog.Logger) http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(logging.NewSlogMiddleware(log))
-		r.Use(metrics.HTTPMiddleware)
+		r.Use(metrics.NewMetricsMiddleware)
 
 		r.Get("/confirm/{token}", h.Confirm)
 		r.Get("/unsubscribe/{token}", h.Unsubscribe)
 
 		r.Group(func(r chi.Router) {
-			r.Use(KeyAuth(apiKey))
+			r.Use(NewKeyAuthMiddleware(apiKey))
 			r.Post("/subscribe", h.Subscribe)
 			r.Get("/subscriptions", h.GetSubscriptions)
 		})
