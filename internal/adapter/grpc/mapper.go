@@ -1,4 +1,4 @@
-package grpcapi
+package grcp_api
 
 import (
 	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"

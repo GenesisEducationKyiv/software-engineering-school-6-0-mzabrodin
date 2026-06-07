@@ -1,4 +1,4 @@
-package grpcapi
+package grcp_api
 
 import (
 	"fmt"

@@ -1,4 +1,4 @@
-package grpcapi_test
+package grcp_api_test
 
 import (
 	"io"
