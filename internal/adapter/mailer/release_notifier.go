@@ -1,4 +1,4 @@
-package scanner
+package mailer
 
 import (
 	"context"
@@ -6,21 +6,21 @@ import (
 	"github-release-notifier/internal/entity"
 )
 
-type mailer interface {
+type releaseSender interface {
 	SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) error
 }
 
-type urlBuilder interface {
+type unsubscribeURLBuilder interface {
 	UnsubscribeURL(token string) string
 }
 
 type ReleaseNotifier struct {
-	mailer mailer
-	urls   urlBuilder
+	sender releaseSender
+	urls   unsubscribeURLBuilder
 }
 
-func NewReleaseNotifier(m mailer, urls urlBuilder) *ReleaseNotifier {
-	return &ReleaseNotifier{mailer: m, urls: urls}
+func NewReleaseNotifier(sender releaseSender, urls unsubscribeURLBuilder) *ReleaseNotifier {
+	return &ReleaseNotifier{sender: sender, urls: urls}
 }
 
 func (n *ReleaseNotifier) Notify(
@@ -36,5 +36,5 @@ func (n *ReleaseNotifier) Notify(
 		)
 	}
 
-	return n.mailer.SendReleaseNotifications(ctx, notifications)
+	return n.sender.SendReleaseNotifications(ctx, notifications)
 }

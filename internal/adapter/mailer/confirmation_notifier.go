@@ -4,20 +4,23 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 )
 
-type asyncMailer interface {
+const confirmationSendTimeout = time.Minute
+
+type confirmationSender interface {
 	SendConfirmation(ctx context.Context, to, repo, confirmURL string) error
 }
 
 type ConfirmationNotifier struct {
-	asyncMailer asyncMailer
-	wg          sync.WaitGroup
-	log         *slog.Logger
+	sender confirmationSender
+	wg     sync.WaitGroup
+	log    *slog.Logger
 }
 
-func NewConfirmationNotifier(m asyncMailer, log *slog.Logger) *ConfirmationNotifier {
-	return &ConfirmationNotifier{asyncMailer: m, log: log.With("component", "confirmation_notifier")}
+func NewConfirmationNotifier(sender confirmationSender, log *slog.Logger) *ConfirmationNotifier {
+	return &ConfirmationNotifier{sender: sender, log: log.With("component", "confirmation_notifier")}
 }
 
 func (c *ConfirmationNotifier) SendConfirmation(ctx context.Context, to, repo, confirmURL string) {
@@ -26,7 +29,11 @@ func (c *ConfirmationNotifier) SendConfirmation(ctx context.Context, to, repo, c
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		if err := c.asyncMailer.SendConfirmation(ctx, to, repo, confirmURL); err != nil {
+
+		ctx, cancel := context.WithTimeout(ctx, confirmationSendTimeout)
+		defer cancel()
+
+		if err := c.sender.SendConfirmation(ctx, to, repo, confirmURL); err != nil {
 			c.log.ErrorContext(ctx, "failed to send confirmation email", "email", to, "repo", repo, "error", err)
 		} else {
 			c.log.InfoContext(ctx, "confirmation email sent", "email", to, "repo", repo)

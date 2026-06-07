@@ -17,9 +17,9 @@ import (
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-type mockAsyncMailer struct{ mock.Mock }
+type mockConfirmationSender struct{ mock.Mock }
 
-func (m *mockAsyncMailer) SendConfirmation(_ context.Context, to, repo, confirmURL string) error {
+func (m *mockConfirmationSender) SendConfirmation(_ context.Context, to, repo, confirmURL string) error {
 	return m.Called(to, repo, confirmURL).Error(0)
 }
 
@@ -32,7 +32,7 @@ func TestConfirmationNotifierSuite(t *testing.T) {
 }
 
 func (s *ConfirmationNotifierSuite) TestSendConfirmation_FiresAsync() {
-	mc := &mockAsyncMailer{}
+	mc := &mockConfirmationSender{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	defer mc.AssertExpectations(s.T())
 
@@ -42,7 +42,7 @@ func (s *ConfirmationNotifierSuite) TestSendConfirmation_FiresAsync() {
 }
 
 func (s *ConfirmationNotifierSuite) TestMailerErrorSwallowed() {
-	mc := &mockAsyncMailer{}
+	mc := &mockConfirmationSender{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("smtp error")).Once()
 	defer mc.AssertExpectations(s.T())
@@ -57,7 +57,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 	block := make(chan struct{})
 	var goroutineDone atomic.Bool
 
-	mc := &mockAsyncMailer{}
+	mc := &mockConfirmationSender{}
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			close(started)
@@ -95,7 +95,7 @@ func (s *ConfirmationNotifierSuite) TestShutdownWaitsForGoroutines() {
 
 func (s *ConfirmationNotifierSuite) TestConcurrentSends_Shutdown() {
 	var count atomic.Int32
-	mc := &mockAsyncMailer{}
+	mc := &mockConfirmationSender{}
 	const sends = 10
 	mc.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) { count.Add(1) }).

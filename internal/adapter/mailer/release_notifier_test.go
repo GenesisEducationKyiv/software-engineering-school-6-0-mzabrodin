@@ -1,4 +1,4 @@
-package scanner
+package mailer_test
 
 import (
 	"context"
@@ -8,12 +8,13 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	"github-release-notifier/internal/adapter/mailer"
 	"github-release-notifier/internal/entity"
 )
 
-type mockMailer struct{ mock.Mock }
+type mockReleaseSender struct{ mock.Mock }
 
-func (m *mockMailer) SendReleaseNotifications(_ context.Context, ns []entity.ReleaseNotification) error {
+func (m *mockReleaseSender) SendReleaseNotifications(_ context.Context, ns []entity.ReleaseNotification) error {
 	return m.Called(ns).Error(0)
 }
 
@@ -44,7 +45,7 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 	u.On("UnsubscribeURL", "tok-b").Return("https://example.com/unsubscribe/tok-b")
 	defer u.AssertExpectations(s.T())
 
-	m := &mockMailer{}
+	m := &mockReleaseSender{}
 	var capturedNotifications []entity.ReleaseNotification
 	m.On("SendReleaseNotifications", mock.Anything).
 		Run(func(args mock.Arguments) {
@@ -52,7 +53,7 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 		}).Return(nil)
 	defer m.AssertExpectations(s.T())
 
-	n := NewReleaseNotifier(m, u)
+	n := mailer.NewReleaseNotifier(m, u)
 	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
 
 	s.Require().Len(capturedNotifications, 2)
@@ -78,10 +79,10 @@ func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
 	u.On("UnsubscribeURL", "tok-b").Return("https://example.com/unsubscribe/tok-b").Once()
 	defer u.AssertExpectations(s.T())
 
-	m := &mockMailer{}
+	m := &mockReleaseSender{}
 	m.On("SendReleaseNotifications", mock.Anything).Return(nil)
 
-	n := NewReleaseNotifier(m, u)
+	n := mailer.NewReleaseNotifier(m, u)
 	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
 }
 
@@ -93,10 +94,10 @@ func (s *ReleaseNotifierSuite) TestMailerError_Propagated() {
 	u := &mockURLBuilder{}
 	u.On("UnsubscribeURL", "tok").Return("https://example.com/unsubscribe/tok")
 
-	m := &mockMailer{}
+	m := &mockReleaseSender{}
 	m.On("SendReleaseNotifications", mock.Anything).Return(errors.New("smtp error"))
 	defer m.AssertExpectations(s.T())
 
-	n := NewReleaseNotifier(m, u)
+	n := mailer.NewReleaseNotifier(m, u)
 	s.Error(n.Notify(s.T().Context(), subs, repo, release))
 }
