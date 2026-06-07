@@ -8,6 +8,16 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
 func NewSlogMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -16,7 +26,7 @@ func NewSlogMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 				return
 			}
 
-			mw := &metricsWriter{ResponseWriter: w}
+			mw := &statusRecorder{ResponseWriter: w}
 			start := time.Now()
 			next.ServeHTTP(mw, r)
 			status := mw.status
