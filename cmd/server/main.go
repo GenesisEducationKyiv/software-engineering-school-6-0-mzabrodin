@@ -102,15 +102,19 @@ func run(log *slog.Logger) error {
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
 
-	confirmationNotifier := mailer.NewConfirmationNotifier(mail, log)
-	releaseNotifier := mailer.NewReleaseNotifier(mail, urls)
+	releaseNotifier := mailer.NewReleaseNotifier(mail, urls, log)
 
 	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.WorkerCount, log)
-	go scheduler.New(scan, cfg.ScanInterval, log).Start(ctx)
+
+	schedulerDone := make(chan struct{})
+	go func() {
+		scheduler.New(scan, cfg.ScanInterval, log).Start(ctx)
+		close(schedulerDone)
+	}()
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: api.NewRouter(buildHandler(repos, subs, gh, confirmationNotifier, urls, log), cfg.APIKey, log),
+		Handler: api.NewRouter(buildHandler(repos, subs, gh, mail, urls, log), cfg.APIKey, log),
 	}
 
 	serverError := make(chan error, 1)
@@ -128,6 +132,10 @@ func run(log *slog.Logger) error {
 		log.Info("shutting down")
 	}
 
+	return gracefulShutdown(srv, schedulerDone, mail, log)
+}
+
+func gracefulShutdown(srv *http.Server, schedulerDone <-chan struct{}, mail *mailer.Mailer, log *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -135,7 +143,10 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
-	confirmationNotifier.Shutdown()
+	// HTTP is stopped; wait for the scanner to finish so no producer remains,
+	// then drain and close the mailer (bounded by the shutdown deadline).
+	<-schedulerDone
+	mail.Shutdown(shutdownCtx)
 
 	log.Info("server stopped")
 	return nil
@@ -145,11 +156,11 @@ func buildHandler(
 	repos *repository.GitHubRepoRepository,
 	subs *repository.SubscriptionRepository,
 	gh *github.Client,
-	confirmationNotifier *mailer.ConfirmationNotifier,
+	mail *mailer.Mailer,
 	urls *urlbuilder.URLBuilder,
 	log *slog.Logger,
 ) *api.Handler {
-	subscribeUseCase := subscribe.New(repos, subs, gh, confirmationNotifier, urls, log)
+	subscribeUseCase := subscribe.New(repos, subs, gh, mail, urls, log)
 	confirmUseCase := confirm.New(subs, log)
 	unsubscribeUseCase := unsubscribe.New(subs, log)
 	listUseCase := list.New(subs)
