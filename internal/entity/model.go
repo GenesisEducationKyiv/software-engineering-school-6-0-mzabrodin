@@ -31,30 +31,15 @@ type SubscriptionView struct {
 	LastSeenTag *string
 }
 
+type Release struct {
+	TagName string
+	HTMLURL string
+}
+
 type ReleaseNotification struct {
 	To             string
 	Repo           string
 	Tag            string
 	ReleaseURL     string
 	UnsubscribeURL string
-}
-
-func NewReleaseNotification(
-	sub *Subscription,
-	repo *Repository,
-	release *Release,
-	unsubURL string,
-) ReleaseNotification {
-	return ReleaseNotification{
-		To:             sub.Email,
-		Repo:           repo.Name,
-		Tag:            release.TagName,
-		ReleaseURL:     release.HTMLURL,
-		UnsubscribeURL: unsubURL,
-	}
-}
-
-type Release struct {
-	TagName string
-	HTMLURL string
 }

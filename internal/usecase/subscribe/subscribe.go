@@ -2,17 +2,12 @@ package subscribe
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 
 	"github-release-notifier/internal/entity"
 )
-
-// 32 random bytes encoded as 64-character hex string
-const tokenBytes = 32
 
 type repoRepository interface {
 	Create(ctx context.Context, repo *entity.Repository) error
@@ -118,7 +113,7 @@ func (uc *UseCase) ensureRepoStored(ctx context.Context, repoName string) (*enti
 		return nil, fmt.Errorf("get repository: %w", err)
 	}
 
-	repo = &entity.Repository{Name: repoName}
+	repo = entity.NewRepository(repoName)
 	if err := uc.repos.Create(ctx, repo); err != nil {
 		return nil, fmt.Errorf("create repository: %w", err)
 	}
@@ -133,35 +128,14 @@ func (uc *UseCase) createSubscription(
 	email string,
 	repo *entity.Repository,
 ) (string, error) {
-	confirmToken, err := randomToken()
+	sub, err := entity.NewSubscription(repo.ID, email)
 	if err != nil {
-		return "", fmt.Errorf("generate confirm token: %w", err)
-	}
-
-	unsubscribeToken, err := randomToken()
-	if err != nil {
-		return "", fmt.Errorf("generate unsubscribe token: %w", err)
-	}
-
-	sub := &entity.Subscription{
-		RepositoryID:     repo.ID,
-		Email:            email,
-		ConfirmToken:     confirmToken,
-		UnsubscribeToken: unsubscribeToken,
+		return "", fmt.Errorf("new subscription: %w", err)
 	}
 
 	if err := uc.subs.Create(ctx, sub); err != nil {
 		return "", fmt.Errorf("create subscription: %w", err)
 	}
 
-	return confirmToken, nil
-}
-
-func randomToken() (string, error) {
-	b := make([]byte, tokenBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate random bytes: %w", err)
-	}
-
-	return hex.EncodeToString(b), nil
+	return sub.ConfirmToken, nil
 }
