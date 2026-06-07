@@ -51,7 +51,7 @@ func (r *SubscriptionRepository) GetByEmail(
 	defer func() { trackDBQuery(start, "get_by_email", "subscriptions", err) }()
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT s.email, r.name, s.confirmed, r.last_seen_tag
+		SELECT s.email, r.name AS repo, s.confirmed, r.last_seen_tag
 		FROM subscriptions s
 		JOIN repositories r ON r.id = s.repository_id
 		WHERE s.email = $1
@@ -62,21 +62,12 @@ func (r *SubscriptionRepository) GetByEmail(
 		return nil, fmt.Errorf("get by email: %w", err)
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		view := &entity.SubscriptionView{}
-		if err := rows.Scan(&view.Email, &view.Repo, &view.Confirmed, &view.LastSeenTag); err != nil {
-			return nil, fmt.Errorf("scan subscription view: %w", err)
-		}
-		views = append(views, view)
+	collected, err := pgx.CollectRows(rows, pgx.RowToStructByName[subscriptionViewRow])
+	if err != nil {
+		return nil, fmt.Errorf("collect subscription views: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
-	}
-
-	return views, nil
+	return toSubscriptionViewEntities(collected), nil
 }
 
 func (r *SubscriptionRepository) GetConfirmedByRepoID(
@@ -95,26 +86,12 @@ func (r *SubscriptionRepository) GetConfirmedByRepoID(
 		return nil, fmt.Errorf("get confirmed by repo id: %w", err)
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		sub := &entity.Subscription{}
-		if err := rows.Scan(
-			&sub.ID, &sub.RepositoryID, &sub.Email,
-			&sub.ConfirmToken, &sub.UnsubscribeToken,
-			&sub.Confirmed, &sub.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan subscription: %w", err)
-		}
-
-		subs = append(subs, sub)
+	collected, err := pgx.CollectRows(rows, pgx.RowToStructByName[subscriptionRow])
+	if err != nil {
+		return nil, fmt.Errorf("collect subscriptions: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
-	}
-
-	return subs, nil
+	return toSubscriptionEntities(collected), nil
 }
 
 func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) (err error) {

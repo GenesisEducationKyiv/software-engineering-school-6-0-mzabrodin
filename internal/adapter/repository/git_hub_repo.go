@@ -41,12 +41,15 @@ func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (resu
 	start := time.Now()
 	defer func() { trackDBQuery(start, "get_by_name", "repositories", err) }()
 
-	repo := &entity.Repository{}
-	err = r.pool.QueryRow(ctx, `
+	rows, err := r.pool.Query(ctx, `
 		SELECT id, name, last_seen_tag, checked_at, created_at
 		FROM repositories WHERE name = $1
-	`, name).Scan(&repo.ID, &repo.Name, &repo.LastSeenTag, &repo.CheckedAt, &repo.CreatedAt)
+	`, name)
+	if err != nil {
+		return nil, fmt.Errorf("get repository by name: %w", err)
+	}
 
+	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[repositoryRow])
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, entity.ErrNotFound
 	}
@@ -55,7 +58,7 @@ func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (resu
 		return nil, fmt.Errorf("get repository by name: %w", err)
 	}
 
-	return repo, nil
+	return row.toEntity(), nil
 }
 
 func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (repos []*entity.Repository, err error) {
@@ -72,22 +75,12 @@ func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) (rep
 		return nil, fmt.Errorf("get all repositories with subscriptions: %w", err)
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		repo := &entity.Repository{}
-		if err := rows.Scan(&repo.ID, &repo.Name, &repo.LastSeenTag, &repo.CheckedAt, &repo.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan repository: %w", err)
-		}
-
-		repos = append(repos, repo)
+	collected, err := pgx.CollectRows(rows, pgx.RowToStructByName[repositoryRow])
+	if err != nil {
+		return nil, fmt.Errorf("collect repositories: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
-	}
-
-	return repos, nil
+	return toRepositoryEntities(collected), nil
 }
 
 func (r *GitHubRepoRepository) UpdateLastSeenTag(ctx context.Context, name, tag string) (err error) {
