@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,13 +10,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github-release-notifier/internal/adapter/http/dto"
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/usecase/confirm"
 	"github-release-notifier/internal/usecase/list"
 	"github-release-notifier/internal/usecase/subscribe"
 	"github-release-notifier/internal/usecase/unsubscribe"
 )
 
+// tokenHexLen is the hex-encoded length of a confirm/unsubscribe token:
+// entity.tokenBytes 32 * 2 hex chars per byte.
 const tokenHexLen = 64
 
 type subscriber interface {
@@ -76,23 +76,12 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.subscribe.Execute(r.Context(), subscribe.Input{Email: req.Email, Repo: req.Repo})
-	switch {
-	case errors.Is(err, entity.ErrInvalidRepo):
-		jsonErr(w, "invalid repo format, expected owner/repo", http.StatusBadRequest)
-
-	case errors.Is(err, entity.ErrRepoNotFound):
-		jsonErr(w, "repository not found on GitHub", http.StatusNotFound)
-
-	case errors.Is(err, entity.ErrAlreadyExists):
-		jsonErr(w, "email already subscribed to this repository", http.StatusConflict)
-
-	case err != nil:
-		h.log.ErrorContext(r.Context(), "subscribe failed", "email", req.Email, "repo", req.Repo, "error", err)
-		jsonErr(w, "internal server error", http.StatusInternalServerError)
-
-	default:
-		jsonOK(w, dto.MessageResponse{Message: "subscription successful, confirmation email sent"})
+	if err != nil {
+		h.writeDomainError(w, r, err, "email", req.Email, "repo", req.Repo)
+		return
 	}
+
+	jsonOK(w, dto.MessageResponse{Message: "subscription successful, confirmation email sent"})
 }
 
 func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
@@ -103,17 +92,12 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.confirm.Execute(r.Context(), confirm.Input{Token: token})
-	switch {
-	case errors.Is(err, entity.ErrNotFound):
-		jsonErr(w, "token not found", http.StatusNotFound)
-
-	case err != nil:
-		h.log.ErrorContext(r.Context(), "confirm failed", "token", token, "error", err)
-		jsonErr(w, "internal server error", http.StatusInternalServerError)
-
-	default:
-		jsonOK(w, dto.MessageResponse{Message: "subscription confirmed successfully"})
+	if err != nil {
+		h.writeDomainError(w, r, err, "token", token)
+		return
 	}
+
+	jsonOK(w, dto.MessageResponse{Message: "subscription confirmed successfully"})
 }
 
 func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
@@ -124,17 +108,12 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.unsubscribe.Execute(r.Context(), unsubscribe.Input{Token: token})
-	switch {
-	case errors.Is(err, entity.ErrNotFound):
-		jsonErr(w, "token not found", http.StatusNotFound)
-
-	case err != nil:
-		h.log.ErrorContext(r.Context(), "unsubscribe failed", "token", token, "error", err)
-		jsonErr(w, "internal server error", http.StatusInternalServerError)
-
-	default:
-		jsonOK(w, dto.MessageResponse{Message: "unsubscribed successfully"})
+	if err != nil {
+		h.writeDomainError(w, r, err, "token", token)
+		return
 	}
+
+	jsonOK(w, dto.MessageResponse{Message: "unsubscribed successfully"})
 }
 
 func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -145,12 +124,10 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := h.list.Execute(r.Context(), list.Input{Email: email})
-	switch {
-	case err != nil:
-		h.log.ErrorContext(r.Context(), "get subscriptions failed", "email", email, "error", err)
-		jsonErr(w, "internal server error", http.StatusInternalServerError)
-
-	default:
-		jsonOK(w, dto.ToSubscriptionResponses(out.Views))
+	if err != nil {
+		h.writeDomainError(w, r, err, "email", email)
+		return
 	}
+
+	jsonOK(w, dto.ToSubscriptionResponses(out.Views))
 }
