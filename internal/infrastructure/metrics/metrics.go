@@ -143,13 +143,6 @@ var (
 	)
 )
 
-func ResultLabel(err error) string {
-	if err == nil {
-		return "success"
-	}
-	return "error"
-}
-
 func init() {
 	prometheus.MustRegister(
 		HTTPRequestsTotal,
