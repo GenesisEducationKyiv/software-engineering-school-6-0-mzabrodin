@@ -69,7 +69,7 @@ func run(m *testing.M) int {
 		return 1
 	}
 
-	testPool, err = db.NewPool(ctx, pgDSN, integrationLogger)
+	testPool, err = db.NewPool(ctx, pgDSN, nil, integrationLogger)
 	if err != nil {
 		slog.Error("create pool", "err", err)
 		return 1
