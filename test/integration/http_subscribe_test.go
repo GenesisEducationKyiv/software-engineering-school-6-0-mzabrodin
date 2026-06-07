@@ -10,21 +10,21 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type SubscribeSuite struct {
+type HTTPSubscribeSuite struct {
 	suite.Suite
 	srv *httptest.Server
 }
 
-func TestSubscribeSuite(t *testing.T) {
-	suite.Run(t, new(SubscribeSuite))
+func TestHTTPSubscribeSuite(t *testing.T) {
+	suite.Run(t, new(HTTPSubscribeSuite))
 }
 
-func (s *SubscribeSuite) SetupTest() {
+func (s *HTTPSubscribeSuite) SetupTest() {
 	truncateAll(s.T())
-	s.srv = newTestServer(s.T(), true)
+	s.srv = newTestHTTPServer(s.T(), true)
 }
 
-func (s *SubscribeSuite) TestSuccess() {
+func (s *HTTPSubscribeSuite) TestSuccess() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":"owner/repo"}`, testAPIKey)
 	s.Equal(http.StatusOK, resp.StatusCode)
@@ -42,55 +42,55 @@ func (s *SubscribeSuite) TestSuccess() {
 	s.False(confirmed, "new subscription must not be confirmed")
 }
 
-func (s *SubscribeSuite) TestNoAPIKey_Returns401() {
+func (s *HTTPSubscribeSuite) TestNoAPIKey_Returns401() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":"owner/repo"}`, "")
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestWrongAPIKey_Returns401() {
+func (s *HTTPSubscribeSuite) TestWrongAPIKey_Returns401() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":"owner/repo"}`, "wrong-key")
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestInvalidJSON_Returns400() {
+func (s *HTTPSubscribeSuite) TestInvalidJSON_Returns400() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe", "not-json", testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestEmptyEmail_Returns400() {
+func (s *HTTPSubscribeSuite) TestEmptyEmail_Returns400() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"","repo":"owner/repo"}`, testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestEmptyRepo_Returns400() {
+func (s *HTTPSubscribeSuite) TestEmptyRepo_Returns400() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":""}`, testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestInvalidEmail_Returns400() {
+func (s *HTTPSubscribeSuite) TestInvalidEmail_Returns400() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"notanemail","repo":"owner/repo"}`, testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestInvalidRepo_Returns400() {
+func (s *HTTPSubscribeSuite) TestInvalidRepo_Returns400() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":"noslash"}`, testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestRepoNotOnGitHub_Returns404() {
-	srv := newTestServer(s.T(), false)
+func (s *HTTPSubscribeSuite) TestRepoNotOnGitHub_Returns404() {
+	srv := newTestHTTPServer(s.T(), false)
 	resp := doRequest(s.T(), http.MethodPost, srv.URL+"/api/subscribe",
 		`{"email":"user@example.com","repo":"owner/repo"}`, testAPIKey)
 	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
-func (s *SubscribeSuite) TestDuplicate_Returns409() {
+func (s *HTTPSubscribeSuite) TestDuplicate_Returns409() {
 	body := `{"email":"user@example.com","repo":"owner/repo"}`
 	doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe", body, testAPIKey)
 

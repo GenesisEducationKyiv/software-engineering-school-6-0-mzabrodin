@@ -123,3 +123,6 @@ bin/
 
 # Claude init file
 CLAUDE.md
+
+# Generated protobuf/gRPC code (run `make proto` to regenerate)
+internal/adapter/grpc/gen/

@@ -73,7 +73,8 @@ func (s *ConfigSuite) TestLoadDefaults() {
 	cfg, err := config.Load()
 	s.Require().NoError(err)
 
-	s.Equal("8080", cfg.Port)
+	s.Equal("8080", cfg.HTTPPort)
+	s.Equal("50051", cfg.GRPCPort)
 	s.Equal("http://localhost:8080", cfg.BaseURL)
 	s.Equal(10*time.Minute, cfg.ScanInterval)
 	s.Equal(587, cfg.SMTP.Port)

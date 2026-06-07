@@ -56,6 +56,7 @@ linters:
         - "database/sql"
         - "os"
         - "io"
+        - "google.golang.org/grpc/status"
 
     revive:
       rules:

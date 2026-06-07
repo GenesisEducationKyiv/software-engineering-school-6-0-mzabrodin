@@ -1,8 +1,8 @@
-package api
+package http_api
 
 import "net/http"
 
-func KeyAuth(apiKey string) func(http.Handler) http.Handler {
+func NewKeyAuthMiddleware(apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if apiKey == "" {
 			return next

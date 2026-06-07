@@ -1,4 +1,4 @@
-.PHONY: build test test-integration lint lint-integration fmt up up-build down
+.PHONY: build test test-integration lint lint-integration fmt up up-build down proto
 
 build:
 	go build ./...
@@ -26,3 +26,7 @@ up-build:
 
 down:
 	docker compose down
+
+proto:
+	buf dep update
+	buf generate

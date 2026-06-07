@@ -10,21 +10,21 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type HealthSuite struct {
+type HTTPHealthSuite struct {
 	suite.Suite
 	srv *httptest.Server
 }
 
-func TestHealthSuite(t *testing.T) {
-	suite.Run(t, new(HealthSuite))
+func TestHTTPHealthSuite(t *testing.T) {
+	suite.Run(t, new(HTTPHealthSuite))
 }
 
-func (s *HealthSuite) SetupTest() {
+func (s *HTTPHealthSuite) SetupTest() {
 	truncateAll(s.T())
-	s.srv = newTestServer(s.T(), true)
+	s.srv = newTestHTTPServer(s.T(), true)
 }
 
-func (s *HealthSuite) TestHealth() {
+func (s *HTTPHealthSuite) TestHealth() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/health", "", "")
 	s.Require().Equal(http.StatusOK, resp.StatusCode)
 

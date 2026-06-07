@@ -1,6 +1,6 @@
 # ADR-002: Asynchronous Confirmation Email Sending
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-006](006-mailer-dispatch-queue.md)
 
 **Author:** Zabrodin Maksym
 

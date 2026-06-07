@@ -1,4 +1,4 @@
-package api_test
+package http_api_test
 
 import (
 	"net/http"
@@ -42,7 +42,7 @@ func (s *KeyAuthSuite) TestKeyAuth() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			handler := api.KeyAuth(tc.key)(http.HandlerFunc(okHandler))
+			handler := api.NewKeyAuthMiddleware(tc.key)(http.HandlerFunc(okHandler))
 			r := newRequest(s.T())
 			if tc.headerKey != "" {
 				r.Header.Set("X-API-Key", tc.headerKey)

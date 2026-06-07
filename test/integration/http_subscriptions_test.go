@@ -10,36 +10,36 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type SubscriptionsSuite struct {
+type HTTPSubscriptionsSuite struct {
 	suite.Suite
 	srv *httptest.Server
 }
 
-func TestSubscriptionsSuite(t *testing.T) {
-	suite.Run(t, new(SubscriptionsSuite))
+func TestHTTPSubscriptionsSuite(t *testing.T) {
+	suite.Run(t, new(HTTPSubscriptionsSuite))
 }
 
-func (s *SubscriptionsSuite) SetupTest() {
+func (s *HTTPSubscriptionsSuite) SetupTest() {
 	truncateAll(s.T())
-	s.srv = newTestServer(s.T(), true)
+	s.srv = newTestHTTPServer(s.T(), true)
 }
 
-func (s *SubscriptionsSuite) TestNoAPIKey_Returns401() {
+func (s *HTTPSubscriptionsSuite) TestNoAPIKey_Returns401() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", "")
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
-func (s *SubscriptionsSuite) TestMissingEmailParam_Returns400() {
+func (s *HTTPSubscriptionsSuite) TestMissingEmailParam_Returns400() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions", "", testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscriptionsSuite) TestInvalidEmail_Returns400() {
+func (s *HTTPSubscriptionsSuite) TestInvalidEmail_Returns400() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email=notanemail", "", testAPIKey)
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *SubscriptionsSuite) TestEmptyList() {
+func (s *HTTPSubscriptionsSuite) TestEmptyList() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
 	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
@@ -48,7 +48,7 @@ func (s *SubscriptionsSuite) TestEmptyList() {
 	s.Empty(result)
 }
 
-func (s *SubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
+func (s *HTTPSubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
 	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
 
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
@@ -63,7 +63,7 @@ func (s *SubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
 	s.assertSingleSubscription(resp, true)
 }
 
-func (s *SubscriptionsSuite) assertSingleSubscription(resp *http.Response, confirmed bool) {
+func (s *HTTPSubscriptionsSuite) assertSingleSubscription(resp *http.Response, confirmed bool) {
 	s.T().Helper()
 	var result []map[string]any
 	decodeJSON(s.T(), resp, &result)

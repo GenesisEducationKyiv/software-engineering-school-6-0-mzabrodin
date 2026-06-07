@@ -1,4 +1,4 @@
-package http_api_test
+package grcp_api_test
 
 import (
 	"context"

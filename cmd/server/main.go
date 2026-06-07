@@ -5,14 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github-release-notifier/internal/adapter/cache"
 	"github-release-notifier/internal/adapter/github"
+	grpcapi "github-release-notifier/internal/adapter/grpc"
 	api "github-release-notifier/internal/adapter/http"
 	"github-release-notifier/internal/adapter/mailer"
 	"github-release-notifier/internal/adapter/repository"
@@ -112,15 +116,68 @@ func run(log *slog.Logger) error {
 		close(schedulerDone)
 	}()
 
+	ucs := buildUseCases(repos, subs, gh, mail, urls, log)
+
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: api.NewRouter(buildHandler(repos, subs, gh, mail, urls, log), cfg.APIKey, log),
+		Addr: ":" + cfg.HTTPPort,
+		Handler: api.NewRouter(
+			api.NewHandler(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log),
+			cfg.APIKey,
+			log,
+		),
 	}
 
-	serverError := make(chan error, 1)
+	grpcHandler := grpcapi.NewServer(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
+
+	grpcServer, grpcListener, err := startGRPCServer(ctx, grpcHandler, cfg.APIKey, cfg.GRPCPort, log)
+	if err != nil {
+		return err
+	}
+
+	return serve(ctx, srv, grpcServer, grpcListener, schedulerDone, mail, log)
+}
+
+func startGRPCServer(
+	ctx context.Context,
+	handler *grpcapi.Server,
+	apiKey, port string,
+	log *slog.Logger,
+) (*grpc.Server, net.Listener, error) {
+	grpcServer, err := grpcapi.NewGRPCServer(handler, apiKey, log)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create grpc server: %w", err)
+	}
+
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", ":"+port)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listen grpc: %w", err)
+	}
+
+	return grpcServer, listener, nil
+}
+
+func serve(
+	ctx context.Context,
+	srv *http.Server,
+	grpcServer *grpc.Server,
+	grpcListener net.Listener,
+	schedulerDone <-chan struct{},
+	mail *mailer.Mailer,
+	log *slog.Logger,
+) error {
+	serverError := make(chan error, 2)
+
 	go func() {
-		log.Info("server started", "port", cfg.Port)
+		log.Info("http server started", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverError <- err
+		}
+	}()
+
+	go func() {
+		log.Info("grpc server started", "addr", grpcListener.Addr().String())
+		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			serverError <- err
 		}
 	}()
@@ -132,10 +189,16 @@ func run(log *slog.Logger) error {
 		log.Info("shutting down")
 	}
 
-	return gracefulShutdown(srv, schedulerDone, mail, log)
+	return gracefulShutdown(srv, grpcServer, schedulerDone, mail, log)
 }
 
-func gracefulShutdown(srv *http.Server, schedulerDone <-chan struct{}, mail *mailer.Mailer, log *slog.Logger) error {
+func gracefulShutdown(
+	srv *http.Server,
+	grpcServer *grpc.Server,
+	schedulerDone <-chan struct{},
+	mail *mailer.Mailer,
+	log *slog.Logger,
+) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -143,8 +206,8 @@ func gracefulShutdown(srv *http.Server, schedulerDone <-chan struct{}, mail *mai
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
-	// HTTP is stopped; wait for the scanner to finish so no producer remains,
-	// then drain and close the mailer (bounded by the shutdown deadline).
+	stopGRPCServer(shutdownCtx, grpcServer)
+
 	<-schedulerDone
 	mail.Shutdown(shutdownCtx)
 
@@ -152,24 +215,47 @@ func gracefulShutdown(srv *http.Server, schedulerDone <-chan struct{}, mail *mai
 	return nil
 }
 
-func buildHandler(
+func stopGRPCServer(ctx context.Context, grpcServer *grpc.Server) {
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		grpcServer.Stop()
+	}
+}
+
+type useCases struct {
+	subscribe   metrics.Metered[subscribe.Input, subscribe.Output]
+	confirm     metrics.Metered[confirm.Input, confirm.Output]
+	unsubscribe metrics.Metered[unsubscribe.Input, unsubscribe.Output]
+	list        metrics.Metered[list.Input, list.Output]
+}
+
+func buildUseCases(
 	repos *repository.GitHubRepoRepository,
 	subs *repository.SubscriptionRepository,
 	gh *github.Client,
 	mail *mailer.Mailer,
 	urls *urlbuilder.URLBuilder,
 	log *slog.Logger,
-) *api.Handler {
-	subscribeUseCase := subscribe.New(repos, subs, gh, mail, urls, log)
-	confirmUseCase := confirm.New(subs, log)
-	unsubscribeUseCase := unsubscribe.New(subs, log)
-	listUseCase := list.New(subs)
-
-	return api.NewHandler(
-		metrics.NewMetered[subscribe.Input, subscribe.Output]("subscribe", subscribeUseCase),
-		metrics.NewMetered[confirm.Input, confirm.Output]("confirm", confirmUseCase),
-		metrics.NewMetered[unsubscribe.Input, unsubscribe.Output]("unsubscribe", unsubscribeUseCase),
-		metrics.NewMetered[list.Input, list.Output]("list", listUseCase),
-		log,
-	)
+) useCases {
+	return useCases{
+		subscribe: metrics.NewMetered[subscribe.Input, subscribe.Output](
+			"subscribe", subscribe.New(repos, subs, gh, mail, urls, log),
+		),
+		confirm: metrics.NewMetered[confirm.Input, confirm.Output](
+			"confirm", confirm.New(subs, log),
+		),
+		unsubscribe: metrics.NewMetered[unsubscribe.Input, unsubscribe.Output](
+			"unsubscribe", unsubscribe.New(subs, log),
+		),
+		list: metrics.NewMetered[list.Input, list.Output](
+			"list", list.New(subs),
+		),
+	}
 }

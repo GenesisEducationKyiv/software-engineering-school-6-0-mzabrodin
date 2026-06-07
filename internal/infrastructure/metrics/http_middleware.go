@@ -31,7 +31,7 @@ func (mw *metricsWriter) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-func HTTPMiddleware(next http.Handler) http.Handler {
+func NewMetricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mw := &metricsWriter{ResponseWriter: w}
 		start := time.Now()

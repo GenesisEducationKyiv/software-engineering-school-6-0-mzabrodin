@@ -17,7 +17,8 @@ type SMTPConfig struct {
 }
 
 type Config struct {
-	Port         string        `envconfig:"PORT"          default:"8080"`
+	HTTPPort     string        `envconfig:"HTTP_PORT"     default:"8080"`
+	GRPCPort     string        `envconfig:"GRPC_PORT"     default:"50051"`
 	BaseURL      string        `envconfig:"BASE_URL"      default:"http://localhost:8080"`
 	GitHubToken  string        `envconfig:"GITHUB_TOKEN"`
 	ScanInterval time.Duration `envconfig:"SCAN_INTERVAL" default:"10m"`

@@ -10,21 +10,21 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type ConfirmSuite struct {
+type HTTPConfirmSuite struct {
 	suite.Suite
 	srv *httptest.Server
 }
 
-func TestConfirmSuite(t *testing.T) {
-	suite.Run(t, new(ConfirmSuite))
+func TestHTTPConfirmSuite(t *testing.T) {
+	suite.Run(t, new(HTTPConfirmSuite))
 }
 
-func (s *ConfirmSuite) SetupTest() {
+func (s *HTTPConfirmSuite) SetupTest() {
 	truncateAll(s.T())
-	s.srv = newTestServer(s.T(), true)
+	s.srv = newTestHTTPServer(s.T(), true)
 }
 
-func (s *ConfirmSuite) TestSuccess() {
+func (s *HTTPConfirmSuite) TestSuccess() {
 	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
 
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
@@ -37,17 +37,17 @@ func (s *ConfirmSuite) TestSuccess() {
 	s.True(confirmed, "subscription should be marked confirmed after /api/confirm")
 }
 
-func (s *ConfirmSuite) TestInvalidTokenLength_Returns400() {
+func (s *HTTPConfirmSuite) TestInvalidTokenLength_Returns400() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/tooshort", "", "")
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *ConfirmSuite) TestUnknownToken_Returns404() {
+func (s *HTTPConfirmSuite) TestUnknownToken_Returns404() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+randomHex64(), "", "")
 	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
-func (s *ConfirmSuite) TestAlreadyConfirmed_IsIdempotent() {
+func (s *HTTPConfirmSuite) TestAlreadyConfirmed_IsIdempotent() {
 	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
 
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
