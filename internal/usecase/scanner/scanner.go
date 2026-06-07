@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 
 	"github-release-notifier/internal/entity"
-	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
 )
 
@@ -36,7 +36,7 @@ type Scanner struct {
 	subs     subscriptionRepository
 	github   gitHubClient
 	notifier notifier
-	interval time.Duration
+	workers  int
 	log      *slog.Logger
 }
 
@@ -45,7 +45,7 @@ func NewScanner(
 	subs subscriptionRepository,
 	gh gitHubClient,
 	notifier notifier,
-	interval time.Duration,
+	workers int,
 	log *slog.Logger,
 ) *Scanner {
 	return &Scanner{
@@ -53,57 +53,66 @@ func NewScanner(
 		subs:     subs,
 		github:   gh,
 		notifier: notifier,
-		interval: interval,
+		workers:  workers,
 		log:      log.With("component", "scanner"),
 	}
 }
 
-func (s *Scanner) Start(ctx context.Context) {
-	s.log.Info("scanner started", "interval", s.interval)
-
-	s.scan(ctx)
-
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			s.log.Info("scanner stopped")
-			return
-		case <-ticker.C:
-			s.scan(ctx)
-		}
-	}
-}
-
-func (s *Scanner) scan(ctx context.Context) {
-	ctx = logging.WithScanID(ctx, uuid.NewString())
+func (s *Scanner) Run(ctx context.Context) error {
 	s.log.InfoContext(ctx, "scanning repositories for new releases")
 
 	start := time.Now()
-	defer func() {
-		metrics.ScannerDuration.Observe(time.Since(start).Seconds())
-		metrics.ScannerRunsTotal.Inc()
-	}()
+	defer metrics.RecordScanRun(start)
 
 	repos, err := s.repos.GetAllWithSubscriptions(ctx)
 	if err != nil {
-		s.log.ErrorContext(ctx, "failed to get repositories", "error", err)
 		metrics.ScannerErrorsTotal.WithLabelValues("fetch_repos").Inc()
-		return
+		return fmt.Errorf("get repositories with subscriptions: %w", err)
 	}
 
 	s.log.InfoContext(ctx, "found repos to scan", "count", len(repos))
 
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(s.workers)
+
 	for _, repo := range repos {
-		if err := s.checkRepo(ctx, repo); err != nil {
-			s.log.ErrorContext(ctx, "failed to check repository", "repo", repo.Name, "error", err)
-			metrics.ScannerErrorsTotal.WithLabelValues("check_repo").Inc()
+		if gctx.Err() != nil {
+			break
 		}
+
+		g.Go(func() error {
+			return s.scanRepo(gctx, repo)
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		s.log.WarnContext(ctx, "scan pass stopped early", "reason", err)
 	}
 
 	s.log.InfoContext(ctx, "scan completed", "repos", len(repos), "duration_ms", time.Since(start).Milliseconds())
+
+	return nil
+}
+
+func (s *Scanner) scanRepo(ctx context.Context, repo *entity.Repository) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
+	err := s.checkRepo(ctx, repo)
+	if errors.Is(err, entity.ErrRateLimited) || errors.Is(err, entity.ErrUnauthorized) {
+		return err
+	}
+
+	// Per-repo failures are isolated: log, record and keep scanning the rest.
+	if err != nil && !errors.Is(err, context.Canceled) {
+		s.log.ErrorContext(ctx, "failed to check repository", "repo", repo.Name, "error", err)
+		metrics.ScannerErrorsTotal.WithLabelValues("check_repo").Inc()
+	}
+
+	return nil //nolint:nilerr // per-repo errors are intentionally isolated above
 }
 
 func (s *Scanner) checkRepo(ctx context.Context, repo *entity.Repository) error {
@@ -143,13 +152,13 @@ func (s *Scanner) handleReleaseError(ctx context.Context, err error, repoName st
 	switch {
 	case errors.Is(err, entity.ErrUnauthorized):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
-		s.log.WarnContext(ctx, "GitHub token is invalid or missing, skipping scan", "repo", repoName)
-		return nil
+		s.log.WarnContext(ctx, "GitHub token is invalid or missing, stopping scan", "repo", repoName)
+		return err
 
 	case errors.Is(err, entity.ErrRateLimited):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
-		s.log.WarnContext(ctx, "rate limited by GitHub, skipping scan", "repo", repoName)
-		return nil
+		s.log.WarnContext(ctx, "rate limited by GitHub, stopping scan", "repo", repoName)
+		return err
 
 	case errors.Is(err, entity.ErrNoRelease):
 		return nil

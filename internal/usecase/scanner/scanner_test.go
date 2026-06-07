@@ -35,7 +35,7 @@ func testSubRepo(repoID uuid.UUID) *mockSubRepository {
 }
 
 func newScanner(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, n *mockNotifier) *Scanner {
-	return NewScanner(repos, subs, gh, n, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewScanner(repos, subs, gh, n, 2, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 type ScannerSuite struct {
@@ -46,13 +46,21 @@ func TestScannerSuite(t *testing.T) {
 	suite.Run(t, new(ScannerSuite))
 }
 
-func (s *ScannerSuite) TestCheckRepo_GitHubError_Skipped() {
+func (s *ScannerSuite) TestCheckRepo_NoRelease_Skipped() {
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").Return(nil, entity.ErrNoRelease)
+	defer gh.AssertExpectations(s.T())
+
+	sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
+	s.NoError(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
+}
+
+func (s *ScannerSuite) TestCheckRepo_GlobalGitHubError_ReturnsError() {
 	cases := []struct {
 		name string
 		err  error
 	}{
 		{"rate limited (wrapped)", fmt.Errorf("%w, retry after 60s", entity.ErrRateLimited)},
-		{"no release", entity.ErrNoRelease},
 		{"unauthorized", entity.ErrUnauthorized},
 	}
 	for _, tc := range cases {
@@ -62,7 +70,7 @@ func (s *ScannerSuite) TestCheckRepo_GitHubError_Skipped() {
 			defer gh.AssertExpectations(s.T())
 
 			sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
-			s.NoError(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
+			s.Error(sc.checkRepo(s.T().Context(), testRepo("owner/repo", nil)))
 		})
 	}
 }
@@ -221,4 +229,81 @@ func (s *ScannerSuite) TestCheckRepo_UpdateTagError_WithSubs_ReturnsError() {
 
 	sc := newScanner(repos, subs, gh, n)
 	s.Error(sc.checkRepo(s.T().Context(), repo))
+}
+
+func (s *ScannerSuite) TestRun_FetchReposError_ReturnsError() {
+	repos := &mockRepoRepository{}
+	repos.On("GetAllWithSubscriptions", mock.Anything).Return(nil, errors.New("db error"))
+	defer repos.AssertExpectations(s.T())
+
+	sc := newScanner(repos, &mockSubRepository{}, &mockGitHub{}, &mockNotifier{})
+	s.Error(sc.Run(s.T().Context()))
+}
+
+func (s *ScannerSuite) TestRun_AllReposProcessed() {
+	repoList := []*entity.Repository{
+		testRepo("owner/repo1", nil),
+		testRepo("owner/repo2", nil),
+		testRepo("owner/repo3", nil),
+	}
+
+	repos := &mockRepoRepository{}
+	repos.On("GetAllWithSubscriptions", mock.Anything).Return(repoList, nil)
+	defer repos.AssertExpectations(s.T())
+
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, entity.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo2").Return(nil, entity.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo3").Return(nil, entity.ErrNoRelease)
+	defer gh.AssertExpectations(s.T())
+
+	sc := newScanner(repos, &mockSubRepository{}, gh, &mockNotifier{})
+	s.NoError(sc.Run(s.T().Context()))
+}
+
+func (s *ScannerSuite) TestRun_PerRepoErrorIsolated() {
+	repoList := []*entity.Repository{
+		testRepo("owner/repo1", nil),
+		testRepo("owner/repo2", nil),
+	}
+
+	repos := &mockRepoRepository{}
+	repos.On("GetAllWithSubscriptions", mock.Anything).Return(repoList, nil)
+	defer repos.AssertExpectations(s.T())
+
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, errors.New("boom"))
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo2").Return(nil, entity.ErrNoRelease)
+	defer gh.AssertExpectations(s.T())
+
+	sc := newScanner(repos, &mockSubRepository{}, gh, &mockNotifier{})
+	s.NoError(sc.Run(s.T().Context()))
+}
+
+func (s *ScannerSuite) TestRun_RateLimited_StopsScan() {
+	repoList := []*entity.Repository{
+		testRepo("owner/repo1", nil),
+		testRepo("owner/repo2", nil),
+		testRepo("owner/repo3", nil),
+	}
+
+	repos := &mockRepoRepository{}
+	repos.On("GetAllWithSubscriptions", mock.Anything).Return(repoList, nil)
+	defer repos.AssertExpectations(s.T())
+
+	// Only repo1 is expected to reach GitHub; the rate limit must stop the pass
+	// before repo2/repo3 are scanned. A single worker keeps the order deterministic.
+	gh := &mockGitHub{}
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, entity.ErrRateLimited)
+	defer gh.AssertExpectations(s.T())
+
+	sc := NewScanner(
+		repos,
+		&mockSubRepository{},
+		gh,
+		&mockNotifier{},
+		1,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	s.NoError(sc.Run(s.T().Context()))
 }
