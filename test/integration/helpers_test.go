@@ -15,10 +15,13 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github-release-notifier/internal/api"
-	"github-release-notifier/internal/repository"
-	"github-release-notifier/internal/service"
-	"github-release-notifier/internal/urlbuilder"
+	api "github-release-notifier/internal/adapter/http"
+	"github-release-notifier/internal/adapter/repository"
+	"github-release-notifier/internal/adapter/urlbuilder"
+	"github-release-notifier/internal/usecase/confirm"
+	"github-release-notifier/internal/usecase/list"
+	"github-release-notifier/internal/usecase/subscribe"
+	"github-release-notifier/internal/usecase/unsubscribe"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -43,8 +46,6 @@ func (m *mockConfirmationNotifier) SendConfirmation(_ context.Context, email, re
 	m.Called(email, repo, url)
 }
 
-func (m *mockConfirmationNotifier) Shutdown() {}
-
 // newTestServer builds a real HTTP server backed by real repositories against testPool.
 func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	t.Helper()
@@ -58,8 +59,14 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	repos := repository.NewGitHubRepoRepository(testPool)
 	subs := repository.NewSubscriptionRepository(testPool)
 	urls := urlbuilder.New(testBaseURL)
-	svc := service.NewSubscriptionService(repos, subs, gh, notifier, urls, testLogger)
-	srv := httptest.NewServer(api.NewRouter(api.NewHandler(svc, testLogger), testAPIKey, testLogger))
+
+	subscribeUseCase := subscribe.New(repos, subs, gh, notifier, urls, testLogger)
+	confirmUseCase := confirm.New(subs, testLogger)
+	unsubscribeUseCase := unsubscribe.New(subs, testLogger)
+	listUseCase := list.New(subs)
+	handler := api.NewHandler(subscribeUseCase, confirmUseCase, unsubscribeUseCase, listUseCase, testLogger)
+
+	srv := httptest.NewServer(api.NewRouter(handler, testAPIKey, testLogger))
 	t.Cleanup(srv.Close)
 	return srv
 }

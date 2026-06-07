@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/cache"
-	"github-release-notifier/internal/domain"
-	"github-release-notifier/internal/github"
+	"github-release-notifier/internal/adapter/cache"
+	"github-release-notifier/internal/adapter/github"
+	"github-release-notifier/internal/entity"
 )
 
 type GitHubClientCacheSuite struct {
@@ -59,7 +59,7 @@ func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_False() {
 
 func (s *GitHubClientCacheSuite) TestGetLatestRelease_CacheHit() {
 	ctx := s.T().Context()
-	release := domain.Release{TagName: "v3.0.0", HTMLURL: "https://github.com/owner/repo-release/releases/tag/v3.0.0"}
+	release := entity.Release{TagName: "v3.0.0", HTMLURL: "https://github.com/owner/repo-release/releases/tag/v3.0.0"}
 	data, err := json.Marshal(release)
 	s.Require().NoError(err)
 	s.Require().NoError(s.ca.Set(ctx, "github:latest_release:owner/repo-release", string(data), time.Minute))
@@ -77,5 +77,5 @@ func (s *GitHubClientCacheSuite) TestGetLatestRelease_NoReleaseSentinel() {
 
 	_, err := s.client().GetLatestRelease(ctx, "owner", "repo-no-release")
 
-	s.ErrorIs(err, domain.ErrNoRelease)
+	s.ErrorIs(err, entity.ErrNoRelease)
 }

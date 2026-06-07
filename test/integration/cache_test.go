@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/cache"
+	"github-release-notifier/internal/adapter/cache"
 )
 
 const cacheTTL = time.Minute

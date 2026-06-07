@@ -11,17 +11,22 @@ import (
 	"syscall"
 	"time"
 
-	"github-release-notifier/internal/api"
-	"github-release-notifier/internal/cache"
-	"github-release-notifier/internal/config"
-	"github-release-notifier/internal/db"
-	"github-release-notifier/internal/github"
-	"github-release-notifier/internal/logging"
-	"github-release-notifier/internal/mailer"
-	"github-release-notifier/internal/repository"
-	"github-release-notifier/internal/scanner"
-	"github-release-notifier/internal/service"
-	"github-release-notifier/internal/urlbuilder"
+	"github-release-notifier/internal/adapter/cache"
+	"github-release-notifier/internal/adapter/github"
+	api "github-release-notifier/internal/adapter/http"
+	"github-release-notifier/internal/adapter/mailer"
+	"github-release-notifier/internal/adapter/repository"
+	"github-release-notifier/internal/adapter/urlbuilder"
+	"github-release-notifier/internal/infrastructure/config"
+	"github-release-notifier/internal/infrastructure/db"
+	"github-release-notifier/internal/infrastructure/logging"
+	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/infrastructure/scheduler"
+	"github-release-notifier/internal/usecase/confirm"
+	"github-release-notifier/internal/usecase/list"
+	"github-release-notifier/internal/usecase/scanner"
+	"github-release-notifier/internal/usecase/subscribe"
+	"github-release-notifier/internal/usecase/unsubscribe"
 
 	"github.com/joho/godotenv"
 )
@@ -60,7 +65,7 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL, log)
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL, metrics.NewPgxTracer(), log)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
@@ -97,17 +102,19 @@ func run(log *slog.Logger) error {
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
 
-	confirmationNotifier := service.NewConfirmationNotifier(mail, log)
-	releaseNotifier := scanner.NewReleaseNotifier(mail, urls)
+	releaseNotifier := mailer.NewReleaseNotifier(mail, urls, log)
 
-	svc := service.NewSubscriptionService(repos, subs, gh, confirmationNotifier, urls, log)
+	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.WorkerCount, log)
 
-	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.ScanInterval, log)
-	go scan.Start(ctx)
+	schedulerDone := make(chan struct{})
+	go func() {
+		scheduler.New(scan, cfg.ScanInterval, log).Start(ctx)
+		close(schedulerDone)
+	}()
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: api.NewRouter(api.NewHandler(svc, log), cfg.APIKey, log),
+		Handler: api.NewRouter(buildHandler(repos, subs, gh, mail, urls, log), cfg.APIKey, log),
 	}
 
 	serverError := make(chan error, 1)
@@ -125,6 +132,10 @@ func run(log *slog.Logger) error {
 		log.Info("shutting down")
 	}
 
+	return gracefulShutdown(srv, schedulerDone, mail, log)
+}
+
+func gracefulShutdown(srv *http.Server, schedulerDone <-chan struct{}, mail *mailer.Mailer, log *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -132,8 +143,33 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
-	svc.Shutdown()
+	// HTTP is stopped; wait for the scanner to finish so no producer remains,
+	// then drain and close the mailer (bounded by the shutdown deadline).
+	<-schedulerDone
+	mail.Shutdown(shutdownCtx)
 
 	log.Info("server stopped")
 	return nil
+}
+
+func buildHandler(
+	repos *repository.GitHubRepoRepository,
+	subs *repository.SubscriptionRepository,
+	gh *github.Client,
+	mail *mailer.Mailer,
+	urls *urlbuilder.URLBuilder,
+	log *slog.Logger,
+) *api.Handler {
+	subscribeUseCase := subscribe.New(repos, subs, gh, mail, urls, log)
+	confirmUseCase := confirm.New(subs, log)
+	unsubscribeUseCase := unsubscribe.New(subs, log)
+	listUseCase := list.New(subs)
+
+	return api.NewHandler(
+		metrics.NewMetered[subscribe.Input, subscribe.Output]("subscribe", subscribeUseCase),
+		metrics.NewMetered[confirm.Input, confirm.Output]("confirm", confirmUseCase),
+		metrics.NewMetered[unsubscribe.Input, unsubscribe.Output]("unsubscribe", unsubscribeUseCase),
+		metrics.NewMetered[list.Input, list.Output]("list", listUseCase),
+		log,
+	)
 }
