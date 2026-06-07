@@ -20,6 +20,23 @@ var (
 		[]string{"method", "path"},
 	)
 
+	GRPCRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "grpc_requests_total",
+			Help: "Total number of gRPC requests by method and status code.",
+		},
+		[]string{"method", "code"},
+	)
+
+	GRPCRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "grpc_request_duration_seconds",
+			Help:    "gRPC request duration in seconds.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method"},
+	)
+
 	ScannerRunsTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "scanner_runs_total",
@@ -147,6 +164,8 @@ func init() {
 	prometheus.MustRegister(
 		HTTPRequestsTotal,
 		HTTPRequestDuration,
+		GRPCRequestsTotal,
+		GRPCRequestDuration,
 		ScannerRunsTotal,
 		ScannerDuration,
 		NotificationsSentTotal,
