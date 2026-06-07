@@ -113,13 +113,13 @@ func run(log *slog.Logger) error {
 	}()
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
+		Addr:    ":" + cfg.HTTPPort,
 		Handler: api.NewRouter(buildHandler(repos, subs, gh, mail, urls, log), cfg.APIKey, log),
 	}
 
 	serverError := make(chan error, 1)
 	go func() {
-		log.Info("server started", "port", cfg.Port)
+		log.Info("server started", "port", cfg.HTTPPort)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
