@@ -21,6 +21,7 @@ type Config struct {
 	BaseURL      string        `envconfig:"BASE_URL"      default:"http://localhost:8080"`
 	GitHubToken  string        `envconfig:"GITHUB_TOKEN"`
 	ScanInterval time.Duration `envconfig:"SCAN_INTERVAL" default:"10m"`
+	WorkerCount  int           `envconfig:"SCAN_WORKERS"  default:"5"`
 	DatabaseURL  string        `envconfig:"DATABASE_URL"                                  required:"true"`
 	RedisURL     string        `envconfig:"REDIS_URL"                                     required:"true"`
 	SMTP         SMTPConfig
