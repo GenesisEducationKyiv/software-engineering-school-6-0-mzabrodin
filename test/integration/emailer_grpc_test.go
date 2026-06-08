@@ -19,6 +19,7 @@ import (
 	"github-release-notifier/internal/adapter/emailerserver"
 	"github-release-notifier/internal/certgen"
 	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/tlsconfig"
 )
 
@@ -117,6 +118,31 @@ func (s *EmailerGRPCSuite) TestSendReleaseNotifications() {
 
 	s.Equal(1, result.Sent)
 	s.Equal([]string{"b@example.com"}, result.Failed)
+}
+
+func (s *EmailerGRPCSuite) TestPropagatesCorrelationIDs() {
+	notifications := []entity.ReleaseNotification{{
+		To:             "a@example.com",
+		Repo:           "owner/repo",
+		Tag:            "v1.0.0",
+		ReleaseURL:     "https://github.com/owner/repo/releases/tag/v1.0.0",
+		UnsubscribeURL: "https://example.com/unsubscribe/a",
+	}}
+
+	var gotRequestID, gotScanID string
+	s.mailer.On("SendReleaseNotifications", mock.Anything, notifications).
+		Run(func(args mock.Arguments) {
+			ctx, _ := args.Get(0).(context.Context)
+			gotRequestID = logging.RequestID(ctx)
+			gotScanID = logging.ScanID(ctx)
+		}).
+		Return(entity.BatchResult{Sent: 1})
+
+	ctx := logging.WithScanID(logging.WithRequestID(s.T().Context(), "req-xyz"), "scan-xyz")
+	s.client.SendReleaseNotifications(ctx, notifications)
+
+	s.Equal("req-xyz", gotRequestID)
+	s.Equal("scan-xyz", gotScanID)
 }
 
 func (s *EmailerGRPCSuite) TestSendConfirmation() {
