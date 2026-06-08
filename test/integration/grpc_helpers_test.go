@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	grpcapi "github-release-notifier/internal/adapter/grpc"
-	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"
+	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/app/v1"
 )
 
 const bufSize = 1024 * 1024

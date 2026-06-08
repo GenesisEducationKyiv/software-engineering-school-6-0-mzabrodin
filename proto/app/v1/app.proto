@@ -4,7 +4,7 @@ package notifier.v1;
 
 import "buf/validate/validate.proto";
 
-option go_package = "github-release-notifier/internal/adapter/grpc/gen/notifier/v1;notifierv1";
+option go_package = "github-release-app/internal/adapter/grpc/gen/app/v1;notifierv1";
 
 service SubscriptionService {
   // Subscribe registers an email for a repository's releases and sends a confirmation email.

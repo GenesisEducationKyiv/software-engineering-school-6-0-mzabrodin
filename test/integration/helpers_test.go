@@ -50,7 +50,7 @@ type testUseCases struct {
 }
 
 // newTestUseCases builds the four use cases against testPool with a mocked GitHub
-// (RepoExists -> repoExists) and a no-op confirmation notifier. Shared by the HTTP
+// (RepoExists -> repoExists) and a no-op confirmation app. Shared by the HTTP
 // and gRPC test servers, which differ only in the handler that wraps these.
 func newTestUseCases(repoExists bool) testUseCases {
 	gh := &mockGitHub{}

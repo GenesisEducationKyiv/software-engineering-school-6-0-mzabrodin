@@ -10,7 +10,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"
+	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/app/v1"
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
 )

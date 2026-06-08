@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"
+	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/app/v1"
 )
 
 const apiKeyMetadataKey = "x-api-key"

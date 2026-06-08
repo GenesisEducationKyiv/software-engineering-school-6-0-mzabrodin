@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"
+	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/app/v1"
 )
 
 type GRPCSubscribeSuite struct {
