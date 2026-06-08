@@ -7,9 +7,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code and build binary
+# Copy source code and build binaries
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -o emailer ./cmd/emailer
 
 # Stage 2: Run
 FROM alpine:3.23.3
@@ -22,6 +23,7 @@ RUN apk --no-cache add ca-certificates tzdata && \
     addgroup -S app && adduser -S -G app -h /app app
 
 COPY --from=builder --chown=app:app /app/server .
+COPY --from=builder --chown=app:app /app/emailer .
 COPY --from=builder --chown=app:app /app/migrations ./migrations
 
 USER app
