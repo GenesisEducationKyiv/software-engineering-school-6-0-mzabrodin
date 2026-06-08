@@ -16,18 +16,20 @@ A service that monitors GitHub repositories for new releases and delivers email 
 
 ## Architecture
 
-A single Go binary organized in hexagonal layers. Dependencies point inward:
+Two Go binaries organized in hexagonal layers. Dependencies point inward:
 inbound adapter → use case → outbound adapter → domain. The HTTP and gRPC adapters
-call the **same** use cases, so business logic is transport-agnostic.
+call the **same** use cases, so business logic is transport-agnostic. SMTP delivery
+lives in a separate **emailer** microservice ([ADR-009](docs/adr/009-future-microservices-split.md))
+that the app reaches over gRPC secured with **mTLS**.
 
 | Layer             | Package                                                         | Responsibility                                                      |
 |-------------------|-----------------------------------------------------------------|---------------------------------------------------------------------|
 | Domain            | `internal/entity`                                               | Entities, sentinel errors, repo parsing — no external deps          |
 | Use cases         | `internal/usecase/{subscribe,confirm,unsubscribe,list,scanner}` | Business rules, token generation, scan orchestration                |
-| Inbound adapters  | `internal/adapter/{http,grpc}`                                  | HTTP (chi) and gRPC servers; validation, auth, error mapping        |
-| Outbound adapters | `internal/adapter/{repository,github,cache,mailer,urlbuilder}`  | PostgreSQL, GitHub REST, Redis, SMTP, URL building                  |
-| Infrastructure    | `internal/infrastructure/{config,db,logging,metrics,scheduler}` | Env config, pgx pool + migrations, slog, Prometheus, scan scheduler |
-| Entrypoint        | `cmd/server/main.go`                                            | Wires dependencies; starts HTTP + gRPC servers and the scanner      |
+| Inbound adapters  | `internal/adapter/{http,grpc,emailerserver}`                    | HTTP (chi) + public gRPC servers; emailer-side gRPC server; validation, auth, error mapping |
+| Outbound adapters | `internal/adapter/{repository,github,cache,emailerclient,mailer,urlbuilder}` | PostgreSQL, GitHub REST, Redis, emailer gRPC client, SMTP, URL building |
+| Infrastructure    | `internal/infrastructure/{config,db,logging,metrics,scheduler,tlsconfig}` | Env config, pgx pool + migrations, slog, Prometheus, scan scheduler, mTLS config |
+| Entrypoints       | `cmd/server/main.go`, `cmd/emailer/main.go`                     | App (HTTP + gRPC + scanner, emailer client) and the emailer service (SMTP + emailer.v1 over mTLS) |
 
 ## Subscription flow
 
@@ -68,7 +70,7 @@ All endpoints return `application/json`. Protected endpoints require the `X-API-
 
 ### gRPC (`GRPC_PORT`, default `50051`)
 
-Service `notifier.v1.SubscriptionService` — contract in `proto/notifier/v1/subscription.proto`.
+Service `notifier.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`.
 
 | RPC                 | Auth                 | Description                     |
 |---------------------|----------------------|---------------------------------|
@@ -193,14 +195,17 @@ Exposed at `/metrics`.
 cp .env.example .env
 # Fill in GITHUB_TOKEN, SMTP_*, DB_*, REDIS_PASSWORD, GRAFANA_PASSWORD, API_KEY
 
+make certs                     # generate the app↔emailer mTLS certs into certs/ (prerequisite)
 docker compose up --build      # or: make up-build
 ```
 
-The app, PostgreSQL, Redis, and the observability stack start in dependency order.
-In Docker, the app's `DATABASE_URL` and `REDIS_URL` are constructed automatically from
-the `DB_*` / `REDIS_*` values. Database migrations run on startup.
+The app, the **emailer** service, PostgreSQL, Redis, and the observability stack start
+in dependency order. In Docker, the app's `DATABASE_URL` and `REDIS_URL` are constructed
+automatically from the `DB_*` / `REDIS_*` values. Database migrations run on startup.
+The emailer mounts the **server** cert and the app mounts the **client** cert from `certs/`;
+both verify the peer against the shared CA, so `make certs` must run first.
 
-HTTP is served on `:8080`, gRPC on `:50051`.
+HTTP is served on `:8080`, public gRPC on `:50051`; the emailer listens on `:50052` (gRPC, internal only).
 
 ### Regenerating gRPC stubs
 
@@ -210,25 +215,43 @@ make proto      # requires the buf CLI; regenerates internal/adapter/grpc/gen/
 
 ## Environment variables
 
-### Application (read by the service)
+### App (`cmd/server`)
 
-| Variable        | Default                 | Required | Description                                          |
-|-----------------|-------------------------|----------|------------------------------------------------------|
-| `HTTP_PORT`     | `8080`                  | —        | HTTP listen port                                     |
-| `GRPC_PORT`     | `50051`                 | —        | gRPC listen port                                     |
-| `BASE_URL`      | `http://localhost:8080` | —        | Used in confirmation/unsubscribe links               |
-| `GITHUB_TOKEN`  | —                       | —        | GitHub PAT (optional; raises rate limit to 5 000/hr) |
-| `SCAN_INTERVAL` | `10m`                   | —        | How often the scanner checks for new releases        |
-| `SCAN_WORKERS`  | `5`                     | —        | Concurrent workers per scan cycle                    |
-| `DATABASE_URL`  | —                       | **yes**  | PostgreSQL connection URL                            |
-| `REDIS_URL`     | —                       | **yes**  | Redis connection URL                                 |
-| `SMTP_HOST`     | —                       | **yes**  | SMTP server host                                     |
-| `SMTP_PORT`     | `587`                   | —        | SMTP server port                                     |
-| `SMTP_USER`     | —                       | **yes**  | SMTP username                                        |
-| `SMTP_PASSWORD` | —                       | **yes**  | SMTP password                                        |
-| `SMTP_FROM`     | —                       | **yes**  | From address for outgoing emails                     |
-| `API_KEY`       | —                       | —        | Key for protected endpoints (auth disabled if empty) |
-| `LOG_LEVEL`     | `info`                  | —        | `debug` / `info` / `warn` / `error`                  |
+| Variable              | Default                 | Required | Description                                                |
+|-----------------------|-------------------------|----------|------------------------------------------------------------|
+| `HTTP_PORT`           | `8080`                  | —        | HTTP listen port                                           |
+| `GRPC_PORT`           | `50051`                 | —        | Public gRPC listen port                                    |
+| `BASE_URL`            | `http://localhost:8080` | —        | Used in confirmation/unsubscribe links                     |
+| `GITHUB_TOKEN`        | —                       | —        | GitHub PAT (optional; raises rate limit to 5 000/hr)       |
+| `SCAN_INTERVAL`       | `10m`                   | —        | How often the scanner checks for new releases              |
+| `SCAN_WORKERS`        | `5`                     | —        | Concurrent workers per scan cycle                          |
+| `DATABASE_URL`        | —                       | **yes**  | PostgreSQL connection URL                                  |
+| `REDIS_URL`           | —                       | **yes**  | Redis connection URL                                       |
+| `EMAILER_ADDR`        | `localhost:50052`       | —        | Address of the emailer gRPC service                        |
+| `EMAILER_SERVER_NAME` | `emailer`               | —        | Server name verified in the emailer's cert (a server SAN)  |
+| `TLS_CERT_FILE`       | —                       | **yes**  | Path to the app's **client** certificate (mTLS)            |
+| `TLS_KEY_FILE`        | —                       | **yes**  | Path to the app's client key                               |
+| `TLS_CA_FILE`         | —                       | **yes**  | Path to the shared CA certificate                          |
+| `API_KEY`             | —                       | —        | Key for protected endpoints (auth disabled if empty)       |
+| `LOG_LEVEL`           | `info`                  | —        | `debug` / `info` / `warn` / `error`                        |
+
+### Emailer (`cmd/emailer`)
+
+| Variable            | Default | Required | Description                                          |
+|---------------------|---------|----------|------------------------------------------------------|
+| `EMAILER_GRPC_PORT` | `50052` | —        | Emailer gRPC listen port (mTLS)                      |
+| `EMAILER_HTTP_PORT` | `8081`  | —        | Emailer metrics + health HTTP port                   |
+| `SMTP_HOST`         | —       | **yes**  | SMTP server host                                     |
+| `SMTP_PORT`         | `587`   | —        | SMTP server port                                     |
+| `SMTP_USER`         | —       | **yes**  | SMTP username                                        |
+| `SMTP_PASSWORD`     | —       | **yes**  | SMTP password                                        |
+| `SMTP_FROM`         | —       | **yes**  | From address for outgoing emails                     |
+| `TLS_CERT_FILE`     | —       | **yes**  | Path to the emailer's **server** certificate (mTLS)  |
+| `TLS_KEY_FILE`      | —       | **yes**  | Path to the emailer's server key                     |
+| `TLS_CA_FILE`       | —       | **yes**  | Path to the shared CA certificate                    |
+| `LOG_LEVEL`         | `info`  | —        | `debug` / `info` / `warn` / `error`                  |
+
+The internal app↔emailer link has **no `API_KEY`** — mutual TLS is the authentication.
 
 ### Docker Compose only (build URLs and configure the stack)
 
