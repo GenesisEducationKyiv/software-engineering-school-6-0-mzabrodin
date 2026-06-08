@@ -530,7 +530,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 69 },
       "id": 70,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(grpc_requests_total[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
+      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
       "title": "gRPC Request Rate",
       "type": "timeseries"
     },
@@ -550,7 +550,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 69 },
       "id": 71,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(grpc_requests_total{code!=\"OK\"}[$__rate_interval])) by (method) / sum(rate(grpc_requests_total[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
+      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier\",code!=\"OK\"}[$__rate_interval])) by (method) / sum(rate(grpc_requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
       "title": "gRPC Error Rate (non-OK)",
       "type": "timeseries"
     },
@@ -565,10 +565,68 @@
       "id": 72,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum(rate(grpc_request_duration_seconds_bucket[$__rate_interval])) by (le, method))", "legendFormat": "p99 {{method}}" },
-        { "expr": "histogram_quantile(0.50, sum(rate(grpc_request_duration_seconds_bucket[$__rate_interval])) by (le, method))", "legendFormat": "p50 {{method}}" }
+        { "expr": "histogram_quantile(0.99, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, method))", "legendFormat": "p99 {{method}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, method))", "legendFormat": "p50 {{method}}" }
       ],
       "title": "gRPC Latency (p50/p99)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 77 },
+      "id": 109,
+      "title": "Emailer",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Per-second gRPC request rate on the internal app→emailer link, by method.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 78 },
+      "id": 80,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
+      "title": "Emailer gRPC Request Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Ratio of non-OK gRPC responses to total requests on the emailer link, per method.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] },
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 78 },
+      "id": 81,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier_emailer\",code!=\"OK\"}[$__rate_interval])) by (method) / sum(rate(grpc_requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
+      "title": "Emailer gRPC Error Rate (non-OK)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Emailer gRPC response time at the 50th and 99th percentile, by method.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 78 },
+      "id": 82,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, method))", "legendFormat": "p99 {{method}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, method))", "legendFormat": "p50 {{method}}" }
+      ],
+      "title": "Emailer gRPC Latency (p50/p99)",
       "type": "timeseries"
     }
   ],
