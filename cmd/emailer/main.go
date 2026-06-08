@@ -20,6 +20,7 @@ import (
 	"github-release-notifier/internal/adapter/emailerserver"
 	"github-release-notifier/internal/adapter/mailer"
 	"github-release-notifier/internal/infrastructure/config"
+	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/tlsconfig"
 )
 
@@ -43,7 +44,11 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
+	log = slog.New(
+		logging.NewRequestIDHandler(
+			logging.NewScanIDHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()})),
+		),
+	)
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

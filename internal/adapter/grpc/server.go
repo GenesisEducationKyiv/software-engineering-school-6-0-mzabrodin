@@ -23,6 +23,7 @@ func NewGRPCServer(handler *Server, apiKey string, log *slog.Logger) (*grpc.Serv
 
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			logging.NewCorrelationInterceptor(),
 			logging.NewSlogInterceptor(log),
 			metrics.NewMetricsInterceptor,
 			NewKeyAuthInterceptor(apiKey),

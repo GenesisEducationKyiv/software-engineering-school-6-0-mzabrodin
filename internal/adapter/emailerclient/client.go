@@ -12,6 +12,7 @@ import (
 
 	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
 	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/infrastructure/logging"
 )
 
 const confirmationTimeout = 30 * time.Second
@@ -53,6 +54,8 @@ func (c *Client) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), confirmationTimeout)
 		defer cancel()
 
+		sendCtx = logging.WithOutgoingIDs(sendCtx)
+
 		_, err := c.rpc.SendConfirmation(sendCtx, &emailerv1.SendConfirmationRequest{
 			To:         to,
 			Repo:       repo,
@@ -68,6 +71,8 @@ func (c *Client) SendReleaseNotifications(
 	ctx context.Context,
 	notifications []entity.ReleaseNotification,
 ) entity.BatchResult {
+	ctx = logging.WithOutgoingIDs(ctx)
+
 	resp, err := c.rpc.SendReleaseNotifications(ctx, &emailerv1.SendReleaseNotificationsRequest{
 		Notifications: toProtoNotifications(notifications),
 	})

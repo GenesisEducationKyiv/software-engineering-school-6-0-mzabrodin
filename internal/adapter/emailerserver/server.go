@@ -31,6 +31,7 @@ func NewGRPCServer(handler *Server, tlsConfig *tls.Config, log *slog.Logger) (*g
 	srv := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(tlsConfig)),
 		grpc.ChainUnaryInterceptor(
+			logging.NewCorrelationInterceptor(),
 			logging.NewSlogInterceptor(log),
 			metrics.NewMetricsInterceptor,
 			validationInterceptor(validator),
