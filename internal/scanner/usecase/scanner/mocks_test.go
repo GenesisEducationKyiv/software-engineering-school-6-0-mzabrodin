@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/shared/entity"
 )
 
 type mockRepoRepository struct {

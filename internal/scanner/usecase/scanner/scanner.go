@@ -10,8 +10,9 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/github"
 )
 
 type notifier interface {
@@ -102,7 +103,7 @@ func (s *Scanner) scanRepo(ctx context.Context, repo *entity.Repository) error {
 	}
 
 	err := s.checkRepo(ctx, repo)
-	if errors.Is(err, entity.ErrRateLimited) || errors.Is(err, entity.ErrUnauthorized) {
+	if errors.Is(err, github.ErrRateLimited) || errors.Is(err, github.ErrUnauthorized) {
 		return err
 	}
 
@@ -116,7 +117,7 @@ func (s *Scanner) scanRepo(ctx context.Context, repo *entity.Repository) error {
 }
 
 func (s *Scanner) checkRepo(ctx context.Context, repo *entity.Repository) error {
-	owner, name, err := entity.ParseRepo(repo.Name)
+	owner, name, err := github.ParseRepo(repo.Name)
 	if err != nil {
 		return err
 	}
@@ -150,17 +151,17 @@ func (s *Scanner) getRelease(ctx context.Context, repoName, owner, name string) 
 
 func (s *Scanner) handleReleaseError(ctx context.Context, err error, repoName string) error {
 	switch {
-	case errors.Is(err, entity.ErrUnauthorized):
+	case errors.Is(err, github.ErrUnauthorized):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("unauthorized").Inc()
 		s.log.WarnContext(ctx, "GitHub token is invalid or missing, stopping scan", "repo", repoName)
 		return err
 
-	case errors.Is(err, entity.ErrRateLimited):
+	case errors.Is(err, github.ErrRateLimited):
 		metrics.GitHubAPIErrorsTotal.WithLabelValues("rate_limited").Inc()
 		s.log.WarnContext(ctx, "rate limited by GitHub, stopping scan", "repo", repoName)
 		return err
 
-	case errors.Is(err, entity.ErrNoRelease):
+	case errors.Is(err, github.ErrNoRelease):
 		return nil
 
 	default:

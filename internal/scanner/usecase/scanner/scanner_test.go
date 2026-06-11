@@ -11,7 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/github"
 )
 
 func testRepo(name string, lastTag *string) *entity.Repository {
@@ -48,7 +49,7 @@ func TestScannerSuite(t *testing.T) {
 
 func (s *ScannerSuite) TestCheckRepo_NoRelease_Skipped() {
 	gh := &mockGitHub{}
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").Return(nil, entity.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").Return(nil, github.ErrNoRelease)
 	defer gh.AssertExpectations(s.T())
 
 	sc := newScanner(&mockRepoRepository{}, &mockSubRepository{}, gh, &mockNotifier{})
@@ -60,8 +61,8 @@ func (s *ScannerSuite) TestCheckRepo_GlobalGitHubError_ReturnsError() {
 		name string
 		err  error
 	}{
-		{"rate limited (wrapped)", fmt.Errorf("%w, retry after 60s", entity.ErrRateLimited)},
-		{"unauthorized", entity.ErrUnauthorized},
+		{"rate limited (wrapped)", fmt.Errorf("%w, retry after 60s", github.ErrRateLimited)},
+		{"unauthorized", github.ErrUnauthorized},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
@@ -252,9 +253,9 @@ func (s *ScannerSuite) TestRun_AllReposProcessed() {
 	defer repos.AssertExpectations(s.T())
 
 	gh := &mockGitHub{}
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, entity.ErrNoRelease)
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo2").Return(nil, entity.ErrNoRelease)
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo3").Return(nil, entity.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, github.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo2").Return(nil, github.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo3").Return(nil, github.ErrNoRelease)
 	defer gh.AssertExpectations(s.T())
 
 	sc := newScanner(repos, &mockSubRepository{}, gh, &mockNotifier{})
@@ -273,7 +274,7 @@ func (s *ScannerSuite) TestRun_PerRepoErrorIsolated() {
 
 	gh := &mockGitHub{}
 	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, errors.New("boom"))
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo2").Return(nil, entity.ErrNoRelease)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo2").Return(nil, github.ErrNoRelease)
 	defer gh.AssertExpectations(s.T())
 
 	sc := newScanner(repos, &mockSubRepository{}, gh, &mockNotifier{})
@@ -294,7 +295,7 @@ func (s *ScannerSuite) TestRun_RateLimited_StopsScan() {
 	// Only repo1 is expected to reach GitHub; the rate limit must stop the pass
 	// before repo2/repo3 are scanned. A single worker keeps the order deterministic.
 	gh := &mockGitHub{}
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, entity.ErrRateLimited)
+	gh.On("GetLatestRelease", mock.Anything, "owner", "repo1").Return(nil, github.ErrRateLimited)
 	defer gh.AssertExpectations(s.T())
 
 	sc := NewScanner(

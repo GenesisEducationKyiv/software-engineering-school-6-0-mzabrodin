@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/infrastructure/scheduler"
+	"github-release-notifier/internal/scanner/scheduler"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
