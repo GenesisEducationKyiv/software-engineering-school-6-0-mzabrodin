@@ -17,11 +17,11 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github-release-notifier/internal/adapter/emailerserver"
-	"github-release-notifier/internal/adapter/mailer"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/logging"
-	"github-release-notifier/internal/infrastructure/tlsconfig"
+	"github-release-notifier/internal/notifier/adapter/emailerserver"
+	"github-release-notifier/internal/notifier/adapter/mailer"
+	"github-release-notifier/internal/notifier/tlsconfig"
 )
 
 func main() {

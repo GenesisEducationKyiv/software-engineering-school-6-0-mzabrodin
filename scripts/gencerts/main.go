@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github-release-notifier/internal/certgen"
+	"github-release-notifier/internal/notifier/certgen"
 )
 
 func main() {
