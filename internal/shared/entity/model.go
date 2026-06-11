@@ -24,27 +24,7 @@ type Subscription struct {
 	CreatedAt        time.Time
 }
 
-type SubscriptionView struct {
-	Email       string
-	Repo        string
-	Confirmed   bool
-	LastSeenTag *string
-}
-
 type Release struct {
 	TagName string
 	HTMLURL string
-}
-
-type ReleaseNotification struct {
-	To             string
-	Repo           string
-	Tag            string
-	ReleaseURL     string
-	UnsubscribeURL string
-}
-
-type BatchResult struct {
-	Sent   int
-	Failed []string
 }

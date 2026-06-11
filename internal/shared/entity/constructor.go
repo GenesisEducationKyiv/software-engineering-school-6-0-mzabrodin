@@ -34,21 +34,6 @@ func NewSubscription(repositoryID uuid.UUID, email string) (*Subscription, error
 	}, nil
 }
 
-func NewReleaseNotification(
-	sub *Subscription,
-	repo *Repository,
-	release *Release,
-	unsubURL string,
-) ReleaseNotification {
-	return ReleaseNotification{
-		To:             sub.Email,
-		Repo:           repo.Name,
-		Tag:            release.TagName,
-		ReleaseURL:     release.HTMLURL,
-		UnsubscribeURL: unsubURL,
-	}
-}
-
 func randomToken() (string, error) {
 	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
