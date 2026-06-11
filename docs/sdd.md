@@ -19,7 +19,7 @@
 
 1. The system is two Go binaries: the **app** (`cmd/server`) serves the HTTP REST API, the gRPC API, and the background
    scanner; the **emailer** (`cmd/emailer`) owns SMTP and the mailer dispatch queue. The app reaches the emailer over
-   gRPC secured with **mTLS** (see [ADR-009](adr/009-future-microservices-split.md))
+   gRPC secured with **mTLS** (see [ADR-009](adr/009-microservices-split.md))
 2. Code is organized as a hexagonal architecture (`entity` / `usecase` / `adapter` / `infrastructure`) so business logic
    is independent of transport and providers; both transports reuse the same use cases (see [ADR-008](adr/008-hexagonal-architecture.md), [ADR-005](adr/005-grpc-api-alongside-rest.md))
 3. GitHub API responses are cached in Redis with a 10-minute TTL to stay within rate limits (60 req/hour without a
@@ -193,7 +193,7 @@ sequenceDiagram
 ### Email Dispatch
 
 The app never speaks SMTP. Both email paths cross the **gRPC + mTLS** link into the
-emailer service ([ADR-009](adr/009-future-microservices-split.md)), where they land on
+emailer service ([ADR-009](adr/009-microservices-split.md)), where they land on
 the in-process dispatch queue ([ADR-006](adr/006-mailer-dispatch-queue.md)). Confirmation
 sends are **fire-and-forget** (the app does not wait); release sends are synchronous and
 return a `BatchResult`. A transport failure on the release path is reported as **every
@@ -318,7 +318,7 @@ Returns typed sentinel errors so callers handle each case explicitly:
 
 ### Emailer service (`cmd/emailer`, `internal/notifier/adapter/{emailerserver,mailer}`)
 
-SMTP delivery runs as a separate gRPC service ([ADR-009](adr/009-future-microservices-split.md)). `emailerserver`
+SMTP delivery runs as a separate gRPC service ([ADR-009](adr/009-microservices-split.md)). `emailerserver`
 exposes `emailer.v1.EmailerService` over mTLS and forwards to the `mailer`: a go-mail SMTP client behind an in-process
 dispatch queue (see [ADR-006](adr/006-mailer-dispatch-queue.md)) — a single dispatcher goroutine consumes a buffered job
 channel and dials one SMTP connection per batch. The app calls it through the `emailerclient` outbound adapter, which

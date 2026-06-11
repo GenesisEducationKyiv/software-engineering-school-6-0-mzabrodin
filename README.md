@@ -19,12 +19,13 @@ A service that monitors GitHub repositories for new releases and delivers email 
 Two Go binaries organized in hexagonal layers. Dependencies point inward:
 inbound adapter → use case → outbound adapter → domain. The HTTP and gRPC adapters
 call the **same** use cases, so business logic is transport-agnostic. SMTP delivery
-lives in a separate **emailer** microservice ([ADR-009](docs/adr/009-future-microservices-split.md))
+lives in a separate **emailer** microservice ([ADR-009](docs/adr/009-microservices-split.md))
 that the app reaches over gRPC secured with **mTLS**.
 
-A **modulith**: `internal/` is sliced vertically by bounded context, with clean-arch layers *inside*
-each module. Modules stay independent (no module imports another — they talk through consumer-defined
-ports wired in `cmd/`), enforced in CI by golangci-lint `depguard`.
+A **modulith** ([ADR-010](docs/adr/010-modulith-bounded-contexts.md)): `internal/` is sliced vertically
+by bounded context, with clean-arch layers *inside* each module. Modules stay independent (no module
+imports another — they talk through consumer-defined ports wired in `cmd/`), enforced in CI by
+golangci-lint `depguard`.
 
 | Module         | Package                                                                              | Responsibility                                                                                               |
 |----------------|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
