@@ -1,11 +1,11 @@
 package emailerclient
 
 import (
-	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
 )
 
-func toProtoNotifications(notifications []entity.ReleaseNotification) []*emailerv1.ReleaseNotification {
+func toProtoNotifications(notifications []notifier.ReleaseNotification) []*emailerv1.ReleaseNotification {
 	out := make([]*emailerv1.ReleaseNotification, len(notifications))
 	for i := range notifications {
 		n := &notifications[i]
@@ -21,7 +21,7 @@ func toProtoNotifications(notifications []entity.ReleaseNotification) []*emailer
 	return out
 }
 
-func recipients(notifications []entity.ReleaseNotification) []string {
+func recipients(notifications []notifier.ReleaseNotification) []string {
 	out := make([]string, len(notifications))
 	for i := range notifications {
 		out[i] = notifications[i].To

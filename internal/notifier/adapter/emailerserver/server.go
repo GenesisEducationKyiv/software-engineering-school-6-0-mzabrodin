@@ -16,9 +16,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
 )
 
 // NewGRPCServer builds the emailer gRPC server secured with mTLS.

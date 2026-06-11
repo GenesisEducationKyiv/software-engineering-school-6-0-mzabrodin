@@ -15,12 +15,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github-release-notifier/internal/adapter/emailerclient"
-	"github-release-notifier/internal/adapter/emailerserver"
-	"github-release-notifier/internal/certgen"
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/logging"
-	"github-release-notifier/internal/infrastructure/tlsconfig"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/adapter/emailerclient"
+	"github-release-notifier/internal/notifier/adapter/emailerserver"
+	"github-release-notifier/internal/notifier/certgen"
+	"github-release-notifier/internal/notifier/tlsconfig"
 )
 
 type mockEmailerMailer struct{ mock.Mock }
@@ -31,10 +31,10 @@ func (m *mockEmailerMailer) SendConfirmation(ctx context.Context, to, repo, conf
 
 func (m *mockEmailerMailer) SendReleaseNotifications(
 	ctx context.Context,
-	notifications []entity.ReleaseNotification,
-) entity.BatchResult {
+	notifications []notifier.ReleaseNotification,
+) notifier.BatchResult {
 	args := m.Called(ctx, notifications)
-	out, _ := args.Get(0).(entity.BatchResult)
+	out, _ := args.Get(0).(notifier.BatchResult)
 	return out
 }
 
@@ -103,7 +103,7 @@ func (s *EmailerGRPCSuite) TearDownTest() {
 }
 
 func (s *EmailerGRPCSuite) TestSendReleaseNotifications() {
-	notifications := []entity.ReleaseNotification{{
+	notifications := []notifier.ReleaseNotification{{
 		To:             "a@example.com",
 		Repo:           "owner/repo",
 		Tag:            "v1.0.0",
@@ -112,7 +112,7 @@ func (s *EmailerGRPCSuite) TestSendReleaseNotifications() {
 	}}
 
 	s.mailer.On("SendReleaseNotifications", mock.Anything, notifications).
-		Return(entity.BatchResult{Sent: 1, Failed: []string{"b@example.com"}})
+		Return(notifier.BatchResult{Sent: 1, Failed: []string{"b@example.com"}})
 
 	result := s.client.SendReleaseNotifications(s.T().Context(), notifications)
 
@@ -121,7 +121,7 @@ func (s *EmailerGRPCSuite) TestSendReleaseNotifications() {
 }
 
 func (s *EmailerGRPCSuite) TestPropagatesCorrelationIDs() {
-	notifications := []entity.ReleaseNotification{{
+	notifications := []notifier.ReleaseNotification{{
 		To:             "a@example.com",
 		Repo:           "owner/repo",
 		Tag:            "v1.0.0",
@@ -136,7 +136,7 @@ func (s *EmailerGRPCSuite) TestPropagatesCorrelationIDs() {
 			gotRequestID = logging.RequestID(ctx)
 			gotScanID = logging.ScanID(ctx)
 		}).
-		Return(entity.BatchResult{Sent: 1})
+		Return(notifier.BatchResult{Sent: 1})
 
 	ctx := logging.WithScanID(logging.WithRequestID(s.T().Context(), "req-xyz"), "scan-xyz")
 	s.client.SendReleaseNotifications(ctx, notifications)

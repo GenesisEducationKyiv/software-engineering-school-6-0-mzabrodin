@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/certgen"
-	"github-release-notifier/internal/infrastructure/tlsconfig"
+	"github-release-notifier/internal/notifier/certgen"
+	"github-release-notifier/internal/notifier/tlsconfig"
 )
 
 type TLSConfigSuite struct {

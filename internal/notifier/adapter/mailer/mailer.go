@@ -11,8 +11,8 @@ import (
 
 	"github.com/wneessen/go-mail"
 
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/notifier"
 )
 
 const (
@@ -154,9 +154,9 @@ func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 
 func (m *Mailer) SendReleaseNotifications(
 	ctx context.Context,
-	notifications []entity.ReleaseNotification,
-) entity.BatchResult {
-	var result entity.BatchResult
+	notifications []notifier.ReleaseNotification,
+) notifier.BatchResult {
+	var result notifier.BatchResult
 
 	messages := make([]*mail.Msg, 0, len(notifications))
 	recipients := make([]string, 0, len(notifications))
@@ -211,7 +211,7 @@ func (m *Mailer) Shutdown(ctx context.Context) {
 	}
 }
 
-func (m *Mailer) buildReleaseMessage(n *entity.ReleaseNotification) (*mail.Msg, error) {
+func (m *Mailer) buildReleaseMessage(n *notifier.ReleaseNotification) (*mail.Msg, error) {
 	body, err := renderTemplate(releaseTemplate, map[string]string{
 		"Repo":           n.Repo,
 		"Tag":            n.Tag,

@@ -10,9 +10,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/logging"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
 )
 
 const confirmationTimeout = 30 * time.Second
@@ -69,8 +69,8 @@ func (c *Client) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 
 func (c *Client) SendReleaseNotifications(
 	ctx context.Context,
-	notifications []entity.ReleaseNotification,
-) entity.BatchResult {
+	notifications []notifier.ReleaseNotification,
+) notifier.BatchResult {
 	ctx = logging.WithOutgoingIDs(ctx)
 
 	resp, err := c.rpc.SendReleaseNotifications(ctx, &emailerv1.SendReleaseNotificationsRequest{
@@ -79,10 +79,10 @@ func (c *Client) SendReleaseNotifications(
 	if err != nil {
 		c.log.ErrorContext(ctx, "failed to send release notifications", "count", len(notifications), "error", err)
 
-		return entity.BatchResult{Failed: recipients(notifications)}
+		return notifier.BatchResult{Failed: recipients(notifications)}
 	}
 
-	return entity.BatchResult{Sent: int(resp.GetSent()), Failed: resp.GetFailed()}
+	return notifier.BatchResult{Sent: int(resp.GetSent()), Failed: resp.GetFailed()}
 }
 
 func (c *Client) Close() error {

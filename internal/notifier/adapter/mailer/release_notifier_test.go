@@ -9,8 +9,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/adapter/mailer"
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/adapter/mailer"
+	"github-release-notifier/internal/shared/entity"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -19,10 +20,10 @@ type mockReleaseSender struct{ mock.Mock }
 
 func (m *mockReleaseSender) SendReleaseNotifications(
 	_ context.Context,
-	ns []entity.ReleaseNotification,
-) entity.BatchResult {
+	ns []notifier.ReleaseNotification,
+) notifier.BatchResult {
 	args := m.Called(ns)
-	res, _ := args.Get(0).(entity.BatchResult)
+	res, _ := args.Get(0).(notifier.BatchResult)
 	return res
 }
 
@@ -54,11 +55,11 @@ func (s *ReleaseNotifierSuite) TestBuildsCorrectNotifications() {
 	defer u.AssertExpectations(s.T())
 
 	m := &mockReleaseSender{}
-	var captured []entity.ReleaseNotification
+	var captured []notifier.ReleaseNotification
 	m.On("SendReleaseNotifications", mock.Anything).
 		Run(func(args mock.Arguments) {
-			captured, _ = args.Get(0).([]entity.ReleaseNotification)
-		}).Return(entity.BatchResult{Sent: 2})
+			captured, _ = args.Get(0).([]notifier.ReleaseNotification)
+		}).Return(notifier.BatchResult{Sent: 2})
 	defer m.AssertExpectations(s.T())
 
 	n := mailer.NewReleaseNotifier(m, u, testLogger)
@@ -88,7 +89,7 @@ func (s *ReleaseNotifierSuite) TestUnsubscribeURLCalledPerSub() {
 	defer u.AssertExpectations(s.T())
 
 	m := &mockReleaseSender{}
-	m.On("SendReleaseNotifications", mock.Anything).Return(entity.BatchResult{Sent: 2})
+	m.On("SendReleaseNotifications", mock.Anything).Return(notifier.BatchResult{Sent: 2})
 
 	n := mailer.NewReleaseNotifier(m, u, testLogger)
 	s.Require().NoError(n.Notify(s.T().Context(), subs, repo, release))
@@ -104,7 +105,7 @@ func (s *ReleaseNotifierSuite) TestAllFailed_ReturnsError() {
 
 	m := &mockReleaseSender{}
 	m.On("SendReleaseNotifications", mock.Anything).
-		Return(entity.BatchResult{Failed: []string{"a@example.com"}})
+		Return(notifier.BatchResult{Failed: []string{"a@example.com"}})
 	defer m.AssertExpectations(s.T())
 
 	n := mailer.NewReleaseNotifier(m, u, testLogger)
@@ -125,7 +126,7 @@ func (s *ReleaseNotifierSuite) TestPartialFailure_NoError() {
 
 	m := &mockReleaseSender{}
 	m.On("SendReleaseNotifications", mock.Anything).
-		Return(entity.BatchResult{Sent: 1, Failed: []string{"b@example.com"}})
+		Return(notifier.BatchResult{Sent: 1, Failed: []string{"b@example.com"}})
 	defer m.AssertExpectations(s.T())
 
 	n := mailer.NewReleaseNotifier(m, u, testLogger)

@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/shared/entity"
 )
 
 type releaseSender interface {
-	SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) entity.BatchResult
+	SendReleaseNotifications(ctx context.Context, notifications []notifier.ReleaseNotification) notifier.BatchResult
 }
 
 type unsubscribeURLBuilder interface {
@@ -32,10 +33,10 @@ func (n *ReleaseNotifier) Notify(
 	repo *entity.Repository,
 	release *entity.Release,
 ) error {
-	notifications := make([]entity.ReleaseNotification, 0, len(subs))
+	notifications := make([]notifier.ReleaseNotification, 0, len(subs))
 	for _, sub := range subs {
 		notifications = append(notifications,
-			entity.NewReleaseNotification(sub, repo, release, n.urls.UnsubscribeURL(sub.UnsubscribeToken)),
+			notifier.NewReleaseNotification(sub, repo, release, n.urls.UnsubscribeURL(sub.UnsubscribeToken)),
 		)
 	}
 

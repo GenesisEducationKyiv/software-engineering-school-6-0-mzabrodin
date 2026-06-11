@@ -4,13 +4,13 @@ import (
 	"context"
 	"log/slog"
 
-	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
 )
 
 type mailer interface {
 	SendConfirmation(ctx context.Context, to, repo, confirmURL string)
-	SendReleaseNotifications(ctx context.Context, notifications []entity.ReleaseNotification) entity.BatchResult
+	SendReleaseNotifications(ctx context.Context, notifications []notifier.ReleaseNotification) notifier.BatchResult
 }
 
 type Server struct {

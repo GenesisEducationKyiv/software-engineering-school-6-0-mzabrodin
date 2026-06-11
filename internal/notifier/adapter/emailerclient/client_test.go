@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 
-	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -59,8 +59,8 @@ func (s *ClientSuite) TearDownTest() {
 	s.rpc.AssertExpectations(s.T())
 }
 
-func notification(to string) entity.ReleaseNotification {
-	return entity.ReleaseNotification{
+func notification(to string) notifier.ReleaseNotification {
+	return notifier.ReleaseNotification{
 		To:             to,
 		Repo:           "owner/repo",
 		Tag:            "v1.0.0",
@@ -98,7 +98,7 @@ func (s *ClientSuite) TestSendReleaseNotificationsSuccess() {
 		})).
 		Return(&emailerv1.SendReleaseNotificationsResponse{Sent: 2, Failed: []string{"b@example.com"}}, nil)
 
-	result := s.client.SendReleaseNotifications(s.T().Context(), []entity.ReleaseNotification{
+	result := s.client.SendReleaseNotifications(s.T().Context(), []notifier.ReleaseNotification{
 		notification("a@example.com"),
 		notification("b@example.com"),
 	})
@@ -111,7 +111,7 @@ func (s *ClientSuite) TestSendReleaseNotificationsTransportError() {
 	s.rpc.On("SendReleaseNotifications", mock.Anything, mock.Anything).
 		Return(nil, assert.AnError)
 
-	result := s.client.SendReleaseNotifications(s.T().Context(), []entity.ReleaseNotification{
+	result := s.client.SendReleaseNotifications(s.T().Context(), []notifier.ReleaseNotification{
 		notification("a@example.com"),
 		notification("b@example.com"),
 	})

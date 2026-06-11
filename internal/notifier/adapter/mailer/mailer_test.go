@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/wneessen/go-mail"
 
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/notifier"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -56,8 +56,8 @@ func TestMailerSuite(t *testing.T) {
 	suite.Run(t, new(MailerSuite))
 }
 
-func notification(to string) entity.ReleaseNotification {
-	return entity.ReleaseNotification{
+func notification(to string) notifier.ReleaseNotification {
+	return notifier.ReleaseNotification{
 		To:             to,
 		Repo:           "owner/repo",
 		Tag:            "v1.0.0",
@@ -111,7 +111,7 @@ func (s *MailerSuite) TestSendReleaseNotifications_AllSuccess() {
 
 	before := testutil.ToFloat64(metrics.EmailSendsTotal.WithLabelValues(kindNotification, "success"))
 
-	result := m.SendReleaseNotifications(context.Background(), []entity.ReleaseNotification{
+	result := m.SendReleaseNotifications(context.Background(), []notifier.ReleaseNotification{
 		notification("a@example.com"),
 		notification("b@example.com"),
 	})
@@ -138,7 +138,7 @@ func (s *MailerSuite) TestSendReleaseNotifications_PartialFailure() {
 	beforeOK := testutil.ToFloat64(metrics.EmailSendsTotal.WithLabelValues(kindNotification, "success"))
 	beforeErr := testutil.ToFloat64(metrics.EmailSendsTotal.WithLabelValues(kindNotification, "error"))
 
-	result := m.SendReleaseNotifications(context.Background(), []entity.ReleaseNotification{
+	result := m.SendReleaseNotifications(context.Background(), []notifier.ReleaseNotification{
 		notification("a@example.com"),
 		notification("b@example.com"),
 		notification("c@example.com"),

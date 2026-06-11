@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	emailerv1 "github-release-notifier/internal/adapter/grpc/gen/emailer/v1"
-	"github-release-notifier/internal/certgen"
-	"github-release-notifier/internal/entity"
-	"github-release-notifier/internal/infrastructure/tlsconfig"
+	"github-release-notifier/internal/notifier"
+	"github-release-notifier/internal/notifier/certgen"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
+	"github-release-notifier/internal/notifier/tlsconfig"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -25,10 +25,10 @@ func (m *mockMailer) SendConfirmation(ctx context.Context, to, repo, confirmURL 
 
 func (m *mockMailer) SendReleaseNotifications(
 	ctx context.Context,
-	notifications []entity.ReleaseNotification,
-) entity.BatchResult {
+	notifications []notifier.ReleaseNotification,
+) notifier.BatchResult {
 	args := m.Called(ctx, notifications)
-	out, _ := args.Get(0).(entity.BatchResult)
+	out, _ := args.Get(0).(notifier.BatchResult)
 	return out
 }
 
@@ -67,7 +67,7 @@ func (s *HandlerSuite) TestSendConfirmation() {
 }
 
 func (s *HandlerSuite) TestSendReleaseNotifications() {
-	expected := []entity.ReleaseNotification{{
+	expected := []notifier.ReleaseNotification{{
 		To:             "a@example.com",
 		Repo:           "owner/repo",
 		Tag:            "v1.0.0",
@@ -75,7 +75,7 @@ func (s *HandlerSuite) TestSendReleaseNotifications() {
 		UnsubscribeURL: "https://example.com/unsubscribe/a",
 	}}
 	s.mailer.On("SendReleaseNotifications", mock.Anything, expected).
-		Return(entity.BatchResult{Sent: 2, Failed: []string{"b@example.com"}})
+		Return(notifier.BatchResult{Sent: 2, Failed: []string{"b@example.com"}})
 
 	resp, err := s.server.SendReleaseNotifications(s.T().Context(), &emailerv1.SendReleaseNotificationsRequest{
 		Notifications: []*emailerv1.ReleaseNotification{{
