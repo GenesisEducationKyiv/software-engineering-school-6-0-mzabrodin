@@ -13,8 +13,6 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-
-	"github-release-notifier/internal/entity"
 )
 
 const (
@@ -109,7 +107,7 @@ func (s *ClientSuite) TestRepoExists_StatusCases() {
 	}{
 		{"found", http.StatusOK, true, false, nil},
 		{"not found", http.StatusNotFound, false, false, nil},
-		{"unauthorized", http.StatusUnauthorized, false, true, entity.ErrUnauthorized},
+		{"unauthorized", http.StatusUnauthorized, false, true, ErrUnauthorized},
 		{"unexpected", http.StatusInternalServerError, false, true, nil},
 	}
 
@@ -139,7 +137,7 @@ func (s *ClientSuite) TestRepoExists_RateLimited_429() {
 
 	c := newTestClient(srv.URL, "")
 	_, err := c.RepoExists(s.T().Context(), testOwner, testRepo)
-	s.ErrorIs(err, entity.ErrRateLimited)
+	s.ErrorIs(err, ErrRateLimited)
 }
 
 func (s *ClientSuite) TestRateLimited_403WithHeader() {
@@ -152,11 +150,11 @@ func (s *ClientSuite) TestRateLimited_403WithHeader() {
 
 	s.Run("RepoExists", func() {
 		_, err := c.RepoExists(s.T().Context(), testOwner, testRepo)
-		s.ErrorIs(err, entity.ErrRateLimited)
+		s.ErrorIs(err, ErrRateLimited)
 	})
 	s.Run("GetLatestRelease", func() {
 		_, err := c.GetLatestRelease(s.T().Context(), testOwner, testRepo)
-		s.ErrorIs(err, entity.ErrRateLimited)
+		s.ErrorIs(err, ErrRateLimited)
 	})
 }
 
@@ -267,9 +265,9 @@ func (s *ClientSuite) TestGetLatestRelease_StatusCases() {
 		wantErrIs error
 	}{
 		{"success", http.StatusOK, successBody, "v1.2.3", nil},
-		{"no release 404", http.StatusNotFound, "", "", entity.ErrNoRelease},
-		{"rate limited 429", http.StatusTooManyRequests, "", "", entity.ErrRateLimited},
-		{"unauthorized", http.StatusUnauthorized, "", "", entity.ErrUnauthorized},
+		{"no release 404", http.StatusNotFound, "", "", ErrNoRelease},
+		{"rate limited 429", http.StatusTooManyRequests, "", "", ErrRateLimited},
+		{"unauthorized", http.StatusUnauthorized, "", "", ErrUnauthorized},
 		{"unexpected", http.StatusServiceUnavailable, "", "", nil},
 	}
 
@@ -342,10 +340,10 @@ func (s *ClientSuite) TestGetLatestRelease_NoRelease_CachesSentinel() {
 	c := newTestClient(srv.URL, "").WithCache(mc, time.Minute)
 
 	_, err := c.GetLatestRelease(s.T().Context(), testOwner, testRepo)
-	s.Require().ErrorIs(err, entity.ErrNoRelease)
+	s.Require().ErrorIs(err, ErrNoRelease)
 
 	_, err = c.GetLatestRelease(s.T().Context(), testOwner, testRepo)
-	s.Require().ErrorIs(err, entity.ErrNoRelease)
+	s.Require().ErrorIs(err, ErrNoRelease)
 
 	s.Equal(1, calls)
 }

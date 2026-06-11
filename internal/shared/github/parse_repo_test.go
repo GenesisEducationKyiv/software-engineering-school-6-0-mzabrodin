@@ -1,11 +1,11 @@
-package entity_test
+package github_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/shared/github"
 )
 
 type ParseRepoSuite struct {
@@ -29,7 +29,7 @@ func (s *ParseRepoSuite) TestValid() {
 
 	for _, tc := range cases {
 		s.Run(tc.input, func() {
-			owner, name, err := entity.ParseRepo(tc.input)
+			owner, name, err := github.ParseRepo(tc.input)
 			s.Require().NoError(err)
 			s.Equal(tc.wantOwner, owner)
 			s.Equal(tc.wantName, name)
@@ -49,8 +49,8 @@ func (s *ParseRepoSuite) TestInvalid() {
 
 	for _, tc := range cases {
 		s.Run(tc, func() {
-			_, _, err := entity.ParseRepo(tc)
-			s.ErrorIs(err, entity.ErrInvalidRepo)
+			_, _, err := github.ParseRepo(tc)
+			s.ErrorIs(err, github.ErrInvalidRepo)
 		})
 	}
 }

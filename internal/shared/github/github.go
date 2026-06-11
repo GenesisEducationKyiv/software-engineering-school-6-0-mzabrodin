@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github-release-notifier/internal/entity"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/shared/entity"
 )
 
 const (
@@ -122,7 +122,7 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (rele
 
 	if status == http.StatusNotFound {
 		c.cacheString(ctx, key, cacheNoRelease)
-		return nil, entity.ErrNoRelease
+		return nil, ErrNoRelease
 	}
 
 	if status != http.StatusOK {
@@ -144,7 +144,7 @@ func (c *Client) getCachedRelease(ctx context.Context, key string) (*entity.Rele
 	}
 
 	if val == cacheNoRelease {
-		return nil, true, entity.ErrNoRelease
+		return nil, true, ErrNoRelease
 	}
 
 	var r entity.Release
@@ -215,13 +215,13 @@ func (c *Client) do(ctx context.Context, url string) (statusCode int, responseDa
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return 0, nil, entity.ErrUnauthorized
+		return 0, nil, ErrUnauthorized
 	}
 
 	if isRateLimited(resp) {
 		resource := resp.Header.Get("X-RateLimit-Resource")
 		retryAfter := parseRetryAfter(resp)
-		return 0, nil, fmt.Errorf("%w: resource=%s, retry after %s", entity.ErrRateLimited, resource, retryAfter)
+		return 0, nil, fmt.Errorf("%w: resource=%s, retry after %s", ErrRateLimited, resource, retryAfter)
 	}
 
 	return resp.StatusCode, body, nil
