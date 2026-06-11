@@ -22,14 +22,18 @@ call the **same** use cases, so business logic is transport-agnostic. SMTP deliv
 lives in a separate **emailer** microservice ([ADR-009](docs/adr/009-future-microservices-split.md))
 that the app reaches over gRPC secured with **mTLS**.
 
-| Layer             | Package                                                         | Responsibility                                                      |
-|-------------------|-----------------------------------------------------------------|---------------------------------------------------------------------|
-| Domain            | `internal/entity`                                               | Entities, sentinel errors, repo parsing — no external deps          |
-| Use cases         | `internal/usecase/{subscribe,confirm,unsubscribe,list,scanner}` | Business rules, token generation, scan orchestration                |
-| Inbound adapters  | `internal/adapter/{http,grpc,emailerserver}`                    | HTTP (chi) + public gRPC servers; emailer-side gRPC server; validation, auth, error mapping |
-| Outbound adapters | `internal/adapter/{repository,github,cache,emailerclient,mailer,urlbuilder}` | PostgreSQL, GitHub REST, Redis, emailer gRPC client, SMTP, URL building |
-| Infrastructure    | `internal/infrastructure/{config,db,logging,metrics,scheduler,tlsconfig}` | Env config, pgx pool + migrations, slog, Prometheus, scan scheduler, mTLS config |
-| Entrypoints       | `cmd/server/main.go`, `cmd/emailer/main.go`                     | App (HTTP + gRPC + scanner, emailer client) and the emailer service (SMTP + emailer.v1 over mTLS) |
+A **modulith**: `internal/` is sliced vertically by bounded context, with clean-arch layers *inside*
+each module. Modules stay independent (no module imports another — they talk through consumer-defined
+ports wired in `cmd/`), enforced in CI by golangci-lint `depguard`.
+
+| Module         | Package                                                                              | Responsibility                                                                                               |
+|----------------|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| `subscription` | `internal/subscription/{usecase/*,adapter/{http,grpc,repository}}`                   | Public REST (chi) + gRPC (`app.v1`); subscribe/confirm/unsubscribe/list; owns the repos+subscriptions tables |
+| `scanner`      | `internal/scanner/{usecase/scanner,scheduler}`                                       | Detect new releases on a ticker; notify confirmed subscribers                                                |
+| `notifier`     | `internal/notifier/{adapter/{emailerclient,emailerserver,mailer},tlsconfig,certgen}` | Email delivery (the `cmd/emailer` service lives behind this); mTLS for the app↔emailer link                  |
+| Shared kernel  | `internal/shared/{entity,github}`                                                    | Cross-context domain types + constructors + sentinel errors; GitHub REST client                              |
+| Infrastructure | `internal/infrastructure/{config,db,cache,urlbuilder,logging,metrics}`               | Env config, pgx pool + migrations, Redis, URL building, slog, Prometheus                                     |
+| Entrypoints    | `cmd/server/main.go`, `cmd/emailer/main.go`                                          | Composition roots: app (HTTP + gRPC + scanner) and the emailer service (SMTP + `emailer.v1` over mTLS)       |
 
 ## Subscription flow
 
@@ -70,7 +74,7 @@ All endpoints return `application/json`. Protected endpoints require the `X-API-
 
 ### gRPC (`GRPC_PORT`, default `50051`)
 
-Service `notifier.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`.
+Service `app.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`.
 
 | RPC                 | Auth                 | Description                     |
 |---------------------|----------------------|---------------------------------|
@@ -83,9 +87,9 @@ Service `notifier.v1.SubscriptionService` — contract in `proto/app/v1/app.prot
   without local protos.
 - Request validation is declarative via [protovalidate](https://github.com/bufbuild/protovalidate) rules embedded in the
   proto.
-- Generated stubs live under `internal/adapter/grpc/gen/` (gitignored) — run `make proto` to regenerate.
+- Generated stubs live inside each module under `grpc/gen/` (gitignored) — run `make proto` to regenerate.
 
-Domain errors map to gRPC status codes (`internal/adapter/grpc/errors.go`), mirroring the HTTP status codes:
+Domain errors map to gRPC status codes (`internal/subscription/adapter/grpc/errors.go`), mirroring the HTTP status codes:
 
 | Condition                  | HTTP | gRPC code         |
 |----------------------------|------|-------------------|
@@ -210,7 +214,7 @@ HTTP is served on `:8080`, public gRPC on `:50051`; the emailer listens on `:500
 ### Regenerating gRPC stubs
 
 ```bash
-make proto      # requires the buf CLI; regenerates internal/adapter/grpc/gen/
+make proto      # requires the buf CLI; regenerates each module's grpc/gen/
 ```
 
 ## Environment variables
