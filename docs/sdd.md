@@ -232,7 +232,7 @@ shutdown the dispatcher drains the queue within a bounded context before the pro
 
 ## Component Design
 
-### HTTP API (`internal/adapter/http`)
+### HTTP API (`internal/subscription/adapter/http`)
 
 Chi router; maps domain errors to HTTP status codes; API-key middleware on protected routes.
 
@@ -245,9 +245,9 @@ Chi router; maps domain errors to HTTP status codes; API-key middleware on prote
 | GET    | /metrics                  | No        | Prometheus metrics              |
 | GET    | /health                   | No        | Health check                    |
 
-### gRPC API (`internal/adapter/grpc`)
+### gRPC API (`internal/subscription/adapter/grpc`)
 
-Service `notifier.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`, generated with buf (
+Service `app.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`, generated with buf (
 `make proto`). The interceptor chain is logging → metrics → `x-api-key` auth → protovalidate validation; server
 reflection and the gRPC health service are registered.
 
@@ -268,7 +268,7 @@ Domain errors map to gRPC status codes, mirroring the HTTP table (see [ADR-005](
 | missing / invalid API key               | `Unauthenticated` |
 | any other error                         | `Internal`        |
 
-### Use cases (`internal/usecase/*`)
+### Use cases (`internal/subscription/usecase/*`)
 
 Transport-agnostic business logic. Each exposes `Execute(ctx, In) (Out, error)`, declares its own narrow port
 interfaces (implemented by adapters), and is optionally wrapped by `metrics.NewMetered`. Both transports share the same
@@ -282,7 +282,7 @@ instances.
 | `list`        | email       | Return all subscriptions for the email                                                     |
 | `scanner`     | –           | Periodic release detection (see below)                                                     |
 
-### Repository Layer (`internal/adapter/repository`)
+### Repository Layer (`internal/subscription/adapter/repository`)
 
 Two structs backed by `pgxpool.Pool`:
 
@@ -291,7 +291,7 @@ Two structs backed by `pgxpool.Pool`:
 | `GitHubRepoRepository`   | `repositories`  | get by name, create, list-with-subscriptions, update `last_seen_tag` | `pgx.ErrNoRows` → `entity.ErrNotFound`                                                              |
 | `SubscriptionRepository` | `subscriptions` | create, confirm, list by email, get confirmed by repo, delete        | `pgx.ErrNoRows` → `entity.ErrNotFound`; unique `(email, repository_id)` → `entity.ErrAlreadyExists` |
 
-### Scanner (`internal/usecase/scanner`) + Scheduler (`internal/infrastructure/scheduler`)
+### Scanner (`internal/scanner/usecase/scanner`) + Scheduler (`internal/scanner/scheduler`)
 
 The `Scheduler` runs the scan once immediately, then every `SCAN_INTERVAL`. Scan behavior (see [ADR-007](adr/007-background-scanner.md)):
 
@@ -305,7 +305,7 @@ The `Scheduler` runs the scan once immediately, then every `SCAN_INTERVAL`. Scan
 | Abort conditions | `ErrRateLimited` / `ErrUnauthorized` cancel the whole pass                            |
 | Tag update       | After a batch with ≥1 successful send (or immediately when a repo has no subscribers) |
 
-### GitHub Client (`internal/adapter/github`)
+### GitHub Client (`internal/shared/github`)
 
 HTTP client wrapping the GitHub REST API; plugs into the Redis cache via `NewClient(token, log).WithCache(cache, ttl)`.
 Returns typed sentinel errors so callers handle each case explicitly:
@@ -316,7 +316,7 @@ Returns typed sentinel errors so callers handle each case explicitly:
 | `ErrUnauthorized` | Invalid or missing token                         |
 | `ErrNoRelease`    | Repository has no releases yet                   |
 
-### Emailer service (`cmd/emailer`, `internal/adapter/{emailerserver,mailer}`)
+### Emailer service (`cmd/emailer`, `internal/notifier/adapter/{emailerserver,mailer}`)
 
 SMTP delivery runs as a separate gRPC service ([ADR-009](adr/009-future-microservices-split.md)). `emailerserver`
 exposes `emailer.v1.EmailerService` over mTLS and forwards to the `mailer`: a go-mail SMTP client behind an in-process
@@ -333,7 +333,7 @@ transport failure as every recipient failing so the scanner does not advance `la
 | `SendReleaseNotifications` | Scanner     | Enqueue batch, block for the result              | `entity.BatchResult` |
 | `Shutdown`                 | Server stop | Drain the queue within a bounded context         | –                    |
 
-### Cache (`internal/adapter/cache`)
+### Cache (`internal/infrastructure/cache`)
 
 Redis-backed implementation of the `Cache` interface. On any Redis error the GitHub client logs it and falls through to
 the real source — a Redis outage degrades performance, not availability.
