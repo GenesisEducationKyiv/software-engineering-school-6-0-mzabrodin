@@ -79,7 +79,7 @@ linters:
             - "**/internal/scanner/**"
           deny:
             - pkg: github-release-notifier/internal/subscription
-              desc: scanner reaches subscription only through its own SubscriptionCatalog port (wired in cmd)
+              desc: scanner reaches subscription only through its own repository ports (wired in cmd)
             - pkg: github-release-notifier/internal/notifier
               desc: scanner reaches the notifier only through its own consumer-defined port (wired in cmd)
 
