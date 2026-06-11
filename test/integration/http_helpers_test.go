@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	api "github-release-notifier/internal/adapter/http"
+	api "github-release-notifier/internal/subscription/adapter/http"
 )
 
 // newTestHTTPServer starts a real HTTP server backed by real repositories against testPool.

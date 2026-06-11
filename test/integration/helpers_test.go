@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github-release-notifier/internal/adapter/repository"
-	"github-release-notifier/internal/adapter/urlbuilder"
-	"github-release-notifier/internal/usecase/confirm"
-	"github-release-notifier/internal/usecase/list"
-	"github-release-notifier/internal/usecase/subscribe"
-	"github-release-notifier/internal/usecase/unsubscribe"
+	"github-release-notifier/internal/infrastructure/urlbuilder"
+	"github-release-notifier/internal/subscription/adapter/repository"
+	"github-release-notifier/internal/subscription/usecase/confirm"
+	"github-release-notifier/internal/subscription/usecase/list"
+	"github-release-notifier/internal/subscription/usecase/subscribe"
+	"github-release-notifier/internal/subscription/usecase/unsubscribe"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
