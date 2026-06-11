@@ -4,7 +4,7 @@ package emailer.v1;
 
 import "buf/validate/validate.proto";
 
-option go_package = "github-release-app/internal/adapter/grpc/gen/emailer/v1;emailerv1";
+option go_package = "github-release-notifier/internal/notifier/grpc/gen/emailerv1;emailerv1";
 
 // EmailerService delivers transactional email over SMTP.
 // It is an internal service-to-service API consumed only by the notifier app.
@@ -19,7 +19,7 @@ service EmailerService {
 
 message SendConfirmationRequest {
   string to = 1 [(buf.validate.field).string.email = true];
-  // repo must be in "owner/repo" form (mirrors entity.ParseRepo).
+  // repo must be in "owner/repo" form (mirrors github.ParseRepo).
   string repo = 2 [(buf.validate.field).string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"];
   string confirm_url = 3 [(buf.validate.field).string.uri = true];
 }

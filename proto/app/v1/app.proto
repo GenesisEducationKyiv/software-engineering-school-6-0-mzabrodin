@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package notifier.v1;
+package app.v1;
 
 import "buf/validate/validate.proto";
 
-option go_package = "github-release-app/internal/adapter/grpc/gen/app/v1;notifierv1";
+option go_package = "github-release-notifier/internal/subscription/grpc/gen/appv1;appv1";
 
 service SubscriptionService {
   // Subscribe registers an email for a repository's releases and sends a confirmation email.
@@ -24,7 +24,7 @@ service SubscriptionService {
 
 message SubscribeRequest {
   string email = 1 [(buf.validate.field).string.email = true];
-  // repo must be in "owner/repo" form (mirrors entity.ParseRepo).
+  // repo must be in "owner/repo" form (mirrors github.ParseRepo).
   string repo = 2 [(buf.validate.field).string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"];
 }
 
