@@ -13,24 +13,27 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
-	"github-release-notifier/internal/adapter/cache"
-	"github-release-notifier/internal/adapter/github"
-	grpcapi "github-release-notifier/internal/adapter/grpc"
-	api "github-release-notifier/internal/adapter/http"
-	"github-release-notifier/internal/adapter/mailer"
-	"github-release-notifier/internal/adapter/repository"
-	"github-release-notifier/internal/adapter/urlbuilder"
+	"github-release-notifier/internal/infrastructure/cache"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/infrastructure/scheduler"
-	"github-release-notifier/internal/usecase/confirm"
-	"github-release-notifier/internal/usecase/list"
-	"github-release-notifier/internal/usecase/scanner"
-	"github-release-notifier/internal/usecase/subscribe"
-	"github-release-notifier/internal/usecase/unsubscribe"
+	"github-release-notifier/internal/infrastructure/urlbuilder"
+	"github-release-notifier/internal/notifier/adapter/emailerclient"
+	"github-release-notifier/internal/notifier/adapter/mailer"
+	"github-release-notifier/internal/notifier/tlsconfig"
+	"github-release-notifier/internal/scanner/scheduler"
+	"github-release-notifier/internal/scanner/usecase/scanner"
+	"github-release-notifier/internal/shared/github"
+	grpcapi "github-release-notifier/internal/subscription/adapter/grpc"
+	api "github-release-notifier/internal/subscription/adapter/http"
+	"github-release-notifier/internal/subscription/adapter/repository"
+	"github-release-notifier/internal/subscription/usecase/confirm"
+	"github-release-notifier/internal/subscription/usecase/list"
+	"github-release-notifier/internal/subscription/usecase/subscribe"
+	"github-release-notifier/internal/subscription/usecase/unsubscribe"
 
 	"github.com/joho/godotenv"
 )
@@ -90,23 +93,17 @@ func run(log *slog.Logger) error {
 
 	gh := github.NewClient(cfg.GitHubToken, log).WithCache(redisCache, 10*time.Minute)
 
-	mail, err := mailer.NewMailer(
-		cfg.SMTP.Host,
-		cfg.SMTP.Port,
-		cfg.SMTP.User,
-		cfg.SMTP.Password,
-		cfg.SMTP.FromEmail,
-		log,
-	)
+	emailerConn, err := dialEmailer(cfg)
 	if err != nil {
-		return fmt.Errorf("create mailer: %w", err)
+		return err
 	}
+	emailerCli := emailerclient.New(emailerConn, log)
 
 	repos := repository.NewGitHubRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
 
-	releaseNotifier := mailer.NewReleaseNotifier(mail, urls, log)
+	releaseNotifier := mailer.NewReleaseNotifier(emailerCli, urls, log)
 
 	scan := scanner.NewScanner(repos, subs, gh, releaseNotifier, cfg.WorkerCount, log)
 
@@ -116,7 +113,7 @@ func run(log *slog.Logger) error {
 		close(schedulerDone)
 	}()
 
-	ucs := buildUseCases(repos, subs, gh, mail, urls, log)
+	ucs := buildUseCases(repos, subs, gh, emailerCli, urls, log)
 
 	srv := &http.Server{
 		Addr: ":" + cfg.HTTPPort,
@@ -134,7 +131,21 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	return serve(ctx, srv, grpcServer, grpcListener, schedulerDone, mail, log)
+	return serve(ctx, srv, grpcServer, grpcListener, schedulerDone, emailerCli, log)
+}
+
+func dialEmailer(cfg *config.Config) (*grpc.ClientConn, error) {
+	tlsCfg, err := tlsconfig.ClientTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile, cfg.EmailerServerName)
+	if err != nil {
+		return nil, fmt.Errorf("build emailer tls config: %w", err)
+	}
+
+	conn, err := grpc.NewClient(cfg.EmailerAddr, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+	if err != nil {
+		return nil, fmt.Errorf("dial emailer: %w", err)
+	}
+
+	return conn, nil
 }
 
 func startGRPCServer(
@@ -163,7 +174,7 @@ func serve(
 	grpcServer *grpc.Server,
 	grpcListener net.Listener,
 	schedulerDone <-chan struct{},
-	mail *mailer.Mailer,
+	emailerCli *emailerclient.Client,
 	log *slog.Logger,
 ) error {
 	serverError := make(chan error, 2)
@@ -189,14 +200,14 @@ func serve(
 		log.Info("shutting down")
 	}
 
-	return gracefulShutdown(srv, grpcServer, schedulerDone, mail, log)
+	return gracefulShutdown(srv, grpcServer, schedulerDone, emailerCli, log)
 }
 
 func gracefulShutdown(
 	srv *http.Server,
 	grpcServer *grpc.Server,
 	schedulerDone <-chan struct{},
-	mail *mailer.Mailer,
+	emailerCli *emailerclient.Client,
 	log *slog.Logger,
 ) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -209,7 +220,10 @@ func gracefulShutdown(
 	stopGRPCServer(shutdownCtx, grpcServer)
 
 	<-schedulerDone
-	mail.Shutdown(shutdownCtx)
+
+	if err := emailerCli.Close(); err != nil {
+		log.Warn("failed to close emailer client", "error", err)
+	}
 
 	log.Info("server stopped")
 	return nil
@@ -240,7 +254,7 @@ func buildUseCases(
 	repos *repository.GitHubRepoRepository,
 	subs *repository.SubscriptionRepository,
 	gh *github.Client,
-	mail *mailer.Mailer,
+	mail *emailerclient.Client,
 	urls *urlbuilder.URLBuilder,
 	log *slog.Logger,
 ) useCases {

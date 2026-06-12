@@ -61,6 +61,6 @@ goroutine that delivers jobs serially.
 **Cons:**
 
 - The queue is in memory — a crash still loses queued mail; there is no retry (same durability issue as
-  ADR-002). [ADR-009](009-future-microservices-split.md) proposes moving delivery behind a durable queue.
+  ADR-002). [ADR-009](009-microservices-split.md) proposes moving delivery behind a durable queue.
 - The release path blocks the calling scan goroutine until the batch completes (bounded by `sendTimeout`)
 - A fixed buffer (64 jobs) can apply backpressure under bursts

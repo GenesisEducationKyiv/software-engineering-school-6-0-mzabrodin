@@ -1,7 +1,10 @@
-.PHONY: build test test-integration lint lint-integration fmt up up-build down proto
+.PHONY: build test test-integration lint lint-integration fmt up up-build down proto certs
 
 build:
 	go build ./...
+
+certs:
+	go run ./scripts/gencerts certs
 
 test:
 	go test -v -count=1 ./...

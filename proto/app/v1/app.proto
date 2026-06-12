@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package app.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github-release-notifier/internal/subscription/grpc/gen/appv1;appv1";
+
+service SubscriptionService {
+  // Subscribe registers an email for a repository's releases and sends a confirmation email.
+  // Requires the x-api-key metadata when an API key is set.
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse);
+
+  // Confirm activates a subscription using its confirmation token.
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+
+  // Unsubscribe removes a subscription using its unsubscribe token.
+  rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse);
+
+  // ListSubscriptions returns every subscription for an email address.
+  // Requires the x-api-key metadata when an API key is set.
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse);
+}
+
+message SubscribeRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  // repo must be in "owner/repo" form (mirrors github.ParseRepo).
+  string repo = 2 [(buf.validate.field).string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"];
+}
+
+// Success is signalled by an OK status; the empty body leaves room to add fields later without breaking the contract.
+message SubscribeResponse {}
+
+message ConfirmRequest {
+  // token is the 64-character hex confirmation token.
+  string token = 1 [(buf.validate.field).string.len = 64];
+}
+
+message ConfirmResponse {}
+
+message UnsubscribeRequest {
+  // token is the 64-character hex unsubscribe token.
+  string token = 1 [(buf.validate.field).string.len = 64];
+}
+
+message UnsubscribeResponse {}
+
+message ListSubscriptionsRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+}
+
+message ListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+}
+
+message Subscription {
+  string email = 1;
+  string repo = 2;
+  bool confirmed = 3;
+  optional string last_seen_tag = 4;
+}

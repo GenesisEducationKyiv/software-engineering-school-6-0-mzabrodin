@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 
-	grpcapi "github-release-notifier/internal/adapter/grpc"
-	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"
+	grpcapi "github-release-notifier/internal/subscription/adapter/grpc"
+	"github-release-notifier/internal/subscription/grpc/gen/appv1"
 )
 
 const bufSize = 1024 * 1024
@@ -53,9 +53,9 @@ func newTestGRPCConn(t *testing.T, repoExists bool) *grpc.ClientConn {
 }
 
 // newTestGRPCClient returns a SubscriptionService client wired to a fresh test server.
-func newTestGRPCClient(t *testing.T, repoExists bool) notifierv1.SubscriptionServiceClient {
+func newTestGRPCClient(t *testing.T, repoExists bool) appv1.SubscriptionServiceClient {
 	t.Helper()
-	return notifierv1.NewSubscriptionServiceClient(newTestGRPCConn(t, repoExists))
+	return appv1.NewSubscriptionServiceClient(newTestGRPCConn(t, repoExists))
 }
 
 // grpcAuthCtx attaches the API key as metadata so protected RPCs pass the auth interceptor.
@@ -67,12 +67,12 @@ func grpcAuthCtx(ctx context.Context, apiKey string) context.Context {
 // confirmation and unsubscribe tokens by reading them directly from the test database.
 func grpcSubscribeAndGetTokens(
 	t *testing.T,
-	client notifierv1.SubscriptionServiceClient,
+	client appv1.SubscriptionServiceClient,
 ) (confirmToken, unsubToken string) {
 	t.Helper()
 
 	ctx := grpcAuthCtx(t.Context(), testAPIKey)
-	_, err := client.Subscribe(ctx, &notifierv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
+	_, err := client.Subscribe(ctx, &appv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
 	require.NoError(t, err)
 
 	row := testPool.QueryRow(t.Context(),

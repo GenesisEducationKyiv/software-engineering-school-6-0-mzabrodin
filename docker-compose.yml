@@ -4,9 +4,19 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-service: &service
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  restart: unless-stopped
+
+x-app-image: &app-image
+  build: .
+  image: github_release_notifier:local
+
 services:
   app:
-    build: .
+    <<: [ *service, *app-image ]
     container_name: github_release_notifier_app
     ports:
       - "${HTTP_PORT:-8080}:8080"
@@ -16,6 +26,13 @@ services:
     environment:
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@postgres:5432/${DB_NAME:?DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      EMAILER_ADDR: emailer:50052
+      EMAILER_SERVER_NAME: emailer
+      TLS_CERT_FILE: /certs/client.crt
+      TLS_KEY_FILE: /certs/client.key
+      TLS_CA_FILE: /certs/ca.crt
+    volumes:
+      - ./certs:/certs:ro
     networks:
       - app_net
       - monitoring_net
@@ -23,6 +40,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      emailer:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-qO-", "http://localhost:8080/health" ]
@@ -34,12 +53,37 @@ services:
       resources:
         limits:
           memory: 512m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
+
+  emailer:
+    <<: [ *service, *app-image ]
+    container_name: github_release_notifier_emailer
+    command: [ "./emailer" ]
+    env_file:
+      - .env
+    environment:
+      EMAILER_GRPC_PORT: "50052"
+      EMAILER_HTTP_PORT: "8081"
+      TLS_CERT_FILE: /certs/server.crt
+      TLS_KEY_FILE: /certs/server.key
+      TLS_CA_FILE: /certs/ca.crt
+    volumes:
+      - ./certs:/certs:ro
+    networks:
+      - app_net
+      - monitoring_net
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8081/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   postgres:
+    <<: *service
     image: postgres:18-alpine
     container_name: github_release_notifier_postgres
     environment:
@@ -59,12 +103,9 @@ services:
       resources:
         limits:
           memory: 512m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
 
   redis:
+    <<: *service
     image: redis:8-alpine
     container_name: github_release_notifier_redis
     command: >
@@ -84,12 +125,9 @@ services:
       resources:
         limits:
           memory: 256m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
 
   elasticsearch:
+    <<: *service
     image: docker.elastic.co/elasticsearch/elasticsearch:9.4.2
     container_name: github_release_notifier_elasticsearch
     environment:
@@ -109,12 +147,9 @@ services:
       resources:
         limits:
           memory: 1g
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
 
   kibana:
+    <<: *service
     image: docker.elastic.co/kibana/kibana:9.4.2
     container_name: github_release_notifier_kibana
     ports:
@@ -135,10 +170,6 @@ services:
       resources:
         limits:
           memory: 1536m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
 
   filebeat:
     image: docker.elastic.co/beats/filebeat:9.4.2
@@ -191,6 +222,7 @@ services:
       - "file=@/kibana/dashboards.ndjson"
 
   prometheus:
+    <<: *service
     image: prom/prometheus:v3.12.0
     container_name: github_release_notifier_prometheus
     ports:
@@ -208,16 +240,15 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      emailer:
+        condition: service_healthy
     deploy:
       resources:
         limits:
           memory: 512m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
 
   grafana:
+    <<: *service
     image: grafana/grafana:13.0.1
     container_name: github_release_notifier_grafana
     ports:
@@ -238,10 +269,6 @@ services:
       resources:
         limits:
           memory: 512m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    restart: unless-stopped
 
 networks:
   app_net:

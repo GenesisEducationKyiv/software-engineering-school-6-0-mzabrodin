@@ -27,6 +27,7 @@ linters:
     - gocognit
     - funlen
     - dupl
+    - depguard
 
   exclusions:
     rules:
@@ -40,6 +41,48 @@ linters:
           - bodyclose
 
   settings:
+    depguard:
+      rules:
+        shared-and-infrastructure:
+          list-mode: lax
+          files:
+            - "**/internal/shared/**"
+            - "**/internal/infrastructure/**"
+          deny:
+            - pkg: github-release-notifier/internal/subscription
+              desc: shared/infrastructure must not import a bounded-context module
+            - pkg: github-release-notifier/internal/scanner
+              desc: shared/infrastructure must not import a bounded-context module
+            - pkg: github-release-notifier/internal/notifier
+              desc: shared/infrastructure must not import a bounded-context module
+        notifier:
+          list-mode: lax
+          files:
+            - "**/internal/notifier/**"
+          deny:
+            - pkg: github-release-notifier/internal/subscription
+              desc: notifier must not import another bounded-context module
+            - pkg: github-release-notifier/internal/scanner
+              desc: notifier must not import another bounded-context module
+        subscription:
+          list-mode: lax
+          files:
+            - "**/internal/subscription/**"
+          deny:
+            - pkg: github-release-notifier/internal/scanner
+              desc: subscription must not import scanner (no such edge in the module DAG)
+            - pkg: github-release-notifier/internal/notifier
+              desc: subscription reaches the notifier only through its own consumer-defined port (wired in cmd)
+        scanner:
+          list-mode: lax
+          files:
+            - "**/internal/scanner/**"
+          deny:
+            - pkg: github-release-notifier/internal/subscription
+              desc: scanner reaches subscription only through its own repository ports (wired in cmd)
+            - pkg: github-release-notifier/internal/notifier
+              desc: scanner reaches the notifier only through its own consumer-defined port (wired in cmd)
+
     gocognit:
       min-complexity: 15
 

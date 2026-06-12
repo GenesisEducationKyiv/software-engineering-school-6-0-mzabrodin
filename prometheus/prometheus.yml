@@ -9,3 +9,9 @@ scrape_configs:
       - targets:
           - app:8080
     metrics_path: /metrics
+
+  - job_name: github_release_notifier_emailer
+    static_configs:
+      - targets:
+          - emailer:8081
+    metrics_path: /metrics

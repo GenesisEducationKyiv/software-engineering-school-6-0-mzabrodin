@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/adapter/cache"
-	"github-release-notifier/internal/adapter/github"
-	"github-release-notifier/internal/entity"
+	"github-release-notifier/internal/infrastructure/cache"
+	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/github"
 )
 
 type GitHubClientCacheSuite struct {
@@ -77,5 +77,5 @@ func (s *GitHubClientCacheSuite) TestGetLatestRelease_NoReleaseSentinel() {
 
 	_, err := s.client().GetLatestRelease(ctx, "owner", "repo-no-release")
 
-	s.ErrorIs(err, entity.ErrNoRelease)
+	s.ErrorIs(err, github.ErrNoRelease)
 }

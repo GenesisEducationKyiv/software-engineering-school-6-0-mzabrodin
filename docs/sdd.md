@@ -17,8 +17,9 @@
 
 ### Non-Functional Requirements
 
-1. The service is a Go monolith. A single binary serves the HTTP REST API, the gRPC API, the background scanner, and the
-   mailer
+1. The system is two Go binaries: the **app** (`cmd/server`) serves the HTTP REST API, the gRPC API, and the background
+   scanner; the **emailer** (`cmd/emailer`) owns SMTP and the mailer dispatch queue. The app reaches the emailer over
+   gRPC secured with **mTLS** (see [ADR-009](adr/009-microservices-split.md))
 2. Code is organized as a hexagonal architecture (`entity` / `usecase` / `adapter` / `infrastructure`) so business logic
    is independent of transport and providers; both transports reuse the same use cases (see [ADR-008](adr/008-hexagonal-architecture.md), [ADR-005](adr/005-grpc-api-alongside-rest.md))
 3. GitHub API responses are cached in Redis with a 10-minute TTL to stay within rate limits (60 req/hour without a
@@ -30,7 +31,8 @@
    service are enabled
 7. Observability: Prometheus metrics at `/metrics` (visualized in Grafana); structured JSON logs shipped by Filebeat to
    Elasticsearch and viewed in Kibana
-8. The entire system — app, PostgreSQL, Redis, and the observability stack — starts with `docker compose up`
+8. The entire system — app, emailer, PostgreSQL, Redis, and the observability stack — starts with `docker compose up`
+   (run `make certs` first to generate the app↔emailer mTLS material)
 9. A GitHub Actions pipeline runs the linter, race-detected unit tests, and integration tests on every push
 
 ### Limitations
@@ -50,53 +52,60 @@
 ## Architecture
 
 ```mermaid
-flowchart TD
+flowchart LR
     User([Client])
 
-    subgraph app[Application]
+    subgraph app[cmd/server]
+        direction TB
         HTTP[HTTP API]
         GRPC[gRPC API]
         UC[Use Cases]
         Scheduler[Scheduler]
         Scanner[Scanner]
-        GHClient[GitHub Client]
-        Mailer[Mailer]
         Repo[Repository]
+        GHClient[GitHub Client]
+        EmailerClient[Emailer Client]
+    end
+
+    subgraph emailer[cmd/emailer]
+        direction TB
+        EmailerServer[gRPC Server]
+        Mailer[Mailer queue]
     end
 
     subgraph storage[Storage]
+        direction TB
         DB[(PostgreSQL)]
         Redis[(Redis)]
     end
 
-    subgraph obs[Observability]
-        Prom[(Prometheus)]
-        Graf[Grafana]
-        ES[(Elasticsearch)]
-        Kib[Kibana]
+    subgraph external[External]
+        direction TB
+        GHAPI([GitHub API])
+        SMTP([SMTP Server])
     end
 
-    GHAPI([GitHub API])
-    SMTP([SMTP Server])
-    User -- HTTP --> HTTP
-    User -- gRPC --> GRPC
+    subgraph obs[Observability]
+        direction TB
+        Prom[(Prometheus)] --> Graf[Grafana]
+        ES[(Elasticsearch)] --> Kib[Kibana]
+    end
+
+    User --> HTTP & GRPC
     HTTP --> UC
     GRPC --> UC
     Scheduler --> Scanner
-    UC --> Repo
-    UC --> GHClient
-    UC -. async .-> Mailer
-    Scanner --> GHClient
-    Scanner --> Repo
-    Scanner --> Mailer
+    UC --> Repo & GHClient & EmailerClient
+    Scanner --> Repo & GHClient & EmailerClient
+    EmailerClient --> EmailerServer --> Mailer
+
     Repo --> DB
     GHClient --> Redis
-    GHClient -- REST --> GHAPI
-    Mailer -- SMTP --> SMTP
-    Prom -- scrape /metrics --> app
-    Prom --> Graf
-    app -. JSON logs .-> ES
-    ES --> Kib
+    GHClient --> GHAPI
+    Mailer --> SMTP
+
+    app -.-> obs
+    emailer -.-> obs
 ```
 
 ---
@@ -115,7 +124,8 @@ sequenceDiagram
     participant UC as Subscribe use case
     participant GH as GitHub Client
     participant DB as PostgreSQL
-    participant Mailer
+    participant EC as Emailer Client
+    participant ES as Emailer Service
     User ->> API: POST /api/subscribe
     API ->> UC: Execute(email, repo)
     alt invalid format
@@ -141,7 +151,8 @@ sequenceDiagram
                 DB -->> UC: ok
                 UC -->> API: ok
                 API -->> User: 200 OK
-                UC -) Mailer: SendConfirmation (async, queued)
+                UC -) EC: SendConfirmation(email, repo, confirmURL)
+                EC -) ES: SendConfirmation(email, repo, confirmURL)
             end
         end
     end
@@ -158,20 +169,20 @@ sequenceDiagram
     participant Scanner
     participant DB as PostgreSQL
     participant GH as GitHub Client
-    participant Mailer
-    Scheduler ->> Scanner: Run (immediately, then every SCAN_INTERVAL)
+    participant EC as Emailer Client
+    Scheduler ->> Scanner: Run
     Scanner ->> DB: GetAllWithSubscriptions()
     DB -->> Scanner: repos[]
-    loop for each repo (bounded workers)
+    loop for each repo
         Scanner ->> GH: GetLatestRelease(owner, repo)
         GH -->> Scanner: Release / ErrNoRelease
         alt new tag detected
             Scanner ->> DB: GetConfirmedByRepoID(repoID)
             DB -->> Scanner: subscribers[]
             alt has subscribers
-                Scanner ->> Mailer: SendReleaseNotifications(batch)
-                Mailer -->> Scanner: BatchResult
-                Scanner ->> DB: UpdateLastSeenTag(repo, tag) [if any sent]
+                Scanner ->> EC: SendReleaseNotifications(batch)
+                EC -->> Scanner: BatchResult
+                Scanner ->> DB: UpdateLastSeenTag(repo, tag)
             else no subscribers
                 Scanner ->> DB: UpdateLastSeenTag(repo, tag)
             end
@@ -179,11 +190,49 @@ sequenceDiagram
     end
 ```
 
+### Email Dispatch
+
+The app never speaks SMTP. Both email paths cross the **gRPC + mTLS** link into the
+emailer service ([ADR-009](adr/009-microservices-split.md)), where they land on
+the in-process dispatch queue ([ADR-006](adr/006-mailer-dispatch-queue.md)). Confirmation
+sends are **fire-and-forget** (the app does not wait); release sends are synchronous and
+return a `BatchResult`. A transport failure on the release path is reported as **every
+recipient failing**, so the scanner does not advance `last_seen_tag` on a lost batch.
+
+```mermaid
+flowchart TD
+    subgraph appbin[cmd/server]
+        Sub[Subscribe]
+        Scan[Scanner]
+        EC[Emailer Client]
+    end
+
+    subgraph emailerbin[cmd/emailer]
+        ES[Emailer Server]
+        Queue[[Dispatch queue]]
+        Disp[Dispatcher goroutine]
+    end
+
+    SMTP([SMTP Server])
+
+    Sub -- "SendConfirmation" --> EC
+    Scan -- "SendReleaseNotifications" --> EC
+    EC -- "gRPC" --> ES
+    ES --> Queue
+    Queue --> Disp
+    Disp -- "SMTP" --> SMTP
+```
+
+The emailer server's `SendConfirmation` enqueues and returns immediately (an `OK` status
+means *accepted*, not *delivered*). `SendReleaseNotifications` blocks until the batch is
+sent and maps the `BatchResult` (sent count and failed recipients) back over the wire. On
+shutdown the dispatcher drains the queue within a bounded context before the process exits.
+
 ---
 
 ## Component Design
 
-### HTTP API (`internal/adapter/http`)
+### HTTP API (`internal/subscription/adapter/http`)
 
 Chi router; maps domain errors to HTTP status codes; API-key middleware on protected routes.
 
@@ -196,9 +245,9 @@ Chi router; maps domain errors to HTTP status codes; API-key middleware on prote
 | GET    | /metrics                  | No        | Prometheus metrics              |
 | GET    | /health                   | No        | Health check                    |
 
-### gRPC API (`internal/adapter/grpc`)
+### gRPC API (`internal/subscription/adapter/grpc`)
 
-Service `notifier.v1.SubscriptionService` — contract in `proto/notifier/v1/subscription.proto`, generated with buf (
+Service `app.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`, generated with buf (
 `make proto`). The interceptor chain is logging → metrics → `x-api-key` auth → protovalidate validation; server
 reflection and the gRPC health service are registered.
 
@@ -219,7 +268,7 @@ Domain errors map to gRPC status codes, mirroring the HTTP table (see [ADR-005](
 | missing / invalid API key               | `Unauthenticated` |
 | any other error                         | `Internal`        |
 
-### Use cases (`internal/usecase/*`)
+### Use cases (`internal/subscription/usecase/*`)
 
 Transport-agnostic business logic. Each exposes `Execute(ctx, In) (Out, error)`, declares its own narrow port
 interfaces (implemented by adapters), and is optionally wrapped by `metrics.NewMetered`. Both transports share the same
@@ -233,7 +282,7 @@ instances.
 | `list`        | email       | Return all subscriptions for the email                                                     |
 | `scanner`     | –           | Periodic release detection (see below)                                                     |
 
-### Repository Layer (`internal/adapter/repository`)
+### Repository Layer (`internal/subscription/adapter/repository`)
 
 Two structs backed by `pgxpool.Pool`:
 
@@ -242,7 +291,7 @@ Two structs backed by `pgxpool.Pool`:
 | `GitHubRepoRepository`   | `repositories`  | get by name, create, list-with-subscriptions, update `last_seen_tag` | `pgx.ErrNoRows` → `entity.ErrNotFound`                                                              |
 | `SubscriptionRepository` | `subscriptions` | create, confirm, list by email, get confirmed by repo, delete        | `pgx.ErrNoRows` → `entity.ErrNotFound`; unique `(email, repository_id)` → `entity.ErrAlreadyExists` |
 
-### Scanner (`internal/usecase/scanner`) + Scheduler (`internal/infrastructure/scheduler`)
+### Scanner (`internal/scanner/usecase/scanner`) + Scheduler (`internal/scanner/scheduler`)
 
 The `Scheduler` runs the scan once immediately, then every `SCAN_INTERVAL`. Scan behavior (see [ADR-007](adr/007-background-scanner.md)):
 
@@ -256,7 +305,7 @@ The `Scheduler` runs the scan once immediately, then every `SCAN_INTERVAL`. Scan
 | Abort conditions | `ErrRateLimited` / `ErrUnauthorized` cancel the whole pass                            |
 | Tag update       | After a batch with ≥1 successful send (or immediately when a repo has no subscribers) |
 
-### GitHub Client (`internal/adapter/github`)
+### GitHub Client (`internal/shared/github`)
 
 HTTP client wrapping the GitHub REST API; plugs into the Redis cache via `NewClient(token, log).WithCache(cache, ttl)`.
 Returns typed sentinel errors so callers handle each case explicitly:
@@ -267,10 +316,16 @@ Returns typed sentinel errors so callers handle each case explicitly:
 | `ErrUnauthorized` | Invalid or missing token                         |
 | `ErrNoRelease`    | Repository has no releases yet                   |
 
-### Mailer (`internal/adapter/mailer`)
+### Emailer service (`cmd/emailer`, `internal/notifier/adapter/{emailerserver,mailer}`)
 
-go-mail SMTP client behind an in-process dispatch queue (see [ADR-006](adr/006-mailer-dispatch-queue.md)): a single
-dispatcher goroutine consumes a buffered job channel and dials one SMTP connection per batch.
+SMTP delivery runs as a separate gRPC service ([ADR-009](adr/009-microservices-split.md)). `emailerserver`
+exposes `emailer.v1.EmailerService` over mTLS and forwards to the `mailer`: a go-mail SMTP client behind an in-process
+dispatch queue (see [ADR-006](adr/006-mailer-dispatch-queue.md)) — a single dispatcher goroutine consumes a buffered job
+channel and dials one SMTP connection per batch. The app calls it through the `emailerclient` outbound adapter, which
+satisfies the same `subscribe` and release-notifier ports the in-process mailer used to. `SendConfirmation` stays
+fire-and-forget (the RPC runs on a background goroutine); `SendReleaseNotifications` is synchronous and reports a
+transport failure as every recipient failing so the scanner does not advance `last_seen_tag`. The table below is the
+`mailer` port the emailer server wraps:
 
 | Method                     | Trigger     | Mode                                             | Returns              |
 |----------------------------|-------------|--------------------------------------------------|----------------------|
@@ -278,7 +333,7 @@ dispatcher goroutine consumes a buffered job channel and dials one SMTP connecti
 | `SendReleaseNotifications` | Scanner     | Enqueue batch, block for the result              | `entity.BatchResult` |
 | `Shutdown`                 | Server stop | Drain the queue within a bounded context         | –                    |
 
-### Cache (`internal/adapter/cache`)
+### Cache (`internal/infrastructure/cache`)
 
 Redis-backed implementation of the `Cache` interface. On any Redis error the GitHub client logs it and falls through to
 the real source — a Redis outage degrades performance, not availability.
@@ -321,23 +376,35 @@ Prometheus counters and histograms registered at package init:
 
 ### Config (`internal/infrastructure/config`)
 
-All configuration is read from environment variables via `envconfig`. The app consumes single connection URLs (
-`DATABASE_URL`, `REDIS_URL`); under Docker Compose those are assembled from `DB_*` / `REDIS_*` component variables.
+Configuration is read from environment variables via `envconfig`, split into `config.Load()` for the app and
+`config.LoadEmailer()` for the emailer. The app consumes single connection URLs (`DATABASE_URL`, `REDIS_URL`); under
+Docker Compose those are assembled from `DB_*` / `REDIS_*` component variables. The `SMTP_*` variables moved to the
+emailer; both binaries read the `TLS_*` mTLS paths (mounting client vs. server certs respectively).
 
-| Variable                                                  | Default                 | Required | Description                                  |
-|-----------------------------------------------------------|-------------------------|----------|----------------------------------------------|
-| `HTTP_PORT`                                               | `8080`                  | –        | HTTP listen port                             |
-| `GRPC_PORT`                                               | `50051`                 | –        | gRPC listen port                             |
-| `BASE_URL`                                                | `http://localhost:8080` | –        | Base for confirm/unsubscribe links           |
-| `GITHUB_TOKEN`                                            | –                       | –        | Raises GitHub rate limit to 5 000/hr         |
-| `SCAN_INTERVAL`                                           | `10m`                   | –        | Scan cycle interval                          |
-| `SCAN_WORKERS`                                            | `5`                     | –        | Concurrent workers per scan                  |
-| `DATABASE_URL`                                            | –                       | yes      | PostgreSQL connection URL                    |
-| `REDIS_URL`                                               | –                       | yes      | Redis connection URL                         |
-| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | –                       | yes      | SMTP credentials and from address            |
-| `SMTP_PORT`                                               | `587`                   | –        | SMTP port                                    |
-| `API_KEY`                                                 | –                       | –        | Protects write/read endpoints (off if empty) |
-| `LOG_LEVEL`                                               | `info`                  | –        | `debug` / `info` / `warn` / `error`          |
+App (`cmd/server`):
+
+| Variable                                         | Default                       | Required | Description                                  |
+|--------------------------------------------------|-------------------------------|----------|----------------------------------------------|
+| `HTTP_PORT`                                      | `8080`                        | –        | HTTP listen port                             |
+| `GRPC_PORT`                                      | `50051`                       | –        | Public gRPC listen port                      |
+| `BASE_URL`                                       | `http://localhost:8080`       | –        | Base for confirm/unsubscribe links           |
+| `GITHUB_TOKEN`                                   | –                             | –        | Raises GitHub rate limit to 5 000/hr         |
+| `SCAN_INTERVAL` / `SCAN_WORKERS`                 | `10m` / `5`                   | –        | Scan cycle interval and concurrency          |
+| `DATABASE_URL` / `REDIS_URL`                     | –                             | yes      | PostgreSQL and Redis connection URLs         |
+| `EMAILER_ADDR` / `EMAILER_SERVER_NAME`           | `localhost:50052` / `emailer` | –        | Emailer address and verified cert name       |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –                             | yes      | App **client** cert/key + shared CA (mTLS)   |
+| `API_KEY`                                        | –                             | –        | Protects write/read endpoints (off if empty) |
+| `LOG_LEVEL`                                      | `info`                        | –        | `debug` / `info` / `warn` / `error`          |
+
+Emailer (`cmd/emailer`):
+
+| Variable                                                  | Default          | Required | Description                               |
+|-----------------------------------------------------------|------------------|----------|-------------------------------------------|
+| `EMAILER_GRPC_PORT` / `EMAILER_HTTP_PORT`                 | `50052` / `8081` | –        | gRPC (mTLS) and metrics/health HTTP ports |
+| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | –                | yes      | SMTP credentials and from address         |
+| `SMTP_PORT`                                               | `587`            | –        | SMTP port                                 |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE`          | –                | yes      | Emailer **server** cert/key + shared CA   |
+| `LOG_LEVEL`                                               | `info`           | –        | `debug` / `info` / `warn` / `error`       |
 
 The Docker Compose–only variables (`DB_*`, `REDIS_*`, `ES_*`, `KIBANA_PORT`, `PROMETHEUS_PORT`, `GRAFANA_*`) are listed
 in the README.

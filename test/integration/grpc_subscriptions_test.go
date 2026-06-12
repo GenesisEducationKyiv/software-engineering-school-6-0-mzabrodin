@@ -10,12 +10,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	notifierv1 "github-release-notifier/internal/adapter/grpc/gen/notifier/v1"
+	"github-release-notifier/internal/subscription/grpc/gen/appv1"
 )
 
 type GRPCSubscriptionsSuite struct {
 	suite.Suite
-	client notifierv1.SubscriptionServiceClient
+	client appv1.SubscriptionServiceClient
 }
 
 func TestGRPCSubscriptionsSuite(t *testing.T) {
@@ -30,8 +30,8 @@ func (s *GRPCSubscriptionsSuite) SetupTest() {
 func (s *GRPCSubscriptionsSuite) list(
 	ctx context.Context,
 	email string,
-) (*notifierv1.ListSubscriptionsResponse, error) {
-	return s.client.ListSubscriptions(ctx, &notifierv1.ListSubscriptionsRequest{Email: email})
+) (*appv1.ListSubscriptionsResponse, error) {
+	return s.client.ListSubscriptions(ctx, &appv1.ListSubscriptionsRequest{Email: email})
 }
 
 func (s *GRPCSubscriptionsSuite) TestNoAPIKey_Unauthenticated() {
@@ -60,7 +60,7 @@ func (s *GRPCSubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
 	s.Require().NoError(err)
 	s.assertSingleSubscription(resp, false)
 
-	_, err = s.client.Confirm(s.T().Context(), &notifierv1.ConfirmRequest{Token: confirmToken})
+	_, err = s.client.Confirm(s.T().Context(), &appv1.ConfirmRequest{Token: confirmToken})
 	s.Require().NoError(err)
 
 	resp, err = s.list(ctx, testEmail)
@@ -68,7 +68,7 @@ func (s *GRPCSubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
 	s.assertSingleSubscription(resp, true)
 }
 
-func (s *GRPCSubscriptionsSuite) assertSingleSubscription(resp *notifierv1.ListSubscriptionsResponse, confirmed bool) {
+func (s *GRPCSubscriptionsSuite) assertSingleSubscription(resp *appv1.ListSubscriptionsResponse, confirmed bool) {
 	s.T().Helper()
 	subs := resp.GetSubscriptions()
 	s.Require().Len(subs, 1)
