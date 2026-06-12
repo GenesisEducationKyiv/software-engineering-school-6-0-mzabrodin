@@ -1,0 +1,71 @@
+version: 3
+
+tasks:
+  build:
+    desc: Build all packages
+    cmds:
+      - go build ./...
+
+  certs:
+    desc: Generate mTLS certificates for the app & emailer link into certs/
+    cmds:
+      - go run ./scripts/gencerts certs
+
+  test-unit:
+    desc: Run unit tests
+    cmds:
+      - go test -count=1 ./...
+
+  test-integration:
+    desc: Run integration tests (testcontainers & bufconn, requires Docker)
+    cmds:
+      - go test -count=1 -tags integration ./test/integration/...
+
+  test-all:
+    desc: Run all tests (unit & integration)
+    cmds:
+      - task test-unit
+      - task test-integration
+
+  lint-core:
+    desc: Run golangci-lint on the core packages (cmd & internal); pass --fix with `task lint-core -- --fix`
+    cmds:
+      - golangci-lint run {{.CLI_ARGS}}
+
+  lint-integration:
+    desc: Lint the integration tests; pass --fix with `task lint-integration -- --fix`
+    cmds:
+      - golangci-lint run --build-tags integration ./test/integration/... {{.CLI_ARGS}}
+
+  lint-all:
+    desc: Run all linters; pass --fix with `task lint-all -- --fix`
+    cmds:
+      - task lint-core -- {{.CLI_ARGS}}
+      - task lint-integration -- {{.CLI_ARGS}}
+
+  fmt:
+    desc: Format the codebase
+    cmds:
+      - golangci-lint fmt
+
+  proto:
+    desc: Regenerate gRPC/connect stubs and the OpenAPI document from proto/
+    cmds:
+      - buf dep update
+      - buf generate
+      - buf generate --template buf.gen.openapi.yaml --path proto/app/v1/app.proto
+
+  up:
+    desc: Start the full stack with Docker Compose
+    cmds:
+      - docker compose up -d
+
+  up-build:
+    desc: Rebuild images and start the stack
+    cmds:
+      - docker compose up -d --build
+
+  down:
+    desc: Stop the stack
+    cmds:
+      - docker compose down
