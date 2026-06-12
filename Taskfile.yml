@@ -51,11 +51,10 @@ tasks:
       - golangci-lint fmt
 
   proto:
-    desc: Regenerate gRPC/connect stubs and the OpenAPI document from proto/
+    desc: Regenerate gRPC/connect stubs from proto/
     cmds:
       - buf dep update
       - buf generate
-      - buf generate --template buf.gen.openapi.yaml --path proto/app/v1/app.proto
 
   up:
     desc: Start the full stack with Docker Compose
