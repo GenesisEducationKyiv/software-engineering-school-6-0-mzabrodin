@@ -2,47 +2,40 @@ package emailerclient
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
+	"connectrpc.com/connect"
 
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1/emailerv1connect"
 )
 
 const confirmationTimeout = 30 * time.Second
 
-type emailerService interface {
-	SendConfirmation(
-		ctx context.Context,
-		in *emailerv1.SendConfirmationRequest,
-		opts ...grpc.CallOption,
-	) (*emailerv1.SendConfirmationResponse, error)
-	SendReleaseNotifications(
-		ctx context.Context,
-		in *emailerv1.SendReleaseNotificationsRequest,
-		opts ...grpc.CallOption,
-	) (*emailerv1.SendReleaseNotificationsResponse, error)
-}
-
 type Client struct {
-	rpc      emailerService
-	conn     io.Closer
+	rpc      emailerv1connect.EmailerServiceClient
+	closer   func()
 	log      *slog.Logger
 	inflight sync.WaitGroup
 }
 
-func New(conn *grpc.ClientConn, log *slog.Logger) *Client {
-	return newClient(emailerv1.NewEmailerServiceClient(conn), conn, log)
+func New(httpClient connect.HTTPClient, baseURL string, closer func(), log *slog.Logger) *Client {
+	rpc := emailerv1connect.NewEmailerServiceClient(
+		httpClient,
+		baseURL,
+		connect.WithGRPC(),
+		connect.WithInterceptors(logging.NewConnectCorrelationInterceptor()),
+	)
+
+	return newClient(rpc, closer, log)
 }
 
-func newClient(rpc emailerService, conn io.Closer, log *slog.Logger) *Client {
-	return &Client{rpc: rpc, conn: conn, log: log.With("component", "emailer-client")}
+func newClient(rpc emailerv1connect.EmailerServiceClient, closer func(), log *slog.Logger) *Client {
+	return &Client{rpc: rpc, closer: closer, log: log.With("component", "emailer-client")}
 }
 
 func (c *Client) SendConfirmation(ctx context.Context, to, repo, confirmURL string) {
@@ -54,13 +47,11 @@ func (c *Client) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), confirmationTimeout)
 		defer cancel()
 
-		sendCtx = logging.WithOutgoingIDs(sendCtx)
-
-		_, err := c.rpc.SendConfirmation(sendCtx, &emailerv1.SendConfirmationRequest{
+		_, err := c.rpc.SendConfirmation(sendCtx, connect.NewRequest(&emailerv1.SendConfirmationRequest{
 			To:         to,
 			Repo:       repo,
 			ConfirmUrl: confirmURL,
-		})
+		}))
 		if err != nil {
 			c.log.ErrorContext(sendCtx, "failed to send confirmation email", "to", to, "repo", repo, "error", err)
 		}
@@ -71,27 +62,23 @@ func (c *Client) SendReleaseNotifications(
 	ctx context.Context,
 	notifications []notifier.ReleaseNotification,
 ) notifier.BatchResult {
-	ctx = logging.WithOutgoingIDs(ctx)
-
-	resp, err := c.rpc.SendReleaseNotifications(ctx, &emailerv1.SendReleaseNotificationsRequest{
+	resp, err := c.rpc.SendReleaseNotifications(ctx, connect.NewRequest(&emailerv1.SendReleaseNotificationsRequest{
 		Notifications: toProtoNotifications(notifications),
-	})
+	}))
 	if err != nil {
 		c.log.ErrorContext(ctx, "failed to send release notifications", "count", len(notifications), "error", err)
 
 		return notifier.BatchResult{Failed: recipients(notifications)}
 	}
 
-	return notifier.BatchResult{Sent: int(resp.GetSent()), Failed: resp.GetFailed()}
+	return notifier.BatchResult{Sent: int(resp.Msg.GetSent()), Failed: resp.Msg.GetFailed()}
 }
 
 func (c *Client) Close() error {
 	c.inflight.Wait()
 
-	if c.conn != nil {
-		if err := c.conn.Close(); err != nil {
-			return fmt.Errorf("close emailer connection: %w", err)
-		}
+	if c.closer != nil {
+		c.closer()
 	}
 
 	return nil

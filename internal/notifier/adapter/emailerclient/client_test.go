@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/grpc"
 
 	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
@@ -21,22 +21,26 @@ type mockRPC struct{ mock.Mock }
 
 func (m *mockRPC) SendConfirmation(
 	ctx context.Context,
-	in *emailerv1.SendConfirmationRequest,
-	_ ...grpc.CallOption,
-) (*emailerv1.SendConfirmationResponse, error) {
-	args := m.Called(ctx, in)
+	req *connect.Request[emailerv1.SendConfirmationRequest],
+) (*connect.Response[emailerv1.SendConfirmationResponse], error) {
+	args := m.Called(ctx, req.Msg)
 	out, _ := args.Get(0).(*emailerv1.SendConfirmationResponse)
-	return out, args.Error(1)
+	if out == nil {
+		return nil, args.Error(1)
+	}
+	return connect.NewResponse(out), args.Error(1)
 }
 
 func (m *mockRPC) SendReleaseNotifications(
 	ctx context.Context,
-	in *emailerv1.SendReleaseNotificationsRequest,
-	_ ...grpc.CallOption,
-) (*emailerv1.SendReleaseNotificationsResponse, error) {
-	args := m.Called(ctx, in)
+	req *connect.Request[emailerv1.SendReleaseNotificationsRequest],
+) (*connect.Response[emailerv1.SendReleaseNotificationsResponse], error) {
+	args := m.Called(ctx, req.Msg)
 	out, _ := args.Get(0).(*emailerv1.SendReleaseNotificationsResponse)
-	return out, args.Error(1)
+	if out == nil {
+		return nil, args.Error(1)
+	}
+	return connect.NewResponse(out), args.Error(1)
 }
 
 type ClientSuite struct {
