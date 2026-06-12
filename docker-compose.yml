@@ -26,7 +26,6 @@ services:
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@postgres:5432/${DB_NAME:?DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
       EMAILER_ADDR: emailer:50052
-      EMAILER_SERVER_NAME: emailer
       TLS_CERT_FILE: /certs/client.crt
       TLS_KEY_FILE: /certs/client.key
       TLS_CA_FILE: /certs/ca.crt
