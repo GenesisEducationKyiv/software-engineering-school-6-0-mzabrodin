@@ -4,49 +4,32 @@ package integration
 
 import (
 	"context"
-	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/test/bufconn"
 
-	grpcapi "github-release-notifier/internal/subscription/adapter/grpc"
 	"github-release-notifier/internal/subscription/grpc/gen/appv1"
 )
 
-const bufSize = 1024 * 1024
-
-// newTestGRPCConn starts a real gRPC server backed by real repositories against testPool,
-// served over an in-memory bufconn listener, and returns a connected client conn.
+// newTestGRPCConn dials the unified public handler (served over h2c by
+// newTestServer) with a plain gRPC client, exercising the gRPC protocol through
+// Vanguard end to end.
 func newTestGRPCConn(t *testing.T, repoExists bool) *grpc.ClientConn {
 	t.Helper()
 
-	uc := newTestUseCases(repoExists)
-	handler := grpcapi.NewServer(uc.subscribe, uc.confirm, uc.unsubscribe, uc.list, testLogger)
-
-	srv, err := grpcapi.NewGRPCServer(handler, testAPIKey, testLogger)
-	require.NoError(t, err)
-
-	lis := bufconn.Listen(bufSize)
-	go func() {
-		_ = srv.Serve(lis)
-	}()
+	srv := newTestServer(t, repoExists)
 
 	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return lis.DialContext(ctx)
-		}),
+		srv.Listener.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		_ = conn.Close()
-		srv.Stop()
 	})
 
 	return conn
@@ -58,9 +41,9 @@ func newTestGRPCClient(t *testing.T, repoExists bool) appv1.SubscriptionServiceC
 	return appv1.NewSubscriptionServiceClient(newTestGRPCConn(t, repoExists))
 }
 
-// grpcAuthCtx attaches the API key as metadata so protected RPCs pass the auth interceptor.
+// grpcAuthCtx attaches the API key as Authorization metadata so protected RPCs pass the auth interceptor.
 func grpcAuthCtx(ctx context.Context, apiKey string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, "x-api-key", apiKey)
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+apiKey)
 }
 
 // grpcSubscribeAndGetTokens subscribes testEmail to testRepoName via gRPC and returns the

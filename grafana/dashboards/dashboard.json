@@ -18,7 +18,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Current HTTP request rate across all endpoints.",
+      "description": "Current API request rate across all endpoints and protocols.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -30,13 +30,13 @@
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
       "id": 200,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(rate(http_requests_total[$__rate_interval]))", "legendFormat": "req/s" }],
-      "title": "HTTP Req/s",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier\"}[$__rate_interval]))", "legendFormat": "req/s" }],
+      "title": "API Req/s",
       "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Ratio of 5xx responses to total HTTP requests.",
+      "description": "Ratio of error (non-ok) responses to total API requests.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -50,13 +50,13 @@
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
       "id": 201,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[$__rate_interval])) / sum(rate(http_requests_total[$__rate_interval]))", "legendFormat": "error rate" }],
-      "title": "HTTP Error Rate",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier\",code!=\"ok\"}[$__rate_interval])) / sum(rate(requests_total{job=\"github_release_notifier\"}[$__rate_interval]))", "legendFormat": "error rate" }],
+      "title": "API Error Rate",
       "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "99th percentile HTTP response time — 1 in 100 requests is slower than this value.",
+      "description": "99th percentile API response time — 1 in 100 requests is slower than this value.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -68,8 +68,8 @@
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "id": 202,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[$__rate_interval])) by (le))", "legendFormat": "p99" }],
-      "title": "HTTP p99 Latency",
+      "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le))", "legendFormat": "p99" }],
+      "title": "API p99 Latency",
       "type": "stat"
     },
     {
@@ -132,12 +132,12 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 100,
-      "title": "HTTP",
+      "title": "Public API",
       "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Per-second request rate by HTTP method and route.",
+      "description": "Per-second request rate by wire protocol and RPC procedure.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
         "overrides": []
@@ -145,13 +145,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
       "id": 1,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(http_requests_total[$__rate_interval])) by (method, path)", "legendFormat": "{{method}} {{path}}" }],
-      "title": "HTTP Request Rate",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (protocol, procedure)", "legendFormat": "{{protocol}} {{procedure}}" }],
+      "title": "Request Rate",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "5xx error rate per route.",
+      "description": "Error (non-ok) rate per RPC procedure.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -165,13 +165,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
       "id": 2,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[$__rate_interval])) by (path) / sum(rate(http_requests_total[$__rate_interval])) by (path)", "legendFormat": "{{path}}" }],
-      "title": "HTTP Error Rate (5xx)",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier\",code!=\"ok\"}[$__rate_interval])) by (procedure) / sum(rate(requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Error Rate (non-ok)",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "HTTP response time at the 50th and 99th percentile, by route.",
+      "description": "API response time at the 50th and 99th percentile, by RPC procedure.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
         "overrides": []
@@ -180,10 +180,10 @@
       "id": 3,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[$__rate_interval])) by (le, path))", "legendFormat": "p99 {{path}}" },
-        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[$__rate_interval])) by (le, path))", "legendFormat": "p50 {{path}}" }
+        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p99 {{procedure}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p50 {{procedure}}" }
       ],
-      "title": "HTTP Latency (p50/p99)",
+      "title": "Latency (p50/p99)",
       "type": "timeseries"
     },
     {
@@ -517,12 +517,12 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 68 },
       "id": 108,
-      "title": "gRPC",
+      "title": "Public API — by protocol",
       "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Per-second gRPC request rate by full method.",
+      "description": "Per-second public API request rate broken down by wire protocol (rest, connect, grpc, grpc-web).",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
         "overrides": []
@@ -530,13 +530,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 69 },
       "id": 70,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
-      "title": "gRPC Request Rate",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (protocol)", "legendFormat": "{{protocol}}" }],
+      "title": "Request Rate by Protocol",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Ratio of non-OK gRPC responses to total requests, per method.",
+      "description": "Ratio of non-ok responses to total requests, per wire protocol.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -550,13 +550,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 69 },
       "id": 71,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier\",code!=\"OK\"}[$__rate_interval])) by (method) / sum(rate(grpc_requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
-      "title": "gRPC Error Rate (non-OK)",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier\",code!=\"ok\"}[$__rate_interval])) by (protocol) / sum(rate(requests_total{job=\"github_release_notifier\"}[$__rate_interval])) by (protocol)", "legendFormat": "{{protocol}}" }],
+      "title": "Error Rate by Protocol (non-ok)",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "gRPC response time at the 50th and 99th percentile, by method.",
+      "description": "API response time at the 50th and 99th percentile, by wire protocol.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
         "overrides": []
@@ -565,10 +565,10 @@
       "id": 72,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, method))", "legendFormat": "p99 {{method}}" },
-        { "expr": "histogram_quantile(0.50, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, method))", "legendFormat": "p50 {{method}}" }
+        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, protocol))", "legendFormat": "p99 {{protocol}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier\"}[$__rate_interval])) by (le, protocol))", "legendFormat": "p50 {{protocol}}" }
       ],
-      "title": "gRPC Latency (p50/p99)",
+      "title": "Latency by Protocol (p50/p99)",
       "type": "timeseries"
     },
     {
@@ -580,7 +580,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Per-second gRPC request rate on the internal app→emailer link, by method.",
+      "description": "Per-second request rate on the internal app→emailer link, by RPC procedure.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
         "overrides": []
@@ -588,13 +588,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 78 },
       "id": 80,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
-      "title": "Emailer gRPC Request Rate",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Emailer Request Rate",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Ratio of non-OK gRPC responses to total requests on the emailer link, per method.",
+      "description": "Ratio of non-ok responses to total requests on the emailer link, per RPC procedure.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -608,13 +608,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 78 },
       "id": 81,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(grpc_requests_total{job=\"github_release_notifier_emailer\",code!=\"OK\"}[$__rate_interval])) by (method) / sum(rate(grpc_requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (method)", "legendFormat": "{{method}}" }],
-      "title": "Emailer gRPC Error Rate (non-OK)",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_emailer\",code!=\"ok\"}[$__rate_interval])) by (procedure) / sum(rate(requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Emailer Error Rate (non-ok)",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Emailer gRPC response time at the 50th and 99th percentile, by method.",
+      "description": "Emailer response time at the 50th and 99th percentile, by RPC procedure.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
         "overrides": []
@@ -623,10 +623,10 @@
       "id": 82,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, method))", "legendFormat": "p99 {{method}}" },
-        { "expr": "histogram_quantile(0.50, sum(rate(grpc_request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, method))", "legendFormat": "p50 {{method}}" }
+        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p99 {{procedure}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p50 {{procedure}}" }
       ],
-      "title": "Emailer gRPC Latency (p50/p99)",
+      "title": "Emailer Latency (p50/p99)",
       "type": "timeseries"
     }
   ],
@@ -635,7 +635,7 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "includeAll": false,
         "name": "datasource",

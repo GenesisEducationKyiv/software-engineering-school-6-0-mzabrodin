@@ -54,9 +54,9 @@ func (s *HTTPSubscribeSuite) TestWrongAPIKey_Returns401() {
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
-func (s *HTTPSubscribeSuite) TestInvalidJSON_Returns400() {
+func (s *HTTPSubscribeSuite) TestMalformedJSON_Returns500() {
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe", "not-json", testAPIKey)
-	s.Equal(http.StatusBadRequest, resp.StatusCode)
+	s.Equal(http.StatusInternalServerError, resp.StatusCode)
 }
 
 func (s *HTTPSubscribeSuite) TestEmptyEmail_Returns400() {

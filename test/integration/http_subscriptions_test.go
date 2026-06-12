@@ -39,13 +39,17 @@ func (s *HTTPSubscriptionsSuite) TestInvalidEmail_Returns400() {
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
+type listResult struct {
+	Subscriptions []map[string]any `json:"subscriptions"`
+}
+
 func (s *HTTPSubscriptionsSuite) TestEmptyList() {
 	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/subscriptions?email="+testEmail, "", testAPIKey)
 	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	var result []map[string]any
+	var result listResult
 	decodeJSON(s.T(), resp, &result)
-	s.Empty(result)
+	s.Empty(result.Subscriptions)
 }
 
 func (s *HTTPSubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
@@ -65,10 +69,10 @@ func (s *HTTPSubscriptionsSuite) TestSubscribeConfirmList_EndToEnd() {
 
 func (s *HTTPSubscriptionsSuite) assertSingleSubscription(resp *http.Response, confirmed bool) {
 	s.T().Helper()
-	var result []map[string]any
+	var result listResult
 	decodeJSON(s.T(), resp, &result)
-	s.Require().Len(result, 1)
-	s.Equal(testEmail, result[0]["email"])
-	s.Equal(testRepoName, result[0]["repo"])
-	s.Equal(confirmed, result[0]["confirmed"])
+	s.Require().Len(result.Subscriptions, 1)
+	s.Equal(testEmail, result.Subscriptions[0]["email"])
+	s.Equal(testRepoName, result.Subscriptions[0]["repo"])
+	s.Equal(confirmed, result.Subscriptions[0]["confirmed"])
 }

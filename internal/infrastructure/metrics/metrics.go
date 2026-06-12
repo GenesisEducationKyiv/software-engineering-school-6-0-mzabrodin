@@ -3,38 +3,21 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 var (
-	HTTPRequestsTotal = prometheus.NewCounterVec(
+	RequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "http_requests_total",
-			Help: "Total number of HTTP requests by method, path and status code.",
+			Name: "requests_total",
+			Help: "Total number of API requests by protocol, procedure and status code.",
 		},
-		[]string{"method", "path", "status_code"},
+		[]string{"protocol", "procedure", "code"},
 	)
 
-	HTTPRequestDuration = prometheus.NewHistogramVec(
+	RequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "http_request_duration_seconds",
-			Help:    "HTTP request duration in seconds.",
+			Name:    "request_duration_seconds",
+			Help:    "API request duration in seconds by protocol and procedure.",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method", "path"},
-	)
-
-	GRPCRequestsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "grpc_requests_total",
-			Help: "Total number of gRPC requests by method and status code.",
-		},
-		[]string{"method", "code"},
-	)
-
-	GRPCRequestDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "grpc_request_duration_seconds",
-			Help:    "gRPC request duration in seconds.",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method"},
+		[]string{"protocol", "procedure"},
 	)
 
 	ScannerRunsTotal = prometheus.NewCounter(
@@ -162,10 +145,8 @@ var (
 
 func init() {
 	prometheus.MustRegister(
-		HTTPRequestsTotal,
-		HTTPRequestDuration,
-		GRPCRequestsTotal,
-		GRPCRequestDuration,
+		RequestsTotal,
+		RequestDuration,
 		ScannerRunsTotal,
 		ScannerDuration,
 		NotificationsSentTotal,

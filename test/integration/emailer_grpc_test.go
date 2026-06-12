@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"net"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,8 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	"golang.org/x/net/http2"
 
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/notifier"
@@ -69,32 +69,33 @@ func (s *EmailerGRPCSuite) SetupTest() {
 	s.Require().NoError(err)
 
 	s.mailer = &mockEmailerMailer{}
-	handler := emailerserver.NewServer(s.mailer, testLogger)
-	srv, err := emailerserver.NewGRPCServer(handler, serverCfg, testLogger)
+	handler, err := emailerserver.NewHandler(emailerserver.NewServer(s.mailer, testLogger), testLogger)
 	s.Require().NoError(err)
+
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+
+	srv := &http.Server{Handler: handler, TLSConfig: serverCfg, Protocols: protocols}
 
 	var lc net.ListenConfig
 	lis, err := lc.Listen(s.T().Context(), "tcp", "127.0.0.1:0")
 	s.Require().NoError(err)
 
 	go func() {
-		_ = srv.Serve(lis)
+		_ = srv.ServeTLS(lis, "", "")
 	}()
 
 	_, port, err := net.SplitHostPort(lis.Addr().String())
 	s.Require().NoError(err)
 
-	conn, err := grpc.NewClient(
-		"localhost:"+port,
-		grpc.WithTransportCredentials(credentials.NewTLS(clientCfg)),
-	)
-	s.Require().NoError(err)
-
-	s.client = emailerclient.New(conn, testLogger)
+	transport := &http2.Transport{TLSClientConfig: clientCfg}
+	httpClient := &http.Client{Transport: transport}
+	s.client = emailerclient.New(httpClient, "https://localhost:"+port, transport.CloseIdleConnections, testLogger)
 
 	s.T().Cleanup(func() {
 		require.NoError(s.T(), s.client.Close())
-		srv.Stop()
+		_ = srv.Close()
 	})
 }
 

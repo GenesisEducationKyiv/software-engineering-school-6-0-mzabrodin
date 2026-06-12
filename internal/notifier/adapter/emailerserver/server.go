@@ -2,66 +2,63 @@ package emailerserver
 
 import (
 	"context"
-	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"buf.build/go/protovalidate"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
+	"connectrpc.com/connect"
+	"connectrpc.com/grpchealth"
+	"connectrpc.com/grpcreflect"
 	"google.golang.org/protobuf/proto"
 
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
+	"github-release-notifier/internal/notifier/grpc/gen/emailerv1/emailerv1connect"
 )
 
-// NewGRPCServer builds the emailer gRPC server secured with mTLS.
-func NewGRPCServer(handler *Server, tlsConfig *tls.Config, log *slog.Logger) (*grpc.Server, error) {
+func NewHandler(handler emailerv1connect.EmailerServiceHandler, log *slog.Logger) (http.Handler, error) {
 	validator, err := protovalidate.New()
 	if err != nil {
 		return nil, fmt.Errorf("create validator: %w", err)
 	}
 
-	srv := grpc.NewServer(
-		grpc.Creds(credentials.NewTLS(tlsConfig)),
-		grpc.ChainUnaryInterceptor(
-			logging.NewCorrelationInterceptor(),
-			logging.NewSlogInterceptor(log),
-			metrics.NewMetricsInterceptor,
-			validationInterceptor(validator),
+	path, svc := emailerv1connect.NewEmailerServiceHandler(handler,
+		connect.WithInterceptors(
+			metrics.NewConnectObservabilityInterceptor(log, func(context.Context) string { return "grpc" }),
+			logging.NewConnectCorrelationInterceptor(),
+			newValidationInterceptor(validator),
 		),
 	)
 
-	emailerv1.RegisterEmailerServiceServer(srv, handler)
+	mux := http.NewServeMux()
+	mux.Handle(path, svc)
 
-	healthSrv := health.NewServer()
-	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	healthpb.RegisterHealthServer(srv, healthSrv)
+	healthPath, healthHandler := grpchealth.NewHandler(
+		grpchealth.NewStaticChecker(emailerv1connect.EmailerServiceName),
+	)
+	mux.Handle(healthPath, healthHandler)
 
-	reflection.Register(srv)
+	reflector := grpcreflect.NewStaticReflector(emailerv1connect.EmailerServiceName)
+	reflectV1Path, reflectV1Handler := grpcreflect.NewHandlerV1(reflector)
+	reflectV1AlphaPath, reflectV1AlphaHandler := grpcreflect.NewHandlerV1Alpha(reflector)
+	mux.Handle(reflectV1Path, reflectV1Handler)
+	mux.Handle(reflectV1AlphaPath, reflectV1AlphaHandler)
 
-	return srv, nil
+	return mux, nil
 }
 
-func validationInterceptor(validator protovalidate.Validator) grpc.UnaryServerInterceptor {
-	return func(
-		ctx context.Context,
-		req any,
-		_ *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (any, error) {
-		if msg, ok := req.(proto.Message); ok {
-			if err := validator.Validate(msg); err != nil {
-				return nil, status.Error(codes.InvalidArgument, err.Error())
+func newValidationInterceptor(validator protovalidate.Validator) connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			if msg, ok := req.Any().(proto.Message); ok {
+				if err := validator.Validate(msg); err != nil {
+					return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
+				}
 			}
-		}
 
-		return handler(ctx, req)
+			return next(ctx, req)
+		}
 	}
 }

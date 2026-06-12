@@ -1,6 +1,6 @@
 # ADR-005: gRPC API Alongside the REST API
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-011](011-connect-transcoding.md)
 
 **Author:** Zabrodin Maksym
 

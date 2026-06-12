@@ -32,8 +32,8 @@ jobs:
       - name: Setup buf
         uses: bufbuild/buf-setup-action@v1
 
-      - name: Generate gRPC code
-        run: make proto
+      - name: Generate gRPC/connect code
+        run: buf dep update && buf generate
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9

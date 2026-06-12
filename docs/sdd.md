@@ -25,8 +25,8 @@
 3. GitHub API responses are cached in Redis with a 10-minute TTL to stay within rate limits (60 req/hour without a
    token, 5 000 with one)
 4. PostgreSQL is used for persistence. Schema migrations run automatically on startup via `golang-migrate`
-5. Write/read endpoints are optionally protected with a static API key — `X-API-Key` header (HTTP) or `x-api-key`
-   metadata (gRPC)
+5. Write/read endpoints are optionally protected with a static API key sent as an `Authorization: Bearer <api-key>`
+   header (the same scheme across REST, Connect, and gRPC)
 6. gRPC request validation is declarative via protovalidate rules in the proto; server reflection and the gRPC health
    service are enabled
 7. Observability: Prometheus metrics at `/metrics` (visualized in Grafana); structured JSON logs shipped by Filebeat to
@@ -248,15 +248,15 @@ Chi router; maps domain errors to HTTP status codes; API-key middleware on prote
 ### gRPC API (`internal/subscription/adapter/grpc`)
 
 Service `app.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`, generated with buf (
-`make proto`). The interceptor chain is logging → metrics → `x-api-key` auth → protovalidate validation; server
-reflection and the gRPC health service are registered.
+`task proto`). The connection interceptor chain is observability → `Authorization: Bearer` auth → protovalidate
+validation; server reflection and the gRPC health service are registered.
 
-| RPC                 | Auth        | Description                     |
-|---------------------|-------------|---------------------------------|
-| `Subscribe`         | `x-api-key` | Subscribe email to a repository |
-| `Confirm`           | –           | Confirm subscription by token   |
-| `Unsubscribe`       | –           | Unsubscribe by token            |
-| `ListSubscriptions` | `x-api-key` | List subscriptions for an email |
+| RPC                 | Auth                    | Description                     |
+|---------------------|-------------------------|---------------------------------|
+| `Subscribe`         | `Authorization: Bearer` | Subscribe email to a repository |
+| `Confirm`           | –                       | Confirm subscription by token   |
+| `Unsubscribe`       | –                       | Unsubscribe by token            |
+| `ListSubscriptions` | `Authorization: Bearer` | List subscriptions for an email |
 
 Domain errors map to gRPC status codes, mirroring the HTTP table (see [ADR-005](adr/005-grpc-api-alongside-rest.md)):
 
@@ -358,21 +358,19 @@ the real source — a Redis outage degrades performance, not availability.
 
 Prometheus counters and histograms registered at package init:
 
-| Metric                                                                                          | Type                          | Description                                |
-|-------------------------------------------------------------------------------------------------|-------------------------------|--------------------------------------------|
-| `http_requests_total`                                                                           | Counter                       | HTTP requests by method, path, status code |
-| `http_request_duration_seconds`                                                                 | Histogram                     | HTTP latency                               |
-| `grpc_requests_total`                                                                           | Counter                       | gRPC requests by method and status code    |
-| `grpc_request_duration_seconds`                                                                 | Histogram                     | gRPC latency                               |
-| `subscription_operations_total`                                                                 | Counter                       | Use-case outcomes by operation and result  |
-| `scanner_runs_total`                                                                            | Counter                       | Completed scan cycles                      |
-| `scanner_duration_seconds`                                                                      | Histogram                     | Time per scan cycle                        |
-| `scanner_errors_total`                                                                          | Counter                       | Scanner errors by reason                   |
-| `notifications_sent_total`                                                                      | Counter                       | Release emails dispatched                  |
-| `db_queries_total` / `db_query_errors_total` / `db_query_duration_seconds`                      | Counter / Counter / Histogram | DB queries by operation and table          |
-| `cache_operations_total` / `cache_operation_duration_seconds`                                   | Counter / Histogram           | Redis operations and latency               |
-| `email_sends_total` / `email_send_duration_seconds`                                             | Counter / Histogram           | SMTP sends by type and status              |
-| `github_api_requests_total` / `github_api_request_duration_seconds` / `github_api_errors_total` | Counter / Histogram / Counter | GitHub API requests, latency, errors       |
+| Metric                                                                                          | Type                          | Description                                                 |
+|-------------------------------------------------------------------------------------------------|-------------------------------|-------------------------------------------------------------|
+| `requests_total`                                                                                | Counter                       | Every RPC across both services by protocol, procedure, code |
+| `request_duration_seconds`                                                                      | Histogram                     | Request latency by protocol and procedure                   |
+| `subscription_operations_total`                                                                 | Counter                       | Use-case outcomes by operation and result                   |
+| `scanner_runs_total`                                                                            | Counter                       | Completed scan cycles                                       |
+| `scanner_duration_seconds`                                                                      | Histogram                     | Time per scan cycle                                         |
+| `scanner_errors_total`                                                                          | Counter                       | Scanner errors by reason                                    |
+| `notifications_sent_total`                                                                      | Counter                       | Release emails dispatched                                   |
+| `db_queries_total` / `db_query_errors_total` / `db_query_duration_seconds`                      | Counter / Counter / Histogram | DB queries by operation and table                           |
+| `cache_operations_total` / `cache_operation_duration_seconds`                                   | Counter / Histogram           | Redis operations and latency                                |
+| `email_sends_total` / `email_send_duration_seconds`                                             | Counter / Histogram           | SMTP sends by type and status                               |
+| `github_api_requests_total` / `github_api_request_duration_seconds` / `github_api_errors_total` | Counter / Histogram / Counter | GitHub API requests, latency, errors                        |
 
 ### Config (`internal/infrastructure/config`)
 
@@ -385,13 +383,12 @@ App (`cmd/server`):
 
 | Variable                                         | Default                       | Required | Description                                  |
 |--------------------------------------------------|-------------------------------|----------|----------------------------------------------|
-| `HTTP_PORT`                                      | `8080`                        | –        | HTTP listen port                             |
-| `GRPC_PORT`                                      | `50051`                       | –        | Public gRPC listen port                      |
+| `PORT`                                           | `8080`                        | –        | Single public port                           |
 | `BASE_URL`                                       | `http://localhost:8080`       | –        | Base for confirm/unsubscribe links           |
 | `GITHUB_TOKEN`                                   | –                             | –        | Raises GitHub rate limit to 5 000/hr         |
 | `SCAN_INTERVAL` / `SCAN_WORKERS`                 | `10m` / `5`                   | –        | Scan cycle interval and concurrency          |
 | `DATABASE_URL` / `REDIS_URL`                     | –                             | yes      | PostgreSQL and Redis connection URLs         |
-| `EMAILER_ADDR` / `EMAILER_SERVER_NAME`           | `localhost:50052` / `emailer` | –        | Emailer address and verified cert name       |
+| `EMAILER_ADDR`                                   | `localhost:50052`             | –        | Emailer address (host must match a cert SAN) |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –                             | yes      | App **client** cert/key + shared CA (mTLS)   |
 | `API_KEY`                                        | –                             | –        | Protects write/read endpoints (off if empty) |
 | `LOG_LEVEL`                                      | `info`                        | –        | `debug` / `info` / `warn` / `error`          |
