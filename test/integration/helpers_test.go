@@ -6,13 +6,17 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github-release-notifier/internal/bootstrap/server"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
+	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 	"github-release-notifier/internal/subscription/adapter/repository"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
@@ -69,6 +73,25 @@ func newTestUseCases(repoExists bool) testUseCases {
 		unsubscribe: unsubscribe.New(subs, testLogger),
 		list:        list.New(subs),
 	}
+}
+
+func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
+	t.Helper()
+
+	uc := newTestUseCases(repoExists)
+	svc := connectapi.NewService(uc.subscribe, uc.confirm, uc.unsubscribe, uc.list, testLogger)
+
+	handler, err := server.NewHandler(svc, testAPIKey, testLogger)
+	require.NoError(t, err)
+
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Config.Protocols = new(http.Protocols)
+	srv.Config.Protocols.SetHTTP1(true)
+	srv.Config.Protocols.SetUnencryptedHTTP2(true)
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	return srv
 }
 
 // truncateAll removes all rows between tests so each test starts with a clean DB.

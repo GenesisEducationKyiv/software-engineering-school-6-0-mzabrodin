@@ -11,20 +11,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	api "github-release-notifier/internal/subscription/adapter/http"
 )
 
-// newTestHTTPServer starts a real HTTP server backed by real repositories against testPool.
+// newTestHTTPServer serves the unified public handler.
+// REST requests are transcoded onto the connect handler by Vanguard.
 func newTestHTTPServer(t *testing.T, repoExists bool) *httptest.Server {
 	t.Helper()
-
-	uc := newTestUseCases(repoExists)
-	handler := api.NewHandler(uc.subscribe, uc.confirm, uc.unsubscribe, uc.list, testLogger)
-
-	srv := httptest.NewServer(api.NewRouter(handler, testAPIKey, testLogger))
-	t.Cleanup(srv.Close)
-	return srv
+	return newTestServer(t, repoExists)
 }
 
 // doRequest is a thin helper that sends an HTTP request and returns the response.
@@ -44,7 +37,7 @@ func doRequest(t *testing.T, method, url, body, apiKey string) *http.Response {
 	}
 
 	if apiKey != "" {
-		req.Header.Set("X-API-Key", apiKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
