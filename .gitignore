@@ -116,6 +116,8 @@ fabric.properties
 
 # Environment variables
 .env
+.env.app
+.env.emailer
 
 # Binary output
 github-release-notifier
