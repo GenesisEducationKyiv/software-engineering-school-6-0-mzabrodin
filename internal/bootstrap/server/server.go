@@ -117,7 +117,7 @@ func serve(
 	serverError := make(chan error, 1)
 
 	go func() {
-		log.Info("server started", "addr", srv.Addr)
+		log.Info("server started", "server", "public", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}

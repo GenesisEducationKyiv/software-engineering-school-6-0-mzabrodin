@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
@@ -32,9 +31,25 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 		return fmt.Errorf("create mailer: %w", err)
 	}
 
-	apiSrv, listener, err := startServer(ctx, mail, cfg, log)
+	tlsCfg, err := tlsconfig.ServerTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("build emailer tls config: %w", err)
+	}
+
+	handler, err := emailerserver.NewHandler(emailerserver.NewServer(mail, log), log)
+	if err != nil {
+		return fmt.Errorf("create emailer handler: %w", err)
+	}
+
+	protocols := new(http.Protocols)
+	protocols.SetHTTP2(true)
+
+	apiSrv := &http.Server{
+		Addr:              ":" + cfg.GRPCPort,
+		Handler:           handler,
+		TLSConfig:         tlsCfg,
+		ReadHeaderTimeout: shutdownTimeout,
+		Protocols:         protocols,
 	}
 
 	metricsSrv := &http.Server{
@@ -43,43 +58,7 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 		ReadHeaderTimeout: shutdownTimeout,
 	}
 
-	return serve(ctx, apiSrv, listener, metricsSrv, mail, log)
-}
-
-func startServer(
-	ctx context.Context,
-	mail *mailer.Mailer,
-	cfg *config.EmailerConfig,
-	log *slog.Logger,
-) (*http.Server, net.Listener, error) {
-	tlsCfg, err := tlsconfig.ServerTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build emailer tls config: %w", err)
-	}
-
-	handler, err := emailerserver.NewHandler(emailerserver.NewServer(mail, log), log)
-	if err != nil {
-		return nil, nil, fmt.Errorf("create emailer handler: %w", err)
-	}
-
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-	protocols.SetHTTP2(true)
-
-	srv := &http.Server{
-		Handler:           handler,
-		TLSConfig:         tlsCfg,
-		ReadHeaderTimeout: shutdownTimeout,
-		Protocols:         protocols,
-	}
-
-	var lc net.ListenConfig
-	listener, err := lc.Listen(ctx, "tcp", ":"+cfg.GRPCPort)
-	if err != nil {
-		return nil, nil, fmt.Errorf("listen grpc: %w", err)
-	}
-
-	return srv, listener, nil
+	return serve(ctx, apiSrv, metricsSrv, mail, log)
 }
 
 func metricsHandler() http.Handler {
@@ -96,7 +75,6 @@ func metricsHandler() http.Handler {
 func serve(
 	ctx context.Context,
 	apiSrv *http.Server,
-	listener net.Listener,
 	metricsSrv *http.Server,
 	mail *mailer.Mailer,
 	log *slog.Logger,
@@ -104,14 +82,14 @@ func serve(
 	serverError := make(chan error, 2)
 
 	go func() {
-		log.Info("emailer grpc server started", "addr", listener.Addr().String())
-		if err := apiSrv.ServeTLS(listener, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Info("server started", "server", "grpc", "addr", apiSrv.Addr)
+		if err := apiSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
 	}()
 
 	go func() {
-		log.Info("emailer metrics server started", "addr", metricsSrv.Addr)
+		log.Info("server started", "server", "metrics", "addr", metricsSrv.Addr)
 		if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
@@ -137,16 +115,16 @@ func gracefulShutdown(
 	defer cancel()
 
 	if err := apiSrv.Shutdown(shutdownCtx); err != nil {
-		log.Warn("failed to shut down emailer server", "error", err)
+		log.Warn("failed to shut down server", "server", "grpc", "error", err)
 	}
 
 	if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
-		log.Warn("failed to shut down metrics server", "error", err)
+		log.Warn("failed to shut down server", "server", "metrics", "error", err)
 	}
 
 	mail.Shutdown(shutdownCtx)
 
-	log.Info("emailer stopped")
+	log.Info("server stopped")
 
 	return nil
 }
