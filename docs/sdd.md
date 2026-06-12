@@ -385,8 +385,7 @@ App (`cmd/server`):
 
 | Variable                                         | Default                       | Required | Description                                  |
 |--------------------------------------------------|-------------------------------|----------|----------------------------------------------|
-| `HTTP_PORT`                                      | `8080`                        | –        | HTTP listen port                             |
-| `GRPC_PORT`                                      | `50051`                       | –        | Public gRPC listen port                      |
+| `PORT`                                           | `8080`                        | –        | Single public port                           |
 | `BASE_URL`                                       | `http://localhost:8080`       | –        | Base for confirm/unsubscribe links           |
 | `GITHUB_TOKEN`                                   | –                             | –        | Raises GitHub rate limit to 5 000/hr         |
 | `SCAN_INTERVAL` / `SCAN_WORKERS`                 | `10m` / `5`                   | –        | Scan cycle interval and concurrency          |
