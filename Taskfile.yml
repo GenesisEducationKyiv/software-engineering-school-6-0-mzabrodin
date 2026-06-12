@@ -18,6 +18,8 @@ tasks:
 
   test-integration:
     desc: Run integration tests (testcontainers & bufconn, requires Docker)
+    deps:
+      - _docker-check
     cmds:
       - go test -count=1 -tags integration ./test/integration/...
 
@@ -57,15 +59,27 @@ tasks:
 
   up:
     desc: Start the full stack with Docker Compose
+    deps:
+      - _docker-check
     cmds:
       - docker compose up -d
 
   up-build:
     desc: Rebuild images and start the stack
+    deps:
+      - _docker-check
     cmds:
       - docker compose up -d --build
 
   down:
     desc: Stop the stack
+    deps:
+      - _docker-check
     cmds:
       - docker compose down
+
+  _docker-check:
+    internal: true
+    preconditions:
+      - sh: docker info >/dev/null 2>&1
+        msg: "Docker is not running. Start the Docker daemon and retry."
