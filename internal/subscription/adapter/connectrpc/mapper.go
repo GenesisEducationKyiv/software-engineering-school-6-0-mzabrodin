@@ -1,4 +1,4 @@
-package grcp_api
+package connectapi
 
 import (
 	"github-release-notifier/internal/subscription/domain"
