@@ -19,8 +19,7 @@ services:
     <<: [ *service, *app-image ]
     container_name: github_release_notifier_app
     ports:
-      - "${HTTP_PORT:-8080}:8080"
-      - "${GRPC_PORT:-50051}:50051"
+      - "${PORT:-8080}:8080"
     env_file:
       - .env
     environment:
