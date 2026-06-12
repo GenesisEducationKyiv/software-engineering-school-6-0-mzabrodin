@@ -17,24 +17,21 @@ processors:
       when:
         not:
           regexp:
-            container.name: "^github_release_notifier_(app|postgres|redis)$"
+            container.name: "^github_release_notifier_(app|emailer|postgres|redis)$"
 
-  # Decode JSON only for the app container. postgres/redis write plain text.
   - decode_json_fields:
       when:
-        equals:
-          container.name: "github_release_notifier_app"
+        regexp:
+          container.name: "^github_release_notifier_(app|emailer)$"
       fields: ["message"]
       target: ""
       overwrite_keys: true
       add_error_key: false
 
-  # The raw JSON is now duplicated by the decoded root fields.
-  # drop it for the app only, but keep it for postgres/redis since they write plain text.
   - drop_fields:
       when:
-        equals:
-          container.name: "github_release_notifier_app"
+        regexp:
+          container.name: "^github_release_notifier_(app|emailer)$"
       ignore_missing: true
       fields:
         - message
