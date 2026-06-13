@@ -31,14 +31,21 @@ func Write(dir string) error {
 		return err
 	}
 
-	server := leafTemplate("emailer", []string{"emailer", "localhost"}, []net.IP{net.IPv4(127, 0, 0, 1)})
-	if err := writeLeaf(dir, "server", server, caCert, caKey); err != nil {
+	loopback := []net.IP{net.IPv4(127, 0, 0, 1)}
+
+	scanner := leafTemplate("scanner", []string{"scanner", "localhost"}, loopback)
+	if err := writeLeaf(dir, "scanner", scanner, caCert, caKey); err != nil {
 		return err
 	}
 
-	client := leafTemplate("app-app", nil, nil)
+	emailer := leafTemplate("emailer", []string{"emailer", "localhost"}, loopback)
+	if err := writeLeaf(dir, "emailer", emailer, caCert, caKey); err != nil {
+		return err
+	}
 
-	return writeLeaf(dir, "client", client, caCert, caKey)
+	subscription := leafTemplate("subscription", nil, nil)
+
+	return writeLeaf(dir, "subscription", subscription, caCert, caKey)
 }
 
 func newCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
