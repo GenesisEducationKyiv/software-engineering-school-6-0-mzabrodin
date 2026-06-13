@@ -116,8 +116,9 @@ fabric.properties
 
 # Environment variables
 .env
-.env.app
+.env.subscription
 .env.emailer
+.env.scanner
 
 # Binary output
 github-release-notifier
@@ -126,8 +127,9 @@ bin/
 # Claude init file
 CLAUDE.md
 
-# Generated protobuf/gRPC code (run `make proto` to regenerate)
+# Generated protobuf/gRPC code (run `task proto` to regenerate)
 internal/subscription/grpc/gen/
+internal/scanner/grpc/gen/
 internal/notifier/grpc/gen/
 
 # mTLS certificates for the app
