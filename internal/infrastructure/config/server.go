@@ -12,11 +12,11 @@ type Config struct {
 	Port         string        `envconfig:"PORT"          default:"8080"`
 	BaseURL      string        `envconfig:"BASE_URL"      default:"http://localhost:8080"`
 	GitHubToken  string        `envconfig:"GITHUB_TOKEN"`
-	ScanInterval time.Duration `envconfig:"SCAN_INTERVAL" default:"10m"`
-	WorkerCount  int           `envconfig:"SCAN_WORKERS"  default:"5"`
 	DatabaseURL  string        `envconfig:"DATABASE_URL"                                  required:"true"`
 	RedisURL     string        `envconfig:"REDIS_URL"                                     required:"true"`
+	ScannerAddr  string        `envconfig:"SCANNER_ADDR"  default:"localhost:50051"`
 	EmailerAddr  string        `envconfig:"EMAILER_ADDR"  default:"localhost:50052"`
+	ScanInterval time.Duration `envconfig:"SCAN_INTERVAL" default:"10m"`
 	APIKey       string        `envconfig:"API_KEY"`
 	LogLevel     string        `envconfig:"LOG_LEVEL"     default:"info"`
 	TLS          TLSConfig
