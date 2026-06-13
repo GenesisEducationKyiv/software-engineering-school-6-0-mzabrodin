@@ -28,3 +28,8 @@ type Release struct {
 	TagName string
 	HTMLURL string
 }
+
+type ObservedRelease struct {
+	Repo    string
+	Release *Release
+}
