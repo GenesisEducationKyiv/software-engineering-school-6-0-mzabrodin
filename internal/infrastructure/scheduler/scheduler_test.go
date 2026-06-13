@@ -9,16 +9,16 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/scanner/scheduler"
+	"github-release-notifier/internal/infrastructure/scheduler"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-type mockScanner struct {
+type mockRunner struct {
 	runs chan struct{}
 }
 
-func (m *mockScanner) Run(_ context.Context) error {
+func (m *mockRunner) Run(_ context.Context) error {
 	select {
 	case m.runs <- struct{}{}:
 	default:
@@ -36,8 +36,8 @@ func TestSchedulerSuite(t *testing.T) {
 }
 
 func (s *SchedulerSuite) TestRunsAtStartupAndPerTick() {
-	scanner := &mockScanner{runs: make(chan struct{}, 10)}
-	sched := scheduler.New(scanner, 20*time.Millisecond, testLogger)
+	runner := &mockRunner{runs: make(chan struct{}, 10)}
+	sched := scheduler.New(runner, 20*time.Millisecond, testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -45,13 +45,13 @@ func (s *SchedulerSuite) TestRunsAtStartupAndPerTick() {
 	go sched.Start(ctx)
 
 	s.Require().
-		Eventually(func() bool { return len(scanner.runs) >= 1 }, time.Second, time.Millisecond, "no startup run")
-	s.Require().Eventually(func() bool { return len(scanner.runs) >= 2 }, time.Second, time.Millisecond, "no tick run")
+		Eventually(func() bool { return len(runner.runs) >= 1 }, time.Second, time.Millisecond, "no startup run")
+	s.Require().Eventually(func() bool { return len(runner.runs) >= 2 }, time.Second, time.Millisecond, "no tick run")
 }
 
 func (s *SchedulerSuite) TestStopsOnContextCancel() {
-	scanner := &mockScanner{runs: make(chan struct{}, 10)}
-	sched := scheduler.New(scanner, time.Millisecond, testLogger)
+	runner := &mockRunner{runs: make(chan struct{}, 10)}
+	sched := scheduler.New(runner, time.Millisecond, testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

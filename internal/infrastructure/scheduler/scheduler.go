@@ -10,19 +10,19 @@ import (
 	"github-release-notifier/internal/infrastructure/logging"
 )
 
-type scanner interface {
+type runner interface {
 	Run(ctx context.Context) error
 }
 
 type Scheduler struct {
-	scanner  scanner
+	runner   runner
 	interval time.Duration
 	log      *slog.Logger
 }
 
-func New(s scanner, interval time.Duration, log *slog.Logger) *Scheduler {
+func New(r runner, interval time.Duration, log *slog.Logger) *Scheduler {
 	return &Scheduler{
-		scanner:  s,
+		runner:   r,
 		interval: interval,
 		log:      log.With("component", "scheduler"),
 	}
@@ -49,7 +49,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 func (s *Scheduler) run(ctx context.Context) {
 	ctx = logging.WithScanID(ctx, uuid.NewString())
-	if err := s.scanner.Run(ctx); err != nil {
+	if err := s.runner.Run(ctx); err != nil {
 		s.log.ErrorContext(ctx, "scan pass failed", "error", err)
 	}
 }
