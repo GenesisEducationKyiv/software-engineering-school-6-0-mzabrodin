@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package scanner.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github-release-notifier/internal/scanner/grpc/gen/scannerv1;scannerv1";
+
+service ScannerService {
+  rpc FetchLatestReleases(FetchLatestReleasesRequest) returns (FetchLatestReleasesResponse);
+}
+
+message FetchLatestReleasesRequest {
+  repeated string repositories = 1 [
+    (buf.validate.field).repeated.items.string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+  ];
+}
+
+message FetchLatestReleasesResponse {
+  repeated ObservedRelease releases = 1;
+}
+
+message ObservedRelease {
+  string repo = 1;
+  string tag = 2;
+  string release_url = 3;
+}

@@ -1,15 +1,13 @@
 syntax = "proto3";
 
-package app.v1;
+package subscription.v1;
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 
-option go_package = "github-release-notifier/internal/subscription/grpc/gen/appv1;appv1";
+option go_package = "github-release-notifier/internal/subscription/grpc/gen/subscriptionv1;subscriptionv1";
 
 service SubscriptionService {
-  // Subscribe registers an email for a repository's releases and sends a confirmation email.
-  // Requires an Authorization: Bearer <api-key> header when an API key is set.
   rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {
     option (google.api.http) = {
       post: "/api/subscribe"
@@ -17,18 +15,14 @@ service SubscriptionService {
     };
   }
 
-  // Confirm activates a subscription using its confirmation token.
   rpc Confirm(ConfirmRequest) returns (ConfirmResponse) {
     option (google.api.http) = {get: "/api/confirm/{token}"};
   }
 
-  // Unsubscribe removes a subscription using its unsubscribe token.
   rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse) {
     option (google.api.http) = {get: "/api/unsubscribe/{token}"};
   }
 
-  // ListSubscriptions returns every subscription for an email address.
-  // Requires an Authorization: Bearer <api-key> header when an API key is set.
   rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse) {
     option (google.api.http) = {get: "/api/subscriptions"};
   }
