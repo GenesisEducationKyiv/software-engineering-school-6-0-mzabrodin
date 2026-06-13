@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/notifier/certgen"
-	"github-release-notifier/internal/notifier/tlsconfig"
+	"github-release-notifier/internal/infrastructure/certgen"
+	"github-release-notifier/internal/infrastructure/tlsconfig"
 )
 
 type TLSConfigSuite struct {
@@ -31,10 +31,10 @@ func (s *TLSConfigSuite) SetupSuite() {
 	s.Require().NoError(certgen.Write(s.dir))
 
 	s.caFile = filepath.Join(s.dir, "ca.crt")
-	s.serverCert = filepath.Join(s.dir, "server.crt")
-	s.serverKey = filepath.Join(s.dir, "server.key")
-	s.clientCert = filepath.Join(s.dir, "client.crt")
-	s.clientKey = filepath.Join(s.dir, "client.key")
+	s.serverCert = filepath.Join(s.dir, "emailer.crt")
+	s.serverKey = filepath.Join(s.dir, "emailer.key")
+	s.clientCert = filepath.Join(s.dir, "subscription.crt")
+	s.clientKey = filepath.Join(s.dir, "subscription.key")
 }
 
 func (s *TLSConfigSuite) TestServerTLS() {
@@ -102,8 +102,6 @@ func (s *TLSConfigSuite) TestClientTLSMissingCA() {
 	s.Require().Error(err)
 }
 
-// handshake performs a single TLS handshake over a loopback listener and returns the client connection state.
-// It fails the test if the handshake errors.
 func (s *TLSConfigSuite) handshake(serverCfg, clientCfg *tls.Config) tls.ConnectionState {
 	s.T().Helper()
 
@@ -117,7 +115,6 @@ func (s *TLSConfigSuite) handshake(serverCfg, clientCfg *tls.Config) tls.Connect
 			return
 		}
 		defer conn.Close()
-		// Force the handshake by reading, the client closes after handshaking.
 		_, _ = conn.Read(make([]byte, 1))
 	}()
 
@@ -129,7 +126,6 @@ func (s *TLSConfigSuite) handshake(serverCfg, clientCfg *tls.Config) tls.Connect
 	return conn.(*tls.Conn).ConnectionState()
 }
 
-// handshakeError asserts that the client cannot complete a handshake against the server.
 func (s *TLSConfigSuite) handshakeError(serverCfg, clientCfg *tls.Config) {
 	s.T().Helper()
 
