@@ -1,4 +1,4 @@
-package emailerclient
+package notifierclient
 
 import (
 	"context"
@@ -10,21 +10,21 @@ import (
 
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/notifier"
-	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
-	"github-release-notifier/internal/notifier/grpc/gen/emailerv1/emailerv1connect"
+	"github-release-notifier/internal/notifier/grpc/gen/notifierv1"
+	"github-release-notifier/internal/notifier/grpc/gen/notifierv1/notifierv1connect"
 )
 
 const confirmationTimeout = 30 * time.Second
 
 type Client struct {
-	rpc      emailerv1connect.EmailerServiceClient
+	rpc      notifierv1connect.NotifierServiceClient
 	closer   func()
 	log      *slog.Logger
 	inflight sync.WaitGroup
 }
 
 func New(httpClient connect.HTTPClient, baseURL string, closer func(), log *slog.Logger) *Client {
-	rpc := emailerv1connect.NewEmailerServiceClient(
+	rpc := notifierv1connect.NewNotifierServiceClient(
 		httpClient,
 		baseURL,
 		connect.WithGRPC(),
@@ -34,8 +34,8 @@ func New(httpClient connect.HTTPClient, baseURL string, closer func(), log *slog
 	return newClient(rpc, closer, log)
 }
 
-func newClient(rpc emailerv1connect.EmailerServiceClient, closer func(), log *slog.Logger) *Client {
-	return &Client{rpc: rpc, closer: closer, log: log.With("component", "emailer-client")}
+func newClient(rpc notifierv1connect.NotifierServiceClient, closer func(), log *slog.Logger) *Client {
+	return &Client{rpc: rpc, closer: closer, log: log.With("component", "notifier-client")}
 }
 
 func (c *Client) SendConfirmation(ctx context.Context, to, repo, confirmURL string) {
@@ -47,7 +47,7 @@ func (c *Client) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), confirmationTimeout)
 		defer cancel()
 
-		_, err := c.rpc.SendConfirmation(sendCtx, connect.NewRequest(&emailerv1.SendConfirmationRequest{
+		_, err := c.rpc.SendConfirmation(sendCtx, connect.NewRequest(&notifierv1.SendConfirmationRequest{
 			To:         to,
 			Repo:       repo,
 			ConfirmUrl: confirmURL,
@@ -62,7 +62,7 @@ func (c *Client) SendReleaseNotifications(
 	ctx context.Context,
 	notifications []notifier.ReleaseNotification,
 ) notifier.BatchResult {
-	resp, err := c.rpc.SendReleaseNotifications(ctx, connect.NewRequest(&emailerv1.SendReleaseNotificationsRequest{
+	resp, err := c.rpc.SendReleaseNotifications(ctx, connect.NewRequest(&notifierv1.SendReleaseNotificationsRequest{
 		Notifications: toProtoNotifications(notifications),
 	}))
 	if err != nil {

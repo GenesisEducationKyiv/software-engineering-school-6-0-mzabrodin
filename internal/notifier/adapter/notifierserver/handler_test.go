@@ -1,4 +1,4 @@
-package emailerserver
+package notifierserver
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/notifier"
-	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
+	"github-release-notifier/internal/notifier/grpc/gen/notifierv1"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -55,7 +55,7 @@ func (s *HandlerSuite) TestSendConfirmation() {
 	s.mailer.On("SendConfirmation", mock.Anything,
 		"user@example.com", "owner/repo", "https://example.com/confirm/abc").Return()
 
-	resp, err := s.server.SendConfirmation(s.T().Context(), connect.NewRequest(&emailerv1.SendConfirmationRequest{
+	resp, err := s.server.SendConfirmation(s.T().Context(), connect.NewRequest(&notifierv1.SendConfirmationRequest{
 		To:         "user@example.com",
 		Repo:       "owner/repo",
 		ConfirmUrl: "https://example.com/confirm/abc",
@@ -78,8 +78,8 @@ func (s *HandlerSuite) TestSendReleaseNotifications() {
 
 	resp, err := s.server.SendReleaseNotifications(
 		s.T().Context(),
-		connect.NewRequest(&emailerv1.SendReleaseNotificationsRequest{
-			Notifications: []*emailerv1.ReleaseNotification{{
+		connect.NewRequest(&notifierv1.SendReleaseNotificationsRequest{
+			Notifications: []*notifierv1.ReleaseNotification{{
 				To:             "a@example.com",
 				Repo:           "owner/repo",
 				Tag:            "v1.0.0",

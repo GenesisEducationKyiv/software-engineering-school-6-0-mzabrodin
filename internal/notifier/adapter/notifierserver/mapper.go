@@ -1,11 +1,11 @@
-package emailerserver
+package notifierserver
 
 import (
 	"github-release-notifier/internal/notifier"
-	"github-release-notifier/internal/notifier/grpc/gen/emailerv1"
+	"github-release-notifier/internal/notifier/grpc/gen/notifierv1"
 )
 
-func toEntityNotifications(in []*emailerv1.ReleaseNotification) []notifier.ReleaseNotification {
+func toEntityNotifications(in []*notifierv1.ReleaseNotification) []notifier.ReleaseNotification {
 	out := make([]notifier.ReleaseNotification, len(in))
 	for i, n := range in {
 		out[i] = notifier.ReleaseNotification{
