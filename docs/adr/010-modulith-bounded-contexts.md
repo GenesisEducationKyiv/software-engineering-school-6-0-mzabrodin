@@ -48,8 +48,8 @@ These are what make the future split a drop-in:
 - The scanner depends only on its own
   `gitHubRepoRepository` / `subscriptionRepository` port, satisfied
   today by subscription's in-process repositories. Extracting the scanner = swap that port's adapter for
-  a gRPC client (a new internal `catalog.v1`) — the same move that turned the in-process mailer into
-  `emailerclient`. No scanner business logic changes.
+  a gRPC client — the same move that turned the in-process mailer into `notifierclient`. No scanner
+  business logic changes.
 - The repository adapters (`GitHubRepoRepository`, `SubscriptionRepository`)
   live in the subscription module (it owns the tables); the entity types they map live in the `shared`
   because the scanner and notifier also speak them. The module owns the noun's logic; the kernel
