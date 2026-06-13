@@ -69,7 +69,7 @@ one port over h2c (cleartext HTTP/2), via Go 1.26's
 The emailer service was subsequently moved off plain grpc-go onto connect-go,
 removing the second transport stack and the separate metric family.
 
-- **Emailer server** (`emailerserver.NewHandler`): a connect `EmailerServiceHandler`
+- **Emailer server** (`notifierserver.NewHandler`): a connect `NotifierServiceHandler`
   with connect interceptors (observability → correlation → protovalidate) plus
   connect `grpchealth` + `grpcreflect`, served by an `http.Server` whose
   `TLSConfig` is `tlsconfig.ServerTLS` (`RequireAndVerifyClientCert`, TLS 1.3). A
