@@ -628,6 +628,64 @@
       ],
       "title": "Emailer Latency (p50/p99)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 86 },
+      "id": 110,
+      "title": "Scanner",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Per-second request rate on the internal app→scanner link, by RPC procedure.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 87 },
+      "id": 111,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Scanner Request Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Ratio of non-ok responses to total requests on the scanner link, per RPC procedure.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] },
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 87 },
+      "id": 112,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_scanner\",code!=\"ok\"}[$__rate_interval])) by (procedure) / sum(rate(requests_total{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Scanner Error Rate (non-ok)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Scanner response time at the 50th and 99th percentile, by RPC procedure.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 87 },
+      "id": 113,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p99 {{procedure}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p50 {{procedure}}" }
+      ],
+      "title": "Scanner Latency (p50/p99)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
