@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github-release-notifier/internal/subscription/grpc/gen/appv1/appv1connect"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1/subscriptionv1connect"
 )
 
 const (
@@ -16,8 +16,8 @@ const (
 )
 
 var protectedProcedures = map[string]bool{
-	appv1connect.SubscriptionServiceSubscribeProcedure:         true,
-	appv1connect.SubscriptionServiceListSubscriptionsProcedure: true,
+	subscriptionv1connect.SubscriptionServiceSubscribeProcedure:         true,
+	subscriptionv1connect.SubscriptionServiceListSubscriptionsProcedure: true,
 }
 
 func NewAuthInterceptor(apiKey string) connect.UnaryInterceptorFunc {

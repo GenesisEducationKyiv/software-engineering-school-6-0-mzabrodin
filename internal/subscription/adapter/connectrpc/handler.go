@@ -6,7 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github-release-notifier/internal/subscription/grpc/gen/appv1"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
@@ -55,56 +55,56 @@ func NewService(
 
 func (s *Service) Subscribe(
 	ctx context.Context,
-	req *connect.Request[appv1.SubscribeRequest],
-) (*connect.Response[appv1.SubscribeResponse], error) {
+	req *connect.Request[subscriptionv1.SubscribeRequest],
+) (*connect.Response[subscriptionv1.SubscribeResponse], error) {
 	_, err := s.subscribe.Execute(ctx, subscribe.Input{Email: req.Msg.GetEmail(), Repo: req.Msg.GetRepo()})
 	if err != nil {
 		return nil, s.domainError(ctx, err, "email", req.Msg.GetEmail(), "repo", req.Msg.GetRepo())
 	}
 
-	return connect.NewResponse(&appv1.SubscribeResponse{
+	return connect.NewResponse(&subscriptionv1.SubscribeResponse{
 		Message: "subscription successful, confirmation email sent",
 	}), nil
 }
 
 func (s *Service) Confirm(
 	ctx context.Context,
-	req *connect.Request[appv1.ConfirmRequest],
-) (*connect.Response[appv1.ConfirmResponse], error) {
+	req *connect.Request[subscriptionv1.ConfirmRequest],
+) (*connect.Response[subscriptionv1.ConfirmResponse], error) {
 	_, err := s.confirm.Execute(ctx, confirm.Input{Token: req.Msg.GetToken()})
 	if err != nil {
 		return nil, s.domainError(ctx, err, "token", req.Msg.GetToken())
 	}
 
-	return connect.NewResponse(&appv1.ConfirmResponse{
+	return connect.NewResponse(&subscriptionv1.ConfirmResponse{
 		Message: "subscription confirmed successfully",
 	}), nil
 }
 
 func (s *Service) Unsubscribe(
 	ctx context.Context,
-	req *connect.Request[appv1.UnsubscribeRequest],
-) (*connect.Response[appv1.UnsubscribeResponse], error) {
+	req *connect.Request[subscriptionv1.UnsubscribeRequest],
+) (*connect.Response[subscriptionv1.UnsubscribeResponse], error) {
 	_, err := s.unsubscribe.Execute(ctx, unsubscribe.Input{Token: req.Msg.GetToken()})
 	if err != nil {
 		return nil, s.domainError(ctx, err, "token", req.Msg.GetToken())
 	}
 
-	return connect.NewResponse(&appv1.UnsubscribeResponse{
+	return connect.NewResponse(&subscriptionv1.UnsubscribeResponse{
 		Message: "unsubscribed successfully",
 	}), nil
 }
 
 func (s *Service) ListSubscriptions(
 	ctx context.Context,
-	req *connect.Request[appv1.ListSubscriptionsRequest],
-) (*connect.Response[appv1.ListSubscriptionsResponse], error) {
+	req *connect.Request[subscriptionv1.ListSubscriptionsRequest],
+) (*connect.Response[subscriptionv1.ListSubscriptionsResponse], error) {
 	out, err := s.list.Execute(ctx, list.Input{Email: req.Msg.GetEmail()})
 	if err != nil {
 		return nil, s.domainError(ctx, err, "email", req.Msg.GetEmail())
 	}
 
-	return connect.NewResponse(&appv1.ListSubscriptionsResponse{
+	return connect.NewResponse(&subscriptionv1.ListSubscriptionsResponse{
 		Subscriptions: toProtoSubscriptions(out.Views),
 	}), nil
 }

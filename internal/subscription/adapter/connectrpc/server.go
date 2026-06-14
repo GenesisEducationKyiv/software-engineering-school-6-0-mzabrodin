@@ -10,7 +10,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/subscription/grpc/gen/appv1/appv1connect"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1/subscriptionv1connect"
 )
 
 func NewConnectHandler(svc *Service, apiKey string, log *slog.Logger) (string, http.Handler, error) {
@@ -19,7 +19,7 @@ func NewConnectHandler(svc *Service, apiKey string, log *slog.Logger) (string, h
 		return "", nil, fmt.Errorf("create validator: %w", err)
 	}
 
-	path, handler := appv1connect.NewSubscriptionServiceHandler(svc,
+	path, handler := subscriptionv1connect.NewSubscriptionServiceHandler(svc,
 		connect.WithInterceptors(
 			metrics.NewConnectObservabilityInterceptor(log, logging.Protocol),
 			NewAuthInterceptor(apiKey),

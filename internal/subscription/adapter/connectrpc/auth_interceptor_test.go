@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/subscription/grpc/gen/appv1"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1"
 )
 
 type AuthInterceptorSuite struct {
@@ -44,11 +44,11 @@ func (s *AuthInterceptorSuite) TestEmptyAPIKeyPassesThrough() {
 	called := false
 	next := func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
 		called = true
-		return connect.NewResponse(&appv1.SubscribeResponse{}), nil
+		return connect.NewResponse(&subscriptionv1.SubscribeResponse{}), nil
 	}
 
 	wrapped := NewAuthInterceptor("")(next)
-	_, err := wrapped(s.T().Context(), connect.NewRequest(&appv1.SubscribeRequest{}))
+	_, err := wrapped(s.T().Context(), connect.NewRequest(&subscriptionv1.SubscribeRequest{}))
 
 	s.Require().NoError(err)
 	s.True(called, "no auth is enforced when the API key is unset")
@@ -58,13 +58,11 @@ func (s *AuthInterceptorSuite) TestUnprotectedProcedurePassesThrough() {
 	called := false
 	next := func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
 		called = true
-		return connect.NewResponse(&appv1.SubscribeResponse{}), nil
+		return connect.NewResponse(&subscriptionv1.SubscribeResponse{}), nil
 	}
 
-	// connect.NewRequest carries an empty procedure, which is not in protectedProcedures,
-	// so the interceptor must not require a key.
 	wrapped := NewAuthInterceptor("secret")(next)
-	_, err := wrapped(s.T().Context(), connect.NewRequest(&appv1.SubscribeRequest{}))
+	_, err := wrapped(s.T().Context(), connect.NewRequest(&subscriptionv1.SubscribeRequest{}))
 
 	s.Require().NoError(err)
 	s.True(called)
