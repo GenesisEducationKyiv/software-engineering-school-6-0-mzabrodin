@@ -9,12 +9,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github-release-notifier/internal/subscription/grpc/gen/appv1"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1"
 )
 
 type GRPCUnsubscribeSuite struct {
 	suite.Suite
-	client appv1.SubscriptionServiceClient
+	client subscriptionv1.SubscriptionServiceClient
 }
 
 func TestGRPCUnsubscribeSuite(t *testing.T) {
@@ -29,7 +29,7 @@ func (s *GRPCUnsubscribeSuite) SetupTest() {
 func (s *GRPCUnsubscribeSuite) TestSuccess() {
 	_, unsubToken := grpcSubscribeAndGetTokens(s.T(), s.client)
 
-	_, err := s.client.Unsubscribe(s.T().Context(), &appv1.UnsubscribeRequest{Token: unsubToken})
+	_, err := s.client.Unsubscribe(s.T().Context(), &subscriptionv1.UnsubscribeRequest{Token: unsubToken})
 	s.Require().NoError(err)
 
 	var count int
@@ -40,21 +40,21 @@ func (s *GRPCUnsubscribeSuite) TestSuccess() {
 }
 
 func (s *GRPCUnsubscribeSuite) TestInvalidTokenLength_InvalidArgument() {
-	_, err := s.client.Unsubscribe(s.T().Context(), &appv1.UnsubscribeRequest{Token: "tooshort"})
+	_, err := s.client.Unsubscribe(s.T().Context(), &subscriptionv1.UnsubscribeRequest{Token: "tooshort"})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
 func (s *GRPCUnsubscribeSuite) TestUnknownToken_NotFound() {
-	_, err := s.client.Unsubscribe(s.T().Context(), &appv1.UnsubscribeRequest{Token: randomHex64()})
+	_, err := s.client.Unsubscribe(s.T().Context(), &subscriptionv1.UnsubscribeRequest{Token: randomHex64()})
 	s.Equal(codes.NotFound, status.Code(err))
 }
 
 func (s *GRPCUnsubscribeSuite) TestAlreadyUnsubscribed_NotFound() {
 	_, unsubToken := grpcSubscribeAndGetTokens(s.T(), s.client)
 
-	_, err := s.client.Unsubscribe(s.T().Context(), &appv1.UnsubscribeRequest{Token: unsubToken})
+	_, err := s.client.Unsubscribe(s.T().Context(), &subscriptionv1.UnsubscribeRequest{Token: unsubToken})
 	s.Require().NoError(err)
 
-	_, err = s.client.Unsubscribe(s.T().Context(), &appv1.UnsubscribeRequest{Token: unsubToken})
+	_, err = s.client.Unsubscribe(s.T().Context(), &subscriptionv1.UnsubscribeRequest{Token: unsubToken})
 	s.Equal(codes.NotFound, status.Code(err))
 }

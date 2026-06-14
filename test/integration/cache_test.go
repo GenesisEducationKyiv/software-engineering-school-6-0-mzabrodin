@@ -69,8 +69,6 @@ func (s *CacheSuite) TestGetMissReturnsNotFound() {
 	s.Empty(val)
 }
 
-// TestGetAfterClose exercises the graceful-fallthrough error branch the GitHub
-// client relies on: an unusable client must return an error, not panic.
 func (s *CacheSuite) TestGetAfterClose() {
 	const key = "cache:after-close"
 

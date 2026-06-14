@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/net/http2"
 
+	"github-release-notifier/internal/infrastructure/certgen"
 	"github-release-notifier/internal/infrastructure/logging"
+	"github-release-notifier/internal/infrastructure/tlsconfig"
 	"github-release-notifier/internal/notifier"
-	"github-release-notifier/internal/notifier/adapter/emailerclient"
-	"github-release-notifier/internal/notifier/adapter/emailerserver"
-	"github-release-notifier/internal/notifier/certgen"
-	"github-release-notifier/internal/notifier/tlsconfig"
+	"github-release-notifier/internal/notifier/adapter/notifierclient"
+	"github-release-notifier/internal/notifier/adapter/notifierserver"
 )
 
 type mockEmailerMailer struct{ mock.Mock }
@@ -42,7 +42,7 @@ type EmailerGRPCSuite struct {
 	suite.Suite
 
 	mailer *mockEmailerMailer
-	client *emailerclient.Client
+	client *notifierclient.Client
 }
 
 func TestEmailerGRPCSuite(t *testing.T) {
@@ -54,22 +54,22 @@ func (s *EmailerGRPCSuite) SetupTest() {
 	s.Require().NoError(certgen.Write(dir))
 
 	serverCfg, err := tlsconfig.ServerTLS(
-		filepath.Join(dir, "server.crt"),
-		filepath.Join(dir, "server.key"),
+		filepath.Join(dir, "emailer.crt"),
+		filepath.Join(dir, "emailer.key"),
 		filepath.Join(dir, "ca.crt"),
 	)
 	s.Require().NoError(err)
 
 	clientCfg, err := tlsconfig.ClientTLS(
-		filepath.Join(dir, "client.crt"),
-		filepath.Join(dir, "client.key"),
+		filepath.Join(dir, "subscription.crt"),
+		filepath.Join(dir, "subscription.key"),
 		filepath.Join(dir, "ca.crt"),
 		"localhost",
 	)
 	s.Require().NoError(err)
 
 	s.mailer = &mockEmailerMailer{}
-	handler, err := emailerserver.NewHandler(emailerserver.NewServer(s.mailer, testLogger), testLogger)
+	handler, err := notifierserver.NewHandler(notifierserver.NewServer(s.mailer, testLogger), testLogger)
 	s.Require().NoError(err)
 
 	protocols := new(http.Protocols)
@@ -91,7 +91,7 @@ func (s *EmailerGRPCSuite) SetupTest() {
 
 	transport := &http2.Transport{TLSClientConfig: clientCfg}
 	httpClient := &http.Client{Transport: transport}
-	s.client = emailerclient.New(httpClient, "https://localhost:"+port, transport.CloseIdleConnections, testLogger)
+	s.client = notifierclient.New(httpClient, "https://localhost:"+port, transport.CloseIdleConnections, testLogger)
 
 	s.T().Cleanup(func() {
 		require.NoError(s.T(), s.client.Close())

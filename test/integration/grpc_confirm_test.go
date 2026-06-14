@@ -9,12 +9,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github-release-notifier/internal/subscription/grpc/gen/appv1"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1"
 )
 
 type GRPCConfirmSuite struct {
 	suite.Suite
-	client appv1.SubscriptionServiceClient
+	client subscriptionv1.SubscriptionServiceClient
 }
 
 func TestGRPCConfirmSuite(t *testing.T) {
@@ -29,7 +29,7 @@ func (s *GRPCConfirmSuite) SetupTest() {
 func (s *GRPCConfirmSuite) TestSuccess() {
 	confirmToken, _ := grpcSubscribeAndGetTokens(s.T(), s.client)
 
-	_, err := s.client.Confirm(s.T().Context(), &appv1.ConfirmRequest{Token: confirmToken})
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: confirmToken})
 	s.Require().NoError(err)
 
 	var confirmed bool
@@ -40,21 +40,21 @@ func (s *GRPCConfirmSuite) TestSuccess() {
 }
 
 func (s *GRPCConfirmSuite) TestInvalidTokenLength_InvalidArgument() {
-	_, err := s.client.Confirm(s.T().Context(), &appv1.ConfirmRequest{Token: "tooshort"})
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: "tooshort"})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
 func (s *GRPCConfirmSuite) TestUnknownToken_NotFound() {
-	_, err := s.client.Confirm(s.T().Context(), &appv1.ConfirmRequest{Token: randomHex64()})
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: randomHex64()})
 	s.Equal(codes.NotFound, status.Code(err))
 }
 
 func (s *GRPCConfirmSuite) TestAlreadyConfirmed_IsIdempotent() {
 	confirmToken, _ := grpcSubscribeAndGetTokens(s.T(), s.client)
 
-	_, err := s.client.Confirm(s.T().Context(), &appv1.ConfirmRequest{Token: confirmToken})
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: confirmToken})
 	s.Require().NoError(err)
 
-	_, err = s.client.Confirm(s.T().Context(), &appv1.ConfirmRequest{Token: confirmToken})
+	_, err = s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: confirmToken})
 	s.NoError(err)
 }

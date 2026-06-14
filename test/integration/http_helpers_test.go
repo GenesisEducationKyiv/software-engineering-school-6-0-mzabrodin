@@ -13,14 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestHTTPServer serves the unified public handler.
-// REST requests are transcoded onto the connect handler by Vanguard.
 func newTestHTTPServer(t *testing.T, repoExists bool) *httptest.Server {
 	t.Helper()
 	return newTestServer(t, repoExists)
 }
 
-// doRequest is a thin helper that sends an HTTP request and returns the response.
 func doRequest(t *testing.T, method, url, body, apiKey string) *http.Response {
 	t.Helper()
 	var bodyReader io.Reader = http.NoBody
@@ -51,8 +48,6 @@ func doRequest(t *testing.T, method, url, body, apiKey string) *http.Response {
 	return resp
 }
 
-// subscribeAndGetTokens subscribes testEmail to testRepoName via HTTP and returns the
-// confirmation and unsubscribe tokens by reading them directly from the test database.
 func subscribeAndGetTokens(t *testing.T, srv *httptest.Server) (confirmToken, unsubToken string) {
 	t.Helper()
 	body := `{"email":"` + testEmail + `","repo":"` + testRepoName + `"}`
@@ -66,7 +61,6 @@ func subscribeAndGetTokens(t *testing.T, srv *httptest.Server) (confirmToken, un
 	return
 }
 
-// decodeJSON decodes a JSON response into the destination object and fails the test if an error occurs.
 func decodeJSON(t *testing.T, resp *http.Response, dst any) {
 	t.Helper()
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(dst))

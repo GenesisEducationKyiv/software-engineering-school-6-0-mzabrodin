@@ -9,12 +9,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github-release-notifier/internal/subscription/grpc/gen/appv1"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1"
 )
 
 type GRPCSubscribeSuite struct {
 	suite.Suite
-	client appv1.SubscriptionServiceClient
+	client subscriptionv1.SubscriptionServiceClient
 }
 
 func TestGRPCSubscribeSuite(t *testing.T) {
@@ -28,7 +28,7 @@ func (s *GRPCSubscribeSuite) SetupTest() {
 
 func (s *GRPCSubscribeSuite) TestSuccess() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	_, err := s.client.Subscribe(ctx, &appv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
+	_, err := s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
 	s.Require().NoError(err)
 
 	var email, repo string
@@ -46,50 +46,50 @@ func (s *GRPCSubscribeSuite) TestSuccess() {
 
 func (s *GRPCSubscribeSuite) TestNoAPIKey_Unauthenticated() {
 	_, err := s.client.Subscribe(s.T().Context(),
-		&appv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
+		&subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
 	s.Equal(codes.Unauthenticated, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestWrongAPIKey_Unauthenticated() {
 	ctx := grpcAuthCtx(s.T().Context(), "wrong-key")
-	_, err := s.client.Subscribe(ctx, &appv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
+	_, err := s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
 	s.Equal(codes.Unauthenticated, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestEmptyEmail_InvalidArgument() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	_, err := s.client.Subscribe(ctx, &appv1.SubscribeRequest{Email: "", Repo: testRepoName})
+	_, err := s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: "", Repo: testRepoName})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestInvalidEmail_InvalidArgument() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	_, err := s.client.Subscribe(ctx, &appv1.SubscribeRequest{Email: "notanemail", Repo: testRepoName})
+	_, err := s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: "notanemail", Repo: testRepoName})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestEmptyRepo_InvalidArgument() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	_, err := s.client.Subscribe(ctx, &appv1.SubscribeRequest{Email: testEmail, Repo: ""})
+	_, err := s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: ""})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestInvalidRepo_InvalidArgument() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	_, err := s.client.Subscribe(ctx, &appv1.SubscribeRequest{Email: testEmail, Repo: "noslash"})
+	_, err := s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: "noslash"})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestRepoNotOnGitHub_NotFound() {
 	client := newTestGRPCClient(s.T(), false)
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	_, err := client.Subscribe(ctx, &appv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
+	_, err := client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
 	s.Equal(codes.NotFound, status.Code(err))
 }
 
 func (s *GRPCSubscribeSuite) TestDuplicate_AlreadyExists() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
-	req := &appv1.SubscribeRequest{Email: testEmail, Repo: testRepoName}
+	req := &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName}
 
 	_, err := s.client.Subscribe(ctx, req)
 	s.Require().NoError(err)
