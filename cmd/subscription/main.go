@@ -10,7 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github-release-notifier/internal/bootstrap/server"
+	"github-release-notifier/internal/bootstrap/subscription"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/logging"
 )
@@ -45,5 +45,5 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return server.Run(ctx, cfg, log)
+	return subscription.Run(ctx, cfg, log)
 }
