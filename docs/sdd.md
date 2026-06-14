@@ -334,16 +334,18 @@ Returns typed sentinel errors so callers handle each case explicitly:
 | `ErrUnauthorized` | Invalid or missing token                         |
 | `ErrNoRelease`    | Repository has no releases yet                   |
 
-### Emailer service (`cmd/emailer`, `internal/notifier/adapter/{emailerserver,mailer}`)
+### Emailer service (`cmd/emailer`, `internal/notifier/adapter/{notifierconsumer,mailer}`)
 
-SMTP delivery runs as a separate gRPC service ([ADR-009](adr/009-microservices-split.md)). `emailerserver`
-exposes `notifier.v1.NotifierService` over mTLS and forwards to the `mailer`: a go-mail SMTP client behind an in-process
-dispatch queue (see [ADR-006](adr/006-mailer-dispatch-queue.md)) — a single dispatcher goroutine consumes a buffered job
-channel and dials one SMTP connection per batch. The app calls it through the `emailerclient` outbound adapter, which
-satisfies the same `subscribe` and release-notifier ports the in-process mailer used to. `SendConfirmation` stays
-fire-and-forget (the RPC runs on a background goroutine); `SendReleaseNotifications` is synchronous and reports a
-transport failure as every recipient failing so the app (in the `scan` use case) does not advance `last_seen_tag`.
-The table below is the `mailer` port the emailer server wraps:
+SMTP delivery runs as a separate service that consumes email commands off a NATS JetStream broker
+([ADR-009](adr/009-microservices-split.md)). `notifierconsumer` subscribes to the `email.confirmation` and
+`email.release` subjects, re-runs protovalidate on each decoded protobuf command, and forwards to the `mailer`:
+a go-mail SMTP client behind an in-process dispatch queue (see [ADR-006](adr/006-mailer-dispatch-queue.md)) —
+a single dispatcher goroutine consumes a buffered job channel and dials one SMTP connection per batch. The app
+publishes those commands through the `notifierpublisher` outbound adapter, which satisfies the same `subscribe`
+and release-notifier ports the in-process mailer used to. `SendConfirmation` stays fire-and-forget (the publication
+runs on a background goroutine); `SendReleaseNotifications` reports success once JetStream durably acks the
+publication, and a publication failure as every recipient failing, so the app (in the `scan` use case) does not advance
+`last_seen_tag` on a command that was never enqueued. The table below is the `mailer` port the consumer drives:
 
 | Method                     | Trigger     | Mode                                             | Returns              |
 |----------------------------|-------------|--------------------------------------------------|----------------------|
@@ -395,22 +397,24 @@ Prometheus counters and histograms registered at package init:
 Configuration is read from environment variables via `envconfig`, split into `config.Load()` for the app,
 `config.LoadScanner()` for the scanner, and `config.LoadEmailer()` for the emailer. The app consumes single
 connection URLs (`DATABASE_URL`, `REDIS_URL`); under Docker Compose those are assembled from `DB_*` / `REDIS_*`
-component variables. The `SMTP_*` variables live on the emailer; all three binaries read the `TLS_*` mTLS paths
-(mounting the client / server / server cert respectively for subscription / scanner / emailer).
+component variables. The `SMTP_*` variables live on the emailer. The subscription app and scanner read the
+`TLS_*` mTLS paths (mounting the client / server cert respectively); the emailer talks to the broker, not mTLS
+gRPC, so it needs no certificate.
 
 Subscription app (`cmd/subscription`):
 
-| Variable                                         | Default                      | Required | Description                                                 |
-|--------------------------------------------------|------------------------------|----------|-------------------------------------------------------------|
-| `PORT`                                           | `8080`                       | –        | Single public port                                          |
-| `BASE_URL`                                       | `http://localhost:8080`      | –        | Base for confirm/unsubscribe links                          |
-| `GITHUB_TOKEN`                                   | –                            | –        | Raises GitHub rate limit to 5 000/hr                        |
-| `SCANNER_ADDR` / `EMAILER_ADDR`                  | `localhost:50051` / `:50052` | –        | Scanner + emailer addresses (host must match each cert SAN) |
-| `SCAN_INTERVAL`                                  | `10m`                        | –        | How often the app runs a scan pass                          |
-| `DATABASE_URL` / `REDIS_URL`                     | –                            | yes      | PostgreSQL and Redis connection URLs                        |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –                            | yes      | App **client** cert/key + shared CA (mTLS)                  |
-| `API_KEY`                                        | –                            | –        | Protects write/read endpoints (off if empty)                |
-| `LOG_LEVEL`                                      | `info`                       | –        | `debug` / `info` / `warn` / `error`                         |
+| Variable                                         | Default                 | Required | Description                                    |
+|--------------------------------------------------|-------------------------|----------|------------------------------------------------|
+| `PORT`                                           | `8080`                  | –        | Single public port                             |
+| `BASE_URL`                                       | `http://localhost:8080` | –        | Base for confirm/unsubscribe links             |
+| `GITHUB_TOKEN`                                   | –                       | –        | Raises GitHub rate limit to 5 000/hr           |
+| `SCANNER_ADDR`                                   | `localhost:50051`       | –        | Scanner address (host must match its cert SAN) |
+| `NATS_URL`                                       | `nats://localhost:4222` | –        | Broker the app publishes email commands to     |
+| `SCAN_INTERVAL`                                  | `10m`                   | –        | How often the app runs a scan pass             |
+| `DATABASE_URL` / `REDIS_URL`                     | –                       | yes      | PostgreSQL and Redis connection URLs           |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –                       | yes      | App **client** cert/key + shared CA (mTLS)     |
+| `API_KEY`                                        | –                       | –        | Protects write/read endpoints (off if empty)   |
+| `LOG_LEVEL`                                      | `info`                  | –        | `debug` / `info` / `warn` / `error`            |
 
 Scanner (`cmd/scanner`):
 
@@ -426,13 +430,13 @@ Scanner (`cmd/scanner`):
 
 Emailer (`cmd/emailer`):
 
-| Variable                                                  | Default          | Required | Description                               |
-|-----------------------------------------------------------|------------------|----------|-------------------------------------------|
-| `EMAILER_GRPC_PORT` / `EMAILER_HTTP_PORT`                 | `50052` / `8081` | –        | gRPC (mTLS) and metrics/health HTTP ports |
-| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | –                | yes      | SMTP credentials and from address         |
-| `SMTP_PORT`                                               | `587`            | –        | SMTP port                                 |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE`          | –                | yes      | Emailer **server** cert/key + shared CA   |
-| `LOG_LEVEL`                                               | `info`           | –        | `debug` / `info` / `warn` / `error`       |
+| Variable                                                  | Default                 | Required | Description                               |
+|-----------------------------------------------------------|-------------------------|----------|-------------------------------------------|
+| `NATS_URL`                                                | `nats://localhost:4222` | –        | Broker the emailer consumes commands from |
+| `EMAILER_HTTP_PORT`                                       | `8081`                  | –        | Metrics/health HTTP port                  |
+| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | –                       | yes      | SMTP credentials and from address         |
+| `SMTP_PORT`                                               | `587`                   | –        | SMTP port                                 |
+| `LOG_LEVEL`                                               | `info`                  | –        | `debug` / `info` / `warn` / `error`       |
 
 The Docker Compose–only variables (`DB_*`, `REDIS_*`, `ES_*`, `KIBANA_PORT`, `PROMETHEUS_PORT`, `GRAFANA_*`) are listed
 in the README.
