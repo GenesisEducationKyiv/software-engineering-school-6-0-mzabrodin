@@ -1,4 +1,4 @@
-package server_test
+package subscription_test
 
 import (
 	"context"
@@ -17,13 +17,13 @@ import (
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/net/http2"
 
-	"github-release-notifier/internal/bootstrap/server"
+	"github-release-notifier/internal/bootstrap/subscription"
 	"github-release-notifier/internal/shared/entity"
 	"github-release-notifier/internal/shared/github"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 	"github-release-notifier/internal/subscription/domain"
-	"github-release-notifier/internal/subscription/grpc/gen/appv1"
-	"github-release-notifier/internal/subscription/grpc/gen/appv1/appv1connect"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1/subscriptionv1connect"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
@@ -93,7 +93,7 @@ func (s *HandlerSuite) SetupTest() {
 	s.list = &mockLister{}
 
 	svc := connectapi.NewService(s.subscribe, s.confirm, s.unsubscribe, s.list, testLogger)
-	handler, err := server.NewHandler(svc, testKey, testLogger)
+	handler, err := subscription.NewHandler(svc, testKey, testLogger)
 	s.Require().NoError(err)
 
 	ts := httptest.NewUnstartedServer(handler)
@@ -136,8 +136,7 @@ func (s *HandlerSuite) doREST(method, path, body, key string) *http.Response {
 	return resp
 }
 
-// connectClient dials the handler over cleartext HTTP/2 with the gRPC protocol.
-func (s *HandlerSuite) connectClient() appv1connect.SubscriptionServiceClient {
+func (s *HandlerSuite) connectClient() subscriptionv1connect.SubscriptionServiceClient {
 	httpClient := &http.Client{
 		Transport: &http2.Transport{
 			AllowHTTP: true,
@@ -148,7 +147,7 @@ func (s *HandlerSuite) connectClient() appv1connect.SubscriptionServiceClient {
 		},
 	}
 
-	return appv1connect.NewSubscriptionServiceClient(httpClient, s.server.URL, connect.WithGRPC())
+	return subscriptionv1connect.NewSubscriptionServiceClient(httpClient, s.server.URL, connect.WithGRPC())
 }
 
 func (s *HandlerSuite) TestREST_Subscribe_Success() {
@@ -221,9 +220,8 @@ func (s *HandlerSuite) TestREST_Confirm() {
 }
 
 func (s *HandlerSuite) TestREST_List_WrappedShape() {
-	tag := "v1.0.0"
 	s.list.On("Execute", mock.Anything, mock.Anything).Return(list.Output{Views: []*domain.SubscriptionView{
-		{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: &tag},
+		{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: new("v1.0.0")},
 	}}, nil)
 
 	resp := s.doREST(http.MethodGet, "/api/subscriptions?email=user@example.com", "", testKey)
@@ -256,7 +254,7 @@ func (s *HandlerSuite) TestREST_List_EmptyRendersArray() {
 func (s *HandlerSuite) TestGRPC_Subscribe_Success_MatchesREST() {
 	s.subscribe.On("Execute", mock.Anything, mock.Anything).Return(subscribe.Output{}, nil)
 
-	req := connect.NewRequest(&appv1.SubscribeRequest{Email: "user@example.com", Repo: "owner/repo"})
+	req := connect.NewRequest(&subscriptionv1.SubscribeRequest{Email: "user@example.com", Repo: "owner/repo"})
 	req.Header().Set("Authorization", "Bearer "+testKey)
 
 	resp, err := s.connectClient().Subscribe(s.T().Context(), req)
@@ -265,7 +263,7 @@ func (s *HandlerSuite) TestGRPC_Subscribe_Success_MatchesREST() {
 }
 
 func (s *HandlerSuite) TestGRPC_Subscribe_NoKey_Unauthenticated() {
-	req := connect.NewRequest(&appv1.SubscribeRequest{Email: "user@example.com", Repo: "owner/repo"})
+	req := connect.NewRequest(&subscriptionv1.SubscribeRequest{Email: "user@example.com", Repo: "owner/repo"})
 
 	_, err := s.connectClient().Subscribe(s.T().Context(), req)
 	s.Equal(connect.CodeUnauthenticated, connect.CodeOf(err))

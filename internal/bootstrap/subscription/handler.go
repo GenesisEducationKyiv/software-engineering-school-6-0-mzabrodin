@@ -1,4 +1,4 @@
-package server
+package subscription
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/logging"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
-	"github-release-notifier/internal/subscription/grpc/gen/appv1/appv1connect"
+	"github-release-notifier/internal/subscription/grpc/gen/subscriptionv1/subscriptionv1connect"
 )
 
 func NewHandler(svc *connectapi.Service, apiKey string, log *slog.Logger) (http.Handler, error) {
@@ -23,7 +23,7 @@ func NewHandler(svc *connectapi.Service, apiKey string, log *slog.Logger) (http.
 
 	transcoder, err := vanguard.NewTranscoder([]*vanguard.Service{
 		vanguard.NewService(
-			appv1connect.SubscriptionServiceName,
+			subscriptionv1connect.SubscriptionServiceName,
 			connectHandler,
 			vanguard.WithTargetCodecs(vanguard.CodecProto),
 		),
@@ -36,11 +36,11 @@ func NewHandler(svc *connectapi.Service, apiKey string, log *slog.Logger) (http.
 	mux.Handle("/", transcoder)
 
 	healthPath, healthHandler := grpchealth.NewHandler(
-		grpchealth.NewStaticChecker(appv1connect.SubscriptionServiceName),
+		grpchealth.NewStaticChecker(subscriptionv1connect.SubscriptionServiceName),
 	)
 	mux.Handle(healthPath, healthHandler)
 
-	reflector := grpcreflect.NewStaticReflector(appv1connect.SubscriptionServiceName)
+	reflector := grpcreflect.NewStaticReflector(subscriptionv1connect.SubscriptionServiceName)
 	reflectV1Path, reflectV1Handler := grpcreflect.NewHandlerV1(reflector)
 	reflectV1AlphaPath, reflectV1AlphaHandler := grpcreflect.NewHandlerV1Alpha(reflector)
 	mux.Handle(reflectV1Path, reflectV1Handler)
