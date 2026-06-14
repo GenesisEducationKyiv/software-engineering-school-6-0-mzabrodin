@@ -95,15 +95,17 @@ func serve(ctx context.Context, grpcSrv, metricsSrv *http.Server, log *slog.Logg
 
 	select {
 	case err := <-serverError:
+		gracefulShutdown(grpcSrv, metricsSrv, log)
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
 		log.Info("shutting down")
+		gracefulShutdown(grpcSrv, metricsSrv, log)
 	}
 
-	return gracefulShutdown(grpcSrv, metricsSrv, log)
+	return nil
 }
 
-func gracefulShutdown(grpcSrv, metricsSrv *http.Server, log *slog.Logger) error {
+func gracefulShutdown(grpcSrv, metricsSrv *http.Server, log *slog.Logger) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
@@ -116,6 +118,4 @@ func gracefulShutdown(grpcSrv, metricsSrv *http.Server, log *slog.Logger) error 
 	}
 
 	log.Info("scanner stopped")
-
-	return nil
 }

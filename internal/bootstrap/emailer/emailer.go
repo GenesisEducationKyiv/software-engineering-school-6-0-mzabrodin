@@ -8,15 +8,22 @@ import (
 	"net/http"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/config"
-	"github-release-notifier/internal/infrastructure/tlsconfig"
+	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/adapter/mailer"
-	"github-release-notifier/internal/notifier/adapter/notifierserver"
+	"github-release-notifier/internal/notifier/adapter/notifierconsumer"
 )
 
-const shutdownTimeout = 5 * time.Second
+const (
+	shutdownTimeout = 5 * time.Second
+
+	confirmationConsumer = "emailer-confirmation"
+	releaseConsumer      = "emailer-release"
+)
 
 func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error {
 	mail, err := mailer.NewMailer(
@@ -31,25 +38,32 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 		return fmt.Errorf("create mailer: %w", err)
 	}
 
-	tlsCfg, err := tlsconfig.ServerTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
+	validator, err := protovalidate.New()
 	if err != nil {
-		return fmt.Errorf("build emailer tls config: %w", err)
+		return fmt.Errorf("create validator: %w", err)
 	}
 
-	handler, err := notifierserver.NewHandler(notifierserver.NewServer(mail, log), log)
+	conn, err := broker.Connect(cfg.NATSURL, log)
 	if err != nil {
-		return fmt.Errorf("create emailer handler: %w", err)
+		return fmt.Errorf("connect broker: %w", err)
+	}
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Warn("failed to close broker", "error", err)
+		}
+	}()
+	log.Info("broker connected", "url", cfg.NATSURL)
+
+	if err := conn.EnsureStream(ctx, notifier.StreamEmail,
+		[]string{notifier.SubjectConfirmation, notifier.SubjectRelease}); err != nil {
+		return fmt.Errorf("ensure stream: %w", err)
 	}
 
-	protocols := new(http.Protocols)
-	protocols.SetHTTP2(true)
+	consumer := notifierconsumer.New(mail, validator, log)
 
-	apiSrv := &http.Server{
-		Addr:              ":" + cfg.GRPCPort,
-		Handler:           handler,
-		TLSConfig:         tlsCfg,
-		ReadHeaderTimeout: shutdownTimeout,
-		Protocols:         protocols,
+	stop, err := startConsumers(ctx, conn, consumer)
+	if err != nil {
+		return fmt.Errorf("start consumers: %w", err)
 	}
 
 	metricsSrv := &http.Server{
@@ -58,7 +72,28 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 		ReadHeaderTimeout: shutdownTimeout,
 	}
 
-	return serve(ctx, apiSrv, metricsSrv, mail, log)
+	return serve(ctx, metricsSrv, stop, mail, log)
+}
+
+func startConsumers(ctx context.Context, conn *broker.Conn, consumer *notifierconsumer.Consumer) (func(), error) {
+	stopConfirm, err := conn.Consume(ctx, notifier.StreamEmail, confirmationConsumer,
+		notifier.SubjectConfirmation, consumer.HandleConfirmation)
+	if err != nil {
+		return nil, fmt.Errorf("consume confirmations: %w", err)
+	}
+
+	stopRelease, err := conn.Consume(ctx, notifier.StreamEmail, releaseConsumer,
+		notifier.SubjectRelease, consumer.HandleRelease)
+	if err != nil {
+		stopConfirm()
+
+		return nil, fmt.Errorf("consume releases: %w", err)
+	}
+
+	return func() {
+		stopConfirm()
+		stopRelease()
+	}, nil
 }
 
 func metricsHandler() http.Handler {
@@ -74,19 +109,12 @@ func metricsHandler() http.Handler {
 
 func serve(
 	ctx context.Context,
-	apiSrv *http.Server,
 	metricsSrv *http.Server,
+	stopConsumers func(),
 	mail *mailer.Mailer,
 	log *slog.Logger,
 ) error {
-	serverError := make(chan error, 2)
-
-	go func() {
-		log.Info("server started", "server", "grpc", "addr", apiSrv.Addr)
-		if err := apiSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverError <- err
-		}
-	}()
+	serverError := make(chan error, 1)
 
 	go func() {
 		log.Info("server started", "server", "metrics", "addr", metricsSrv.Addr)
@@ -97,26 +125,26 @@ func serve(
 
 	select {
 	case err := <-serverError:
+		gracefulShutdown(metricsSrv, stopConsumers, mail, log)
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
 		log.Info("shutting down")
+		gracefulShutdown(metricsSrv, stopConsumers, mail, log)
 	}
 
-	return gracefulShutdown(apiSrv, metricsSrv, mail, log)
+	return nil
 }
 
 func gracefulShutdown(
-	apiSrv *http.Server,
 	metricsSrv *http.Server,
+	stopConsumers func(),
 	mail *mailer.Mailer,
 	log *slog.Logger,
-) error {
+) {
+	stopConsumers()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	if err := apiSrv.Shutdown(shutdownCtx); err != nil {
-		log.Warn("failed to shut down server", "server", "grpc", "error", err)
-	}
 
 	if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
 		log.Warn("failed to shut down server", "server", "metrics", "error", err)
@@ -124,7 +152,5 @@ func gracefulShutdown(
 
 	mail.Shutdown(shutdownCtx)
 
-	log.Info("server stopped")
-
-	return nil
+	log.Info("emailer stopped")
 }

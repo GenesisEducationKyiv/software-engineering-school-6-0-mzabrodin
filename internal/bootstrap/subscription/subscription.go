@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/net/http2"
 
+	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/cache"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
@@ -17,8 +18,9 @@ import (
 	"github-release-notifier/internal/infrastructure/scheduler"
 	"github-release-notifier/internal/infrastructure/tlsconfig"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
+	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/adapter/mailer"
-	"github-release-notifier/internal/notifier/adapter/notifierclient"
+	"github-release-notifier/internal/notifier/adapter/notifierpublisher"
 	"github-release-notifier/internal/scanner/adapter/scannerclient"
 	"github-release-notifier/internal/shared/github"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
@@ -56,13 +58,26 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 
 	gh := github.NewClient(cfg.GitHubToken, log).WithCache(redisCache, 10*time.Minute)
 
-	notifierCli, err := newNotifierClient(cfg, log)
+	brokerConn, err := broker.Connect(cfg.NATSURL, log)
 	if err != nil {
-		return err
+		return fmt.Errorf("connect broker: %w", err)
 	}
 	defer func() {
-		if err := notifierCli.Close(); err != nil {
-			log.Warn("failed to close notifier client", "error", err)
+		if err := brokerConn.Close(); err != nil {
+			log.Warn("failed to close broker", "error", err)
+		}
+	}()
+	log.Info("broker connected", "url", cfg.NATSURL)
+
+	if err := brokerConn.EnsureStream(ctx, notifier.StreamEmail,
+		[]string{notifier.SubjectConfirmation, notifier.SubjectRelease}); err != nil {
+		return fmt.Errorf("ensure stream: %w", err)
+	}
+
+	notifierPub := notifierpublisher.New(brokerConn, log)
+	defer func() {
+		if err := notifierPub.Close(); err != nil {
+			log.Warn("failed to close notifier publisher", "error", err)
 		}
 	}()
 
@@ -79,9 +94,9 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	repos := repository.NewGitHubRepoRepository(pool)
 	subs := repository.NewSubscriptionRepository(pool)
 	urls := urlbuilder.New(cfg.BaseURL)
-	releaseNotifier := mailer.NewReleaseNotifier(notifierCli, urls, log)
+	releaseNotifier := mailer.NewReleaseNotifier(notifierPub, urls, log)
 
-	ucs := buildUseCases(repos, subs, gh, notifierCli, releaseNotifier, urls, log)
+	ucs := buildUseCases(repos, subs, gh, notifierPub, releaseNotifier, urls, log)
 	svc := connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
 
 	publicSrv, err := newPublicServer(cfg, svc, log)
@@ -131,15 +146,6 @@ func newPublicServer(cfg *config.Config, svc *connectapi.Service, log *slog.Logg
 		ReadHeaderTimeout: shutdownTimeout,
 		Protocols:         protocols,
 	}, nil
-}
-
-func newNotifierClient(cfg *config.Config, log *slog.Logger) (*notifierclient.Client, error) {
-	httpClient, closer, err := mtlsClient(cfg.TLS)
-	if err != nil {
-		return nil, fmt.Errorf("build notifier tls config: %w", err)
-	}
-
-	return notifierclient.New(httpClient, "https://"+cfg.EmailerAddr, closer, log), nil
 }
 
 func newScannerClient(cfg *config.Config, log *slog.Logger) (*scannerclient.Client, error) {
@@ -216,7 +222,7 @@ func buildUseCases(
 	repos *repository.GitHubRepoRepository,
 	subs *repository.SubscriptionRepository,
 	gh *github.Client,
-	mail *notifierclient.Client,
+	mail *notifierpublisher.Publisher,
 	releaseNotifier *mailer.ReleaseNotifier,
 	urls *urlbuilder.URLBuilder,
 	log *slog.Logger,
