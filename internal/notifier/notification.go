@@ -2,6 +2,12 @@ package notifier
 
 import "github-release-notifier/internal/shared/entity"
 
+const (
+	StreamEmail         = "EMAIL"
+	SubjectConfirmation = "email.confirmation"
+	SubjectRelease      = "email.release"
+)
+
 // ReleaseNotification is the message the notifier delivers for a new release.
 type ReleaseNotification struct {
 	To             string
