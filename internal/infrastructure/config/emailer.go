@@ -16,11 +16,10 @@ type SMTPConfig struct {
 }
 
 type EmailerConfig struct {
-	GRPCPort string `envconfig:"EMAILER_GRPC_PORT" default:"50052"`
 	HTTPPort string `envconfig:"EMAILER_HTTP_PORT" default:"8081"`
+	NATSURL  string `envconfig:"NATS_URL"          default:"nats://localhost:4222"`
 	LogLevel string `envconfig:"LOG_LEVEL"         default:"info"`
 	SMTP     SMTPConfig
-	TLS      TLSConfig
 }
 
 func (c *EmailerConfig) SlogLevel() slog.Level {

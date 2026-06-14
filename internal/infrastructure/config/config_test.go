@@ -32,9 +32,6 @@ var requiredEmailerEnv = map[string]string{
 	"SMTP_USER":     "mailer",
 	"SMTP_PASSWORD": "secret",
 	"SMTP_FROM":     "noreply@example.com",
-	"TLS_CERT_FILE": "/certs/emailer.crt",
-	"TLS_KEY_FILE":  "/certs/emailer.key",
-	"TLS_CA_FILE":   "/certs/ca.crt",
 }
 
 type ConfigSuite struct {
@@ -91,7 +88,7 @@ func (s *ConfigSuite) TestLoadDefaults() {
 	s.Equal("8080", cfg.Port)
 	s.Equal("http://localhost:8080", cfg.BaseURL)
 	s.Equal("localhost:50051", cfg.ScannerAddr)
-	s.Equal("localhost:50052", cfg.EmailerAddr)
+	s.Equal("nats://localhost:4222", cfg.NATSURL)
 	s.Equal(10*time.Minute, cfg.ScanInterval)
 }
 
@@ -133,9 +130,8 @@ func (s *ConfigSuite) TestLoadEmailerAllRequiredSet() {
 
 	s.Equal(requiredEmailerEnv["SMTP_HOST"], cfg.SMTP.Host)
 	s.Equal(requiredEmailerEnv["SMTP_FROM"], cfg.SMTP.FromEmail)
-	s.Equal(requiredEmailerEnv["TLS_CERT_FILE"], cfg.TLS.CertFile)
 	s.Equal(587, cfg.SMTP.Port)
-	s.Equal("50052", cfg.GRPCPort)
+	s.Equal("nats://localhost:4222", cfg.NATSURL)
 	s.Equal("8081", cfg.HTTPPort)
 }
 
