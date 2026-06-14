@@ -29,9 +29,9 @@ func (m *mockSubs) GetConfirmedByRepoID(ctx context.Context, id uuid.UUID) ([]*e
 	return v, args.Error(1)
 }
 
-type mockFetcher struct{ mock.Mock }
+type mockScanner struct{ mock.Mock }
 
-func (m *mockFetcher) FetchLatestReleases(ctx context.Context, repos []string) ([]entity.ObservedRelease, error) {
+func (m *mockScanner) Scan(ctx context.Context, repos []string) ([]entity.ObservedRelease, error) {
 	args := m.Called(ctx, repos)
 	v, _ := args.Get(0).([]entity.ObservedRelease)
 	return v, args.Error(1)

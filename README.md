@@ -34,7 +34,7 @@ enforced in CI by golangci-lint `depguard`.
 | Module         | Package                                                                                           | Responsibility                                                                                                                                                                                           |
 |----------------|---------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `subscription` | `internal/subscription/{usecase/*,adapter/{connectrpc,repository}}`                               | Public API (`subscription.v1`) via one connect-go handler & Vanguard; owns the repos & subscriptions tables; drives the scan (`scan` use case) and owns the notify decision; dials the scanner + emailer |
-| `scanner`      | `internal/scanner/{usecase/scanner,adapter/{scannerserver,scannerclient}}`                        | A reactive GitHub-fetch service (the `cmd/scanner` service lives behind this); `FetchLatestReleases(repos)` over mTLS; owns its proto + server + client, like the notifier                               |
+| `scanner`      | `internal/scanner/{usecase/scanner,adapter/{scannerserver,scannerclient}}`                        | A reactive GitHub-fetch service (the `cmd/scanner` service lives behind this); `Scan(repos)` over mTLS; owns its proto + server + client, like the notifier                               |
 | `notifier`     | `internal/notifier/adapter/{notifierclient,notifierserver,mailer}`                                | Email delivery (the `cmd/emailer` service lives behind this); the app dials it through `notifierclient`                                                                                                  |
 | Shared kernel  | `internal/shared/{entity,github}`                                                                 | Cross-context domain types + constructors + sentinel errors; GitHub REST client                                                                                                                          |
 | Infrastructure | `internal/infrastructure/{config,db,cache,urlbuilder,logging,metrics,tlsconfig,certgen}`          | Env config, pgx pool + migrations, Redis, URL building, slog, Prometheus, mTLS config + cert gen                                                                                                         |
@@ -116,7 +116,7 @@ mTLS (`scanner.v1.ScannerService`). It makes no decision and never touches the d
 the scan on a configurable interval (`SCAN_INTERVAL`, default `10m`):
 
 1. The app lists its repositories with ≥1 confirmed subscriber (Postgres)
-2. The app calls `FetchLatestReleases(names)`; the scanner, with a pool of `SCAN_WORKERS` workers, calls
+2. The app calls `Scan(names)`; the scanner, with a pool of `SCAN_WORKERS` workers, calls
    `GetLatestRelease` per repo (Redis-cached) and returns the observed `{repo, tag, release_url}` batch
    (repos with no release are omitted; per-repo errors are isolated; a rate-limit/auth error aborts the pass)
 3. The app decides per repo: if `last_seen_tag` is NULL it seeds silently (the confirmation flow owns the current

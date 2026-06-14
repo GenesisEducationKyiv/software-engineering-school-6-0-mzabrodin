@@ -7,16 +7,16 @@ import "buf/validate/validate.proto";
 option go_package = "github-release-notifier/internal/scanner/grpc/gen/scannerv1;scannerv1";
 
 service ScannerService {
-  rpc FetchLatestReleases(FetchLatestReleasesRequest) returns (FetchLatestReleasesResponse);
+  rpc Scan(ScanRequest) returns (ScanResponse);
 }
 
-message FetchLatestReleasesRequest {
+message ScanRequest {
   repeated string repositories = 1 [
     (buf.validate.field).repeated.items.string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
   ];
 }
 
-message FetchLatestReleasesResponse {
+message ScanResponse {
   repeated ObservedRelease releases = 1;
 }
 

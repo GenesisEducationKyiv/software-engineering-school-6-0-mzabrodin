@@ -75,11 +75,11 @@ Two decisions were settled during implementation:
 
 The Scanner now runs as a third binary (`cmd/scanner`), a reactive GitHub-fetch service the app calls. The
 app (`cmd/subscription`) drives each pass: it lists its watched repos, calls
-`scanner.v1.ScannerService.FetchLatestReleases` over mTLS, then decides whom to notify. The scanner owns the
+`scanner.v1.ScannerService.Scan` over mTLS, then decides whom to notify. The scanner owns the
 GitHub client + Redis cache, makes no decision, and never touches Postgres or the emailer.
 
-- The scanner module owns its whole contract (fetch use case + `scannerserver` + `scannerclient`, stubs in
-  `internal/scanner/grpc/gen/scannerv1`); the app consumes the client via a `releaseFetcher` port wired in
+- The scanner module owns its whole contract (scan use case + `scannerserver` + `scannerclient`, stubs in
+  `internal/scanner/grpc/gen/scannerv1`); the app consumes the client via a `scanner` port wired in
   `bootstrap` — the same shape as the notifier.
 - Single-role certs: the app mounts a **client** cert (dials out only), the scanner and emailer each a **server**
   cert. No API key — mutual TLS is the authentication.
@@ -117,7 +117,7 @@ flowchart TB
     end
 
     Client -.->|HTTP / gRPC| API
-    API -->|fetch releases gRPC| Scanner
+    API -->|scan gRPC| Scanner
     API --> DB
     API --> Redis
     API -.-> GitHub

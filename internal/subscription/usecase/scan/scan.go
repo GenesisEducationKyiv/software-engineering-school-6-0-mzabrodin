@@ -21,8 +21,8 @@ type subscriptions interface {
 	GetConfirmedByRepoID(ctx context.Context, repoID uuid.UUID) ([]*entity.Subscription, error)
 }
 
-type releaseFetcher interface {
-	FetchLatestReleases(ctx context.Context, repos []string) ([]entity.ObservedRelease, error)
+type scanner interface {
+	Scan(ctx context.Context, repos []string) ([]entity.ObservedRelease, error)
 }
 
 type notifier interface {
@@ -36,13 +36,13 @@ type Output struct{}
 type UseCase struct {
 	repos    repositories
 	subs     subscriptions
-	fetcher  releaseFetcher
+	scanner  scanner
 	notifier notifier
 	log      *slog.Logger
 }
 
-func New(repos repositories, subs subscriptions, fetcher releaseFetcher, n notifier, log *slog.Logger) *UseCase {
-	return &UseCase{repos: repos, subs: subs, fetcher: fetcher, notifier: n, log: log.With("component", "scan")}
+func New(repos repositories, subs subscriptions, sc scanner, n notifier, log *slog.Logger) *UseCase {
+	return &UseCase{repos: repos, subs: subs, scanner: sc, notifier: n, log: log.With("component", "scan")}
 }
 
 func (uc *UseCase) Execute(ctx context.Context, _ Input) (Output, error) {
@@ -66,10 +66,10 @@ func (uc *UseCase) Execute(ctx context.Context, _ Input) (Output, error) {
 		byName[repo.Name] = repo
 	}
 
-	observed, err := uc.fetcher.FetchLatestReleases(ctx, names)
+	observed, err := uc.scanner.Scan(ctx, names)
 	if err != nil {
-		metrics.ScannerErrorsTotal.WithLabelValues("fetch_releases").Inc()
-		return Output{}, fmt.Errorf("fetch latest releases: %w", err)
+		metrics.ScannerErrorsTotal.WithLabelValues("scan").Inc()
+		return Output{}, fmt.Errorf("scan repositories: %w", err)
 	}
 
 	for _, rel := range observed {

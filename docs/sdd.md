@@ -73,7 +73,7 @@ flowchart LR
     subgraph scanner[cmd/scanner]
         direction TB
         ScannerServer[ScannerService server]
-        Fetcher[Fetcher]
+        Scanner[Scanner]
         ScanGHClient[GitHub Client]
     end
 
@@ -107,7 +107,7 @@ flowchart LR
     UC --> Repo & GHClient & NotifierClient
     Scheduler --> ScanUC
     ScanUC --> Repo & ScannerClient & NotifierClient
-    ScannerClient -->|mTLS gRPC| ScannerServer --> Fetcher --> ScanGHClient
+    ScannerClient -->|mTLS gRPC| ScannerServer --> Scanner --> ScanGHClient
     NotifierClient -->|mTLS gRPC| EmailerServer --> Mailer
     Repo --> DB
     GHClient --> Redis
@@ -187,7 +187,7 @@ sequenceDiagram
     Scheduler ->> App: Run
     App ->> DB: repos with confirmed subs
     DB -->> App: repos[] (with last_seen_tag)
-    App ->> Scanner: FetchLatestReleases(names)
+    App ->> Scanner: Scan(names)
     loop for each repo (worker pool)
         Scanner ->> GH: GetLatestRelease(owner, repo)
         GH -->> Scanner: Release / ErrNoRelease
