@@ -31,8 +31,8 @@ func (s *TLSConfigSuite) SetupSuite() {
 	s.Require().NoError(certgen.Write(s.dir))
 
 	s.caFile = filepath.Join(s.dir, "ca.crt")
-	s.serverCert = filepath.Join(s.dir, "emailer.crt")
-	s.serverKey = filepath.Join(s.dir, "emailer.key")
+	s.serverCert = filepath.Join(s.dir, "scanner.crt")
+	s.serverKey = filepath.Join(s.dir, "scanner.key")
 	s.clientCert = filepath.Join(s.dir, "subscription.crt")
 	s.clientKey = filepath.Join(s.dir, "subscription.key")
 }
@@ -47,10 +47,10 @@ func (s *TLSConfigSuite) TestServerTLS() {
 }
 
 func (s *TLSConfigSuite) TestClientTLS() {
-	cfg, err := tlsconfig.ClientTLS(s.clientCert, s.clientKey, s.caFile, "emailer")
+	cfg, err := tlsconfig.ClientTLS(s.clientCert, s.clientKey, s.caFile, "scanner")
 	s.Require().NoError(err)
 	s.Equal(uint16(tls.VersionTLS13), cfg.MinVersion)
-	s.Equal("emailer", cfg.ServerName)
+	s.Equal("scanner", cfg.ServerName)
 	s.NotNil(cfg.RootCAs)
 	s.Len(cfg.Certificates, 1)
 }
