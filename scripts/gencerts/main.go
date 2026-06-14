@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github-release-notifier/internal/notifier/certgen"
+	"github-release-notifier/internal/infrastructure/certgen"
 )
 
 func main() {
@@ -18,5 +18,5 @@ func main() {
 		log.Fatalf("gencerts: %v", err)
 	}
 
-	fmt.Printf("wrote ca.crt, server.crt/key and client.crt/key to %s\n", dir)
+	fmt.Printf("wrote ca.crt and subscription/scanner/emailer .crt/.key to %s\n", dir)
 }
