@@ -31,14 +31,14 @@ by bounded context, with clean-arch layers *inside* each module. Modules stay in
 imports another — they talk through consumer-defined ports wired in `cmd/` and `internal/bootstrap`),
 enforced in CI by golangci-lint `depguard`.
 
-| Module         | Package                                                                              | Responsibility                                                                                      |
-|----------------|--------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| `subscription` | `internal/subscription/{usecase/*,adapter/{connectrpc,repository}}`                  | Public API (`app.v1`) via one connect-go handler & Vanguard; owns the repos & subscriptions tables  |
-| `scanner`      | `internal/scanner/{usecase/scanner,scheduler}`                                       | Detect new releases on a ticker; notify confirmed subscribers                                       |
-| `notifier`     | `internal/notifier/{adapter/{emailerclient,emailerserver,mailer},tlsconfig,certgen}` | Email delivery (the `cmd/emailer` service lives behind this); mTLS for the app↔emailer link         |
-| Shared kernel  | `internal/shared/{entity,github}`                                                    | Cross-context domain types + constructors + sentinel errors; GitHub REST client                     |
-| Infrastructure | `internal/infrastructure/{config,db,cache,urlbuilder,logging,metrics}`               | Env config, pgx pool + migrations, Redis, URL building, slog, Prometheus                            |
-| Composition    | `internal/bootstrap/{server,emailer}`, `cmd/server/main.go`, `cmd/emailer/main.go`   | Cross-module wiring lives in `internal/bootstrap`; the `cmd/` mains just load config and call `Run` |
+| Module         | Package                                                                                           | Responsibility                                                                                                                                                                                           |
+|----------------|---------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `subscription` | `internal/subscription/{usecase/*,adapter/{connectrpc,repository}}`                               | Public API (`subscription.v1`) via one connect-go handler & Vanguard; owns the repos & subscriptions tables; drives the scan (`scan` use case) and owns the notify decision; dials the scanner + emailer |
+| `scanner`      | `internal/scanner/{usecase/scanner,adapter/{scannerserver,scannerclient}}`                        | A reactive GitHub-fetch service (the `cmd/scanner` service lives behind this); `Scan(repos)` over mTLS; owns its proto + server + client, like the notifier                               |
+| `notifier`     | `internal/notifier/adapter/{notifierclient,notifierserver,mailer}`                                | Email delivery (the `cmd/emailer` service lives behind this); the app dials it through `notifierclient`                                                                                                  |
+| Shared kernel  | `internal/shared/{entity,github}`                                                                 | Cross-context domain types + constructors + sentinel errors; GitHub REST client                                                                                                                          |
+| Infrastructure | `internal/infrastructure/{config,db,cache,urlbuilder,logging,metrics,tlsconfig,certgen}`          | Env config, pgx pool + migrations, Redis, URL building, slog, Prometheus, mTLS config + cert gen                                                                                                         |
+| Composition    | `internal/bootstrap/{subscription,scanner,emailer}`, `cmd/{subscription,scanner,emailer}/main.go` | Cross-module wiring lives in `internal/bootstrap`; the `cmd/` mains just load config and call `Run`                                                                                                      |
 
 ## Subscription flow
 
@@ -64,7 +64,7 @@ browser, which cannot set custom headers.
 
 ## API
 
-All four operations are defined once in `proto/app/v1/app.proto` and served by a single connect-go
+All four operations are defined once in `proto/subscription/v1/subscription.proto` and served by a single connect-go
 handler on `PORT` (default `8080`).
 
 ### REST (transcode by Vanguard)
@@ -82,7 +82,7 @@ All endpoints return `application/json`. Protected endpoints require an `Authori
 
 ### gRPC / Connect / gRPC-Web (same `PORT`)
 
-Service `app.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`. The same handler answers
+Service `subscription.v1.SubscriptionService` — contract in `proto/subscription/v1/subscription.proto`. The same handler answers
 the Connect, gRPC, and gRPC-Web protocols over h2c on the same port.
 
 | RPC                 | Auth                    | Description                     |
@@ -111,20 +111,17 @@ matching HTTP status for REST callers:
 
 ## Scanner
 
-A goroutine starts alongside the API server and runs on a configurable interval (`SCAN_INTERVAL`, default
-`10m`):
+The scanner (`cmd/scanner`) is a separate binary — a reactive GitHub-fetch service the app calls over
+mTLS (`scanner.v1.ScannerService`). It makes no decision and never touches the database. The app drives
+the scan on a configurable interval (`SCAN_INTERVAL`, default `10m`):
 
-1. Fetch all repositories that have at least one confirmed subscription
-2. For each repository (processed by a pool of `SCAN_WORKERS` workers):
-    - Call `GetLatestRelease` (served from Redis cache when warm)
-    - Skip if `tag == last_seen_tag` — no new release
-    - Fetch all confirmed subscribers for this repository
-    - Build notification objects (release URL + per-subscriber unsubscribe URL)
-    - Send batch emails over a single reused SMTP connection
-    - Update `last_seen_tag` in the database
-3. Record metrics: scan duration, notifications sent, error reasons
-
-Errors on individual repositories are logged and skipped — a broken repository never stops the scan of others.
+1. The app lists its repositories with ≥1 confirmed subscriber (Postgres)
+2. The app calls `Scan(names)`; the scanner, with a pool of `SCAN_WORKERS` workers, calls
+   `GetLatestRelease` per repo (Redis-cached) and returns the observed `{repo, tag, release_url}` batch
+   (repos with no release are omitted; per-repo errors are isolated; a rate-limit/auth error aborts the pass)
+3. The app decides per repo: if `last_seen_tag` is NULL it seeds silently (the confirmation flow owns the current
+   release); if the tag changed it emails the confirmed subscribers via the emailer and advances
+   `last_seen_tag` only on a successful sending
 
 ## GitHub API caching
 
@@ -187,7 +184,7 @@ Exposed at `/metrics`.
 | `subscription_operations_total`       | Counter   | operation, result         | Subscribe / confirm / unsubscribe / list outcomes                                                                |
 | `scanner_runs_total`                  | Counter   | —                         | Completed scan cycles                                                                                            |
 | `scanner_duration_seconds`            | Histogram | —                         | Time per scan cycle                                                                                              |
-| `scanner_errors_total`                | Counter   | reason                    | Scanner errors (fetch_repos / check_repo)                                                                        |
+| `scanner_errors_total`                | Counter   | reason                    | Scan errors (list_repos / parse_repo / fetch_release / report_releases / process_release)                        |
 | `notifications_sent_total`            | Counter   | —                         | Release emails dispatched                                                                                        |
 | `db_queries_total`                    | Counter   | operation, table          | Database queries                                                                                                 |
 | `db_query_errors_total`               | Counter   | operation, table          | Database infrastructure errors                                                                                   |
@@ -208,8 +205,8 @@ Exposed at `/metrics`.
 cp .env.example .env
 # Fill in GITHUB_TOKEN, SMTP_*, DB_*, REDIS_PASSWORD, GRAFANA_PASSWORD, API_KEY
 
-task certs                     # generate the app↔emailer mTLS certs into certs/ (prerequisite)
-task up-build                  # build the app and emailer images, then start the whole stack
+task certs                     # generate the mTLS certs (subscription/scanner/emailer) into certs/ (prerequisite)
+task up-build                  # build the images, then start the whole stack
 ```
 
 The app, the **emailer** service, PostgreSQL, Redis, and the observability stack start
@@ -229,23 +226,37 @@ task proto      # requires the buf CLI; regenerates each module's grpc/gen/ stub
 
 ## Environment variables
 
-### App (`cmd/server`)
+### Subscription app (`cmd/subscription`)
 
 | Variable        | Default                 | Required | Description                                                      |
 |-----------------|-------------------------|----------|------------------------------------------------------------------|
 | `PORT`          | `8080`                  | —        | Single public port (REST + Connect + gRPC + gRPC-Web)            |
 | `BASE_URL`      | `http://localhost:8080` | —        | Used in confirmation/unsubscribe links                           |
 | `GITHUB_TOKEN`  | —                       | —        | GitHub PAT (optional; raises rate limit to 5 000/hr)             |
-| `SCAN_INTERVAL` | `10m`                   | —        | How often the scanner checks for new releases                    |
-| `SCAN_WORKERS`  | `5`                     | —        | Concurrent workers per scan cycle                                |
-| `DATABASE_URL`  | —                       | **yes**  | PostgreSQL connection URL                                        |
-| `REDIS_URL`     | —                       | **yes**  | Redis connection URL                                             |
+| `SCANNER_ADDR`  | `localhost:50051`       | —        | Address of the scanner gRPC service (host must match a cert SAN) |
 | `EMAILER_ADDR`  | `localhost:50052`       | —        | Address of the emailer gRPC service (host must match a cert SAN) |
-| `TLS_CERT_FILE` | —                       | **yes**  | Path to the app's **client** certificate (mTLS)                  |
-| `TLS_KEY_FILE`  | —                       | **yes**  | Path to the app's client key                                     |
-| `TLS_CA_FILE`   | —                       | **yes**  | Path to the shared CA certificate                                |
+| `SCAN_INTERVAL` | `10m`                   | —        | How often the app runs a scan pass                               |
+| `DATABASE_URL`  | —                       | yes      | PostgreSQL connection URL                                        |
+| `REDIS_URL`     | —                       | yes      | Redis connection URL                                             |
+| `TLS_CERT_FILE` | —                       | yes      | Path to the app's **client** certificate (mTLS; dials out only)  |
+| `TLS_KEY_FILE`  | —                       | yes      | Path to the app's client key                                     |
+| `TLS_CA_FILE`   | —                       | yes      | Path to the shared CA certificate                                |
 | `API_KEY`       | —                       | —        | Key for protected endpoints (auth disabled if empty)             |
 | `LOG_LEVEL`     | `info`                  | —        | `debug` / `info` / `warn` / `error`                              |
+
+### Scanner (`cmd/scanner`)
+
+| Variable            | Default | Required | Description                                                 |
+|---------------------|---------|----------|-------------------------------------------------------------|
+| `SCANNER_GRPC_PORT` | `50051` | —        | mTLS gRPC port serving `ScannerService` (dialed by the app) |
+| `SCANNER_HTTP_PORT` | `8082`  | —        | Scanner metrics + health HTTP port                          |
+| `SCAN_WORKERS`      | `5`     | —        | Concurrent GitHub fetches per pass                          |
+| `GITHUB_TOKEN`      | —       | —        | GitHub PAT (optional; raises rate limit to 5 000/hr)        |
+| `REDIS_URL`         | —       | yes      | Redis connection URL (GitHub response cache)                |
+| `TLS_CERT_FILE`     | —       | yes      | Path to the scanner's **server** certificate (mTLS)         |
+| `TLS_KEY_FILE`      | —       | yes      | Path to the scanner's server key                            |
+| `TLS_CA_FILE`       | —       | yes      | Path to the shared CA certificate                           |
+| `LOG_LEVEL`         | `info`  | —        | `debug` / `info` / `warn` / `error`                         |
 
 ### Emailer (`cmd/emailer`)
 
@@ -253,17 +264,17 @@ task proto      # requires the buf CLI; regenerates each module's grpc/gen/ stub
 |---------------------|---------|----------|-----------------------------------------------------|
 | `EMAILER_GRPC_PORT` | `50052` | —        | Emailer gRPC listen port (mTLS)                     |
 | `EMAILER_HTTP_PORT` | `8081`  | —        | Emailer metrics + health HTTP port                  |
-| `SMTP_HOST`         | —       | **yes**  | SMTP server host                                    |
+| `SMTP_HOST`         | —       | yes      | SMTP server host                                    |
 | `SMTP_PORT`         | `587`   | —        | SMTP server port                                    |
-| `SMTP_USER`         | —       | **yes**  | SMTP username                                       |
-| `SMTP_PASSWORD`     | —       | **yes**  | SMTP password                                       |
-| `SMTP_FROM`         | —       | **yes**  | From address for outgoing emails                    |
-| `TLS_CERT_FILE`     | —       | **yes**  | Path to the emailer's **server** certificate (mTLS) |
-| `TLS_KEY_FILE`      | —       | **yes**  | Path to the emailer's server key                    |
-| `TLS_CA_FILE`       | —       | **yes**  | Path to the shared CA certificate                   |
+| `SMTP_USER`         | —       | yes      | SMTP username                                       |
+| `SMTP_PASSWORD`     | —       | yes      | SMTP password                                       |
+| `SMTP_FROM`         | —       | yes      | From address for outgoing emails                    |
+| `TLS_CERT_FILE`     | —       | yes      | Path to the emailer's **server** certificate (mTLS) |
+| `TLS_KEY_FILE`      | —       | yes      | Path to the emailer's server key                    |
+| `TLS_CA_FILE`       | —       | yes      | Path to the shared CA certificate                   |
 | `LOG_LEVEL`         | `info`  | —        | `debug` / `info` / `warn` / `error`                 |
 
-The internal app↔emailer link has **no `API_KEY`** — mutual TLS is the authentication.
+The internal links (app ↔ scanner, app ↔ emailer) have no `API_KEY` — mutual TLS is the authentication.
 
 ### Docker Compose only (build URLs and configure the stack)
 
@@ -324,7 +335,7 @@ task test-integration   # integration tests (requires Docker)
 
 Unit tests cover all packages with business logic — use cases, scanner, GitHub client (including cache behavior),
 mailer, and the connection adapter — with all external dependencies replaced by focused interface mocks. The
-`internal/bootstrap/server` tests drive the full Vanguard handler over both REST and gRPC. The suite runs with `-race`
+`internal/bootstrap/subscription` tests drive the full Vanguard handler over both REST and gRPC. The suite runs with `-race`
 in CI.
 
 Integration tests (under `test/integration`, behind the `integration` build tag) spin up real PostgreSQL and Redis via

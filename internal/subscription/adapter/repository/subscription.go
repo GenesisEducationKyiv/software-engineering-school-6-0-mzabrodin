@@ -92,22 +92,39 @@ func (r *SubscriptionRepository) GetConfirmedByRepoID(
 	return toSubscriptionEntities(collected), nil
 }
 
-func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) error {
+func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) (*entity.Subscription, string, error) {
 	ctx = metrics.WithDBOp(ctx, "confirm", "subscriptions")
 
-	result, err := r.pool.Exec(ctx, `
-		UPDATE subscriptions SET confirmed = true WHERE confirm_token = $1
+	rows, err := r.pool.Query(ctx, `
+		WITH target AS (
+			SELECT s.id, s.repository_id, s.email, s.unsubscribe_token, s.confirmed AS was_confirmed, r.name AS repo
+			FROM subscriptions s
+			JOIN repositories r ON r.id = s.repository_id
+			WHERE s.confirm_token = $1
+		), upd AS (
+			UPDATE subscriptions SET confirmed = true WHERE confirm_token = $1
+		)
+		SELECT id, repository_id, email, unsubscribe_token, was_confirmed, repo FROM target
 	`, token)
 
 	if err != nil {
-		return fmt.Errorf("confirm subscription: %w", err)
+		return nil, "", fmt.Errorf("confirm subscription: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
-		return entity.ErrNotFound
+	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[confirmRow])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", entity.ErrNotFound
 	}
 
-	return nil
+	if err != nil {
+		return nil, "", fmt.Errorf("confirm subscription: %w", err)
+	}
+
+	if row.WasConfirmed {
+		return nil, "", nil
+	}
+
+	return row.toEntity(), row.Repo, nil
 }
 
 func (r *SubscriptionRepository) Delete(ctx context.Context, token string) error {

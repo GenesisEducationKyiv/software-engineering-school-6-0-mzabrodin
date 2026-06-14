@@ -7,7 +7,7 @@ tasks:
       - go build ./...
 
   certs:
-    desc: Generate mTLS certificates for the app & emailer link into certs/
+    desc: Generate the mTLS certificates (subscription/scanner/emailer) into certs/
     cmds:
       - go run ./scripts/gencerts certs
 

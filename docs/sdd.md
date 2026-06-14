@@ -17,9 +17,11 @@
 
 ### Non-Functional Requirements
 
-1. The system is two Go binaries: the **app** (`cmd/server`) serves the HTTP REST API, the gRPC API, and the background
-   scanner; the **emailer** (`cmd/emailer`) owns SMTP and the mailer dispatch queue. The app reaches the emailer over
-   gRPC secured with **mTLS** (see [ADR-009](adr/009-microservices-split.md))
+1. The system is three Go binaries: the subscription app (`cmd/subscription`) serves the HTTP REST + gRPC API,
+   owns Postgres, the scan schedule, and the notification decision (the `scan` use case); the scanner
+   (`cmd/scanner`) is a reactive GitHub-fetch service; the emailer (`cmd/emailer`) owns SMTP and the mailer
+   dispatch queue. The app dials both — both internal links (subscription → scanner, subscription → emailer) are gRPC
+   secured with mTLS (see [ADR-009](adr/009-microservices-split.md))
 2. Code is organized as a hexagonal architecture (`entity` / `usecase` / `adapter` / `infrastructure`) so business logic
    is independent of transport and providers; both transports reuse the same use cases (see [ADR-008](adr/008-hexagonal-architecture.md), [ADR-005](adr/005-grpc-api-alongside-rest.md))
 3. GitHub API responses are cached in Redis with a 10-minute TTL to stay within rate limits (60 req/hour without a
@@ -55,16 +57,24 @@
 flowchart LR
     User([Client])
 
-    subgraph app[cmd/server]
+    subgraph app[cmd/subscription]
         direction TB
         HTTP[HTTP API]
         GRPC[gRPC API]
         UC[Use Cases]
         Scheduler[Scheduler]
-        Scanner[Scanner]
+        ScanUC[Scan Use Case]
+        ScannerClient[Scanner Client]
         Repo[Repository]
         GHClient[GitHub Client]
-        EmailerClient[Emailer Client]
+        NotifierClient[Notifier Client]
+    end
+
+    subgraph scanner[cmd/scanner]
+        direction TB
+        ScannerServer[ScannerService server]
+        Scanner[Scanner]
+        ScanGHClient[GitHub Client]
     end
 
     subgraph emailer[cmd/emailer]
@@ -94,17 +104,19 @@ flowchart LR
     User --> HTTP & GRPC
     HTTP --> UC
     GRPC --> UC
-    Scheduler --> Scanner
-    UC --> Repo & GHClient & EmailerClient
-    Scanner --> Repo & GHClient & EmailerClient
-    EmailerClient --> EmailerServer --> Mailer
-
+    UC --> Repo & GHClient & NotifierClient
+    Scheduler --> ScanUC
+    ScanUC --> Repo & ScannerClient & NotifierClient
+    ScannerClient -->|mTLS gRPC| ScannerServer --> Scanner --> ScanGHClient
+    NotifierClient -->|mTLS gRPC| EmailerServer --> Mailer
     Repo --> DB
     GHClient --> Redis
+    ScanGHClient --> Redis
     GHClient --> GHAPI
+    ScanGHClient --> GHAPI
     Mailer --> SMTP
-
     app -.-> obs
+    scanner -.-> obs
     emailer -.-> obs
 ```
 
@@ -124,7 +136,7 @@ sequenceDiagram
     participant UC as Subscribe use case
     participant GH as GitHub Client
     participant DB as PostgreSQL
-    participant EC as Emailer Client
+    participant EC as Notifier Client
     participant ES as Emailer Service
     User ->> API: POST /api/subscribe
     API ->> UC: Execute(email, repo)
@@ -160,34 +172,39 @@ sequenceDiagram
 
 ### Scanner Execution
 
-Repositories are processed by a bounded worker pool (`SCAN_WORKERS`). Per-repo
-errors are isolated; `ErrRateLimited` / `ErrUnauthorized` abort the whole pass.
+The app drives the scan and owns the decision (the `scan` use case); the scanner is a reactive service
+that only reads GitHub and returns what it saw, fanning out over a bounded worker pool (`SCAN_WORKERS`). Per-repo
+errors are isolated and omitted from the response; `ErrRateLimited` / `ErrUnauthorized` abort the pass.
 
 ```mermaid
 sequenceDiagram
     participant Scheduler
-    participant Scanner
+    participant App as App
     participant DB as PostgreSQL
+    participant Scanner as Scanner
     participant GH as GitHub Client
-    participant EC as Emailer Client
-    Scheduler ->> Scanner: Run
-    Scanner ->> DB: GetAllWithSubscriptions()
-    DB -->> Scanner: repos[]
-    loop for each repo
+    participant EC as Notifier Client
+    Scheduler ->> App: Run
+    App ->> DB: repos with confirmed subs
+    DB -->> App: repos[] (with last_seen_tag)
+    App ->> Scanner: Scan(names)
+    loop for each repo (worker pool)
         Scanner ->> GH: GetLatestRelease(owner, repo)
         GH -->> Scanner: Release / ErrNoRelease
-        alt new tag detected
-            Scanner ->> DB: GetConfirmedByRepoID(repoID)
-            DB -->> Scanner: subscribers[]
-            alt has subscribers
-                Scanner ->> EC: SendReleaseNotifications(batch)
-                EC -->> Scanner: BatchResult
-                Scanner ->> DB: UpdateLastSeenTag(repo, tag)
-            else no subscribers
-                Scanner ->> DB: UpdateLastSeenTag(repo, tag)
-            end
+    end
+    Scanner -->> App: observed[]
+    loop scan use case, for each observed repo
+        alt last_seen_tag NULL
+            App ->> DB: seed last_seen_tag (no email)
+        else tag changed
+            App ->> DB: GetConfirmedByRepoID(repoID)
+            DB -->> App: subscribers[]
+            App ->> EC: SendReleaseNotifications(batch)
+            EC -->> App: BatchResult
+            App ->> DB: UpdateLastSeenTag(repo, tag) on success
         end
     end
+    App -->> Scanner: ok
 ```
 
 ### Email Dispatch
@@ -196,15 +213,15 @@ The app never speaks SMTP. Both email paths cross the **gRPC + mTLS** link into 
 emailer service ([ADR-009](adr/009-microservices-split.md)), where they land on
 the in-process dispatch queue ([ADR-006](adr/006-mailer-dispatch-queue.md)). Confirmation
 sends are **fire-and-forget** (the app does not wait); release sends are synchronous and
-return a `BatchResult`. A transport failure on the release path is reported as **every
-recipient failing**, so the scanner does not advance `last_seen_tag` on a lost batch.
+return a `BatchResult`. A transport failure on the release path is reported as every
+recipient failing, so the app does not advance `last_seen_tag` on a lost batch.
 
 ```mermaid
 flowchart TD
-    subgraph appbin[cmd/server]
+    subgraph appbin[cmd/subscription]
         Sub[Subscribe]
-        Scan[Scanner]
-        EC[Emailer Client]
+        ScanUC[Scan Use Case]
+        EC[Notifier Client]
     end
 
     subgraph emailerbin[cmd/emailer]
@@ -214,13 +231,12 @@ flowchart TD
     end
 
     SMTP([SMTP Server])
-
-    Sub -- "SendConfirmation" --> EC
-    Scan -- "SendReleaseNotifications" --> EC
-    EC -- "gRPC" --> ES
+    Sub -- " SendConfirmation " --> EC
+    ScanUC -- " SendReleaseNotifications " --> EC
+    EC -- " gRPC " --> ES
     ES --> Queue
     Queue --> Disp
-    Disp -- "SMTP" --> SMTP
+    Disp -- " SMTP " --> SMTP
 ```
 
 The emailer server's `SendConfirmation` enqueues and returns immediately (an `OK` status
@@ -247,8 +263,8 @@ Chi router; maps domain errors to HTTP status codes; API-key middleware on prote
 
 ### gRPC API (`internal/subscription/adapter/grpc`)
 
-Service `app.v1.SubscriptionService` — contract in `proto/app/v1/app.proto`, generated with buf (
-`task proto`). The connection interceptor chain is observability → `Authorization: Bearer` auth → protovalidate
+Service `subscription.v1.SubscriptionService` — contract in `proto/subscription/v1/subscription.proto`, generated with
+buf (`task proto`). The connection interceptor chain is observability → `Authorization: Bearer` auth → protovalidate
 validation; server reflection and the gRPC health service are registered.
 
 | RPC                 | Auth                    | Description                     |
@@ -274,13 +290,13 @@ Transport-agnostic business logic. Each exposes `Execute(ctx, In) (Out, error)`,
 interfaces (implemented by adapters), and is optionally wrapped by `metrics.NewMetered`. Both transports share the same
 instances.
 
-| Use case      | Input       | Responsibility                                                                             |
-|---------------|-------------|--------------------------------------------------------------------------------------------|
-| `subscribe`   | email, repo | Validate `owner/repo`, check existence, persist with two random tokens, queue confirmation |
-| `confirm`     | token       | Mark the subscription confirmed                                                            |
-| `unsubscribe` | token       | Delete the subscription                                                                    |
-| `list`        | email       | Return all subscriptions for the email                                                     |
-| `scanner`     | –           | Periodic release detection (see below)                                                     |
+| Use case      | Input       | Responsibility                                                                                                                         |
+|---------------|-------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `subscribe`   | email, repo | Validate `owner/repo`, check existence, persist with two random tokens, queue confirmation                                             |
+| `confirm`     | token       | Mark the subscription confirmed; on a fresh confirm, deliver the repo's current release                                                |
+| `unsubscribe` | token       | Delete the subscription                                                                                                                |
+| `list`        | email       | Return all subscriptions for the email                                                                                                 |
+| `scan`        | –           | List watched repos → fetch latest releases via the scanner → per repo seed NULL silently / skip unchanged / notify + advance on change |
 
 ### Repository Layer (`internal/subscription/adapter/repository`)
 
@@ -291,19 +307,21 @@ Two structs backed by `pgxpool.Pool`:
 | `GitHubRepoRepository`   | `repositories`  | get by name, create, list-with-subscriptions, update `last_seen_tag` | `pgx.ErrNoRows` → `entity.ErrNotFound`                                                              |
 | `SubscriptionRepository` | `subscriptions` | create, confirm, list by email, get confirmed by repo, delete        | `pgx.ErrNoRows` → `entity.ErrNotFound`; unique `(email, repository_id)` → `entity.ErrAlreadyExists` |
 
-### Scanner (`internal/scanner/usecase/scanner`) + Scheduler (`internal/scanner/scheduler`)
+### Scanner (`internal/scanner`) + Scheduler (`internal/infrastructure/scheduler`)
 
-The `Scheduler` runs the scan once immediately, then every `SCAN_INTERVAL`. Scan behavior (see [ADR-007](adr/007-background-scanner.md)):
+The scanner is a separate binary (`cmd/scanner`) — a reactive GitHub-fetch service. The app's `Scheduler` runs the
+`scan` use case once immediately, then every `SCAN_INTERVAL`; the scanner only reads GitHub and returns what it saw,
+while the app makes every decision (see [ADR-007](adr/007-background-scanner.md), [ADR-009](adr/009-microservices-split.md)):
 
-| Concern          | Behavior                                                                              |
-|------------------|---------------------------------------------------------------------------------------|
-| Scheduling       | Run immediately on startup, then every `SCAN_INTERVAL`                                |
-| Work set         | Repositories with ≥1 confirmed subscriber                                             |
-| Concurrency      | `errgroup` bounded to `SCAN_WORKERS`                                                  |
-| Detection        | Compare latest release tag with `last_seen_tag`; skip if unchanged or no release      |
-| Per-repo errors  | Logged + `scanner_errors_total`; the pass continues                                   |
-| Abort conditions | `ErrRateLimited` / `ErrUnauthorized` cancel the whole pass                            |
-| Tag update       | After a batch with ≥1 successful send (or immediately when a repo has no subscribers) |
+| Concern          | Owner   | Behavior                                                                              |
+|------------------|---------|---------------------------------------------------------------------------------------|
+| Scheduling       | app     | Run immediately on startup, then every `SCAN_INTERVAL`                                |
+| Work set         | app     | List repositories with ≥1 confirmed subscriber (Postgres), call the scanner           |
+| Concurrency      | scanner | `errgroup` bounded to `SCAN_WORKERS`; return `{repo, tag, release_url}` batch         |
+| Per-repo errors  | scanner | Logged + `scanner_errors_total`; omitted from the response, the pass continues        |
+| Abort conditions | scanner | `ErrRateLimited` / `ErrUnauthorized` cancel the whole pass                            |
+| Detection        | app     | Compare observed tag with `last_seen_tag`; NULL → seed silently; skip if unchanged    |
+| Tag update       | app     | After a batch with ≥1 successful send (or immediately when a repo has no subscribers) |
 
 ### GitHub Client (`internal/shared/github`)
 
@@ -319,18 +337,18 @@ Returns typed sentinel errors so callers handle each case explicitly:
 ### Emailer service (`cmd/emailer`, `internal/notifier/adapter/{emailerserver,mailer}`)
 
 SMTP delivery runs as a separate gRPC service ([ADR-009](adr/009-microservices-split.md)). `emailerserver`
-exposes `emailer.v1.EmailerService` over mTLS and forwards to the `mailer`: a go-mail SMTP client behind an in-process
+exposes `notifier.v1.NotifierService` over mTLS and forwards to the `mailer`: a go-mail SMTP client behind an in-process
 dispatch queue (see [ADR-006](adr/006-mailer-dispatch-queue.md)) — a single dispatcher goroutine consumes a buffered job
 channel and dials one SMTP connection per batch. The app calls it through the `emailerclient` outbound adapter, which
 satisfies the same `subscribe` and release-notifier ports the in-process mailer used to. `SendConfirmation` stays
 fire-and-forget (the RPC runs on a background goroutine); `SendReleaseNotifications` is synchronous and reports a
-transport failure as every recipient failing so the scanner does not advance `last_seen_tag`. The table below is the
-`mailer` port the emailer server wraps:
+transport failure as every recipient failing so the app (in the `scan` use case) does not advance `last_seen_tag`.
+The table below is the `mailer` port the emailer server wraps:
 
 | Method                     | Trigger     | Mode                                             | Returns              |
 |----------------------------|-------------|--------------------------------------------------|----------------------|
 | `SendConfirmation`         | Subscribe   | Async, fire-and-forget (`context.WithoutCancel`) | –                    |
-| `SendReleaseNotifications` | Scanner     | Enqueue batch, block for the result              | `entity.BatchResult` |
+| `SendReleaseNotifications` | scan        | Enqueue batch, block for the result              | `entity.BatchResult` |
 | `Shutdown`                 | Server stop | Drain the queue within a bounded context         | –                    |
 
 ### Cache (`internal/infrastructure/cache`)
@@ -374,24 +392,37 @@ Prometheus counters and histograms registered at package init:
 
 ### Config (`internal/infrastructure/config`)
 
-Configuration is read from environment variables via `envconfig`, split into `config.Load()` for the app and
-`config.LoadEmailer()` for the emailer. The app consumes single connection URLs (`DATABASE_URL`, `REDIS_URL`); under
-Docker Compose those are assembled from `DB_*` / `REDIS_*` component variables. The `SMTP_*` variables moved to the
-emailer; both binaries read the `TLS_*` mTLS paths (mounting client vs. server certs respectively).
+Configuration is read from environment variables via `envconfig`, split into `config.Load()` for the app,
+`config.LoadScanner()` for the scanner, and `config.LoadEmailer()` for the emailer. The app consumes single
+connection URLs (`DATABASE_URL`, `REDIS_URL`); under Docker Compose those are assembled from `DB_*` / `REDIS_*`
+component variables. The `SMTP_*` variables live on the emailer; all three binaries read the `TLS_*` mTLS paths
+(mounting the client / server / server cert respectively for subscription / scanner / emailer).
 
-App (`cmd/server`):
+Subscription app (`cmd/subscription`):
 
-| Variable                                         | Default                       | Required | Description                                  |
-|--------------------------------------------------|-------------------------------|----------|----------------------------------------------|
-| `PORT`                                           | `8080`                        | –        | Single public port                           |
-| `BASE_URL`                                       | `http://localhost:8080`       | –        | Base for confirm/unsubscribe links           |
-| `GITHUB_TOKEN`                                   | –                             | –        | Raises GitHub rate limit to 5 000/hr         |
-| `SCAN_INTERVAL` / `SCAN_WORKERS`                 | `10m` / `5`                   | –        | Scan cycle interval and concurrency          |
-| `DATABASE_URL` / `REDIS_URL`                     | –                             | yes      | PostgreSQL and Redis connection URLs         |
-| `EMAILER_ADDR`                                   | `localhost:50052`             | –        | Emailer address (host must match a cert SAN) |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –                             | yes      | App **client** cert/key + shared CA (mTLS)   |
-| `API_KEY`                                        | –                             | –        | Protects write/read endpoints (off if empty) |
-| `LOG_LEVEL`                                      | `info`                        | –        | `debug` / `info` / `warn` / `error`          |
+| Variable                                         | Default                      | Required | Description                                                 |
+|--------------------------------------------------|------------------------------|----------|-------------------------------------------------------------|
+| `PORT`                                           | `8080`                       | –        | Single public port                                          |
+| `BASE_URL`                                       | `http://localhost:8080`      | –        | Base for confirm/unsubscribe links                          |
+| `GITHUB_TOKEN`                                   | –                            | –        | Raises GitHub rate limit to 5 000/hr                        |
+| `SCANNER_ADDR` / `EMAILER_ADDR`                  | `localhost:50051` / `:50052` | –        | Scanner + emailer addresses (host must match each cert SAN) |
+| `SCAN_INTERVAL`                                  | `10m`                        | –        | How often the app runs a scan pass                          |
+| `DATABASE_URL` / `REDIS_URL`                     | –                            | yes      | PostgreSQL and Redis connection URLs                        |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –                            | yes      | App **client** cert/key + shared CA (mTLS)                  |
+| `API_KEY`                                        | –                            | –        | Protects write/read endpoints (off if empty)                |
+| `LOG_LEVEL`                                      | `info`                       | –        | `debug` / `info` / `warn` / `error`                         |
+
+Scanner (`cmd/scanner`):
+
+| Variable                                         | Default | Required | Description                                    |
+|--------------------------------------------------|---------|----------|------------------------------------------------|
+| `SCANNER_GRPC_PORT`                              | `50051` | –        | mTLS `ScannerService` port (dialed by the app) |
+| `SCANNER_HTTP_PORT`                              | `8082`  | –        | Metrics + health port                          |
+| `SCAN_WORKERS`                                   | `5`     | –        | GitHub fetch concurrency per pass              |
+| `GITHUB_TOKEN`                                   | –       | –        | Raises GitHub rate limit to 5 000/hr           |
+| `REDIS_URL`                                      | –       | yes      | Redis connection URL (GitHub cache)            |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` / `TLS_CA_FILE` | –       | yes      | Scanner **server** cert/key + shared CA (mTLS) |
+| `LOG_LEVEL`                                      | `info`  | –        | `debug` / `info` / `warn` / `error`            |
 
 Emailer (`cmd/emailer`):
 

@@ -13,8 +13,16 @@ import (
 var requiredEnv = map[string]string{
 	"DATABASE_URL":  "postgres://user:pass@localhost:5432/db",
 	"REDIS_URL":     "redis://localhost:6379",
-	"TLS_CERT_FILE": "/certs/client.crt",
-	"TLS_KEY_FILE":  "/certs/client.key",
+	"TLS_CERT_FILE": "/certs/subscription.crt",
+	"TLS_KEY_FILE":  "/certs/subscription.key",
+	"TLS_CA_FILE":   "/certs/ca.crt",
+}
+
+// requiredScannerEnv lists every variable marked required:"true" in ScannerConfig.
+var requiredScannerEnv = map[string]string{
+	"REDIS_URL":     "redis://localhost:6379",
+	"TLS_CERT_FILE": "/certs/scanner.crt",
+	"TLS_KEY_FILE":  "/certs/scanner.key",
 	"TLS_CA_FILE":   "/certs/ca.crt",
 }
 
@@ -24,8 +32,8 @@ var requiredEmailerEnv = map[string]string{
 	"SMTP_USER":     "mailer",
 	"SMTP_PASSWORD": "secret",
 	"SMTP_FROM":     "noreply@example.com",
-	"TLS_CERT_FILE": "/certs/server.crt",
-	"TLS_KEY_FILE":  "/certs/server.key",
+	"TLS_CERT_FILE": "/certs/emailer.crt",
+	"TLS_KEY_FILE":  "/certs/emailer.key",
 	"TLS_CA_FILE":   "/certs/ca.crt",
 }
 
@@ -37,8 +45,6 @@ func TestConfigSuite(t *testing.T) {
 	suite.Run(t, new(ConfigSuite))
 }
 
-// setEnv sets every entry of env for the duration of the current (sub)test.
-// t.Setenv restores the previous value automatically on cleanup.
 func (s *ConfigSuite) setEnv(env map[string]string) {
 	for k, v := range env {
 		s.T().Setenv(k, v)
@@ -84,8 +90,38 @@ func (s *ConfigSuite) TestLoadDefaults() {
 
 	s.Equal("8080", cfg.Port)
 	s.Equal("http://localhost:8080", cfg.BaseURL)
-	s.Equal(10*time.Minute, cfg.ScanInterval)
+	s.Equal("localhost:50051", cfg.ScannerAddr)
 	s.Equal("localhost:50052", cfg.EmailerAddr)
+	s.Equal(10*time.Minute, cfg.ScanInterval)
+}
+
+func (s *ConfigSuite) TestLoadScannerDefaults() {
+	s.setEnv(requiredScannerEnv)
+
+	cfg, err := config.LoadScanner()
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+
+	s.Equal(5, cfg.WorkerCount)
+	s.Equal("50051", cfg.GRPCPort)
+	s.Equal("8082", cfg.HTTPPort)
+}
+
+func (s *ConfigSuite) TestLoadScannerMissingRequired() {
+	for missing := range requiredScannerEnv {
+		s.Run(missing, func() {
+			for k, v := range requiredScannerEnv {
+				if k == missing {
+					continue
+				}
+				s.T().Setenv(k, v)
+			}
+
+			cfg, err := config.LoadScanner()
+			s.Require().Error(err)
+			s.Nil(cfg)
+		})
+	}
 }
 
 func (s *ConfigSuite) TestLoadEmailerAllRequiredSet() {

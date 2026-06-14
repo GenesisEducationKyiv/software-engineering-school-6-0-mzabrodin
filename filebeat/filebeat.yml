@@ -12,17 +12,16 @@ filebeat.inputs:
           host: "unix:///var/run/docker.sock"
 
 processors:
-  # Ship only the application stack.
   - drop_event:
       when:
         not:
           regexp:
-            container.name: "^github_release_notifier_(app|emailer|postgres|redis)$"
+            container.name: "^github_release_notifier_(subscription|scanner|emailer|postgres|redis)$"
 
   - decode_json_fields:
       when:
         regexp:
-          container.name: "^github_release_notifier_(app|emailer)$"
+          container.name: "^github_release_notifier_(subscription|scanner|emailer)$"
       fields: ["message"]
       target: ""
       overwrite_keys: true
@@ -31,13 +30,11 @@ processors:
   - drop_fields:
       when:
         regexp:
-          container.name: "^github_release_notifier_(app|emailer)$"
+          container.name: "^github_release_notifier_(subscription|scanner|emailer)$"
       ignore_missing: true
       fields:
         - message
 
-  # Strip boilerplate and redundant identifiers we never query.
-  # @timestamp already comes from the container parser, so the slog `time` field is a duplicate.
   - drop_fields:
       ignore_missing: true
       fields:

@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github-release-notifier/internal/bootstrap/server"
+	"github-release-notifier/internal/bootstrap/subscription"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
+	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/github"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 	"github-release-notifier/internal/subscription/adapter/repository"
 	"github-release-notifier/internal/subscription/usecase/confirm"
@@ -40,10 +42,27 @@ func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, 
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockGitHub) GetLatestRelease(ctx context.Context, owner, repo string) (*entity.Release, error) {
+	args := m.Called(ctx, owner, repo)
+	rel, _ := args.Get(0).(*entity.Release)
+	return rel, args.Error(1)
+}
+
 type mockConfirmationNotifier struct{ mock.Mock }
 
 func (m *mockConfirmationNotifier) SendConfirmation(_ context.Context, email, repo, url string) {
 	m.Called(email, repo, url)
+}
+
+type mockReleaseNotifier struct{ mock.Mock }
+
+func (m *mockReleaseNotifier) Notify(
+	_ context.Context,
+	subs []*entity.Subscription,
+	repo *entity.Repository,
+	release *entity.Release,
+) error {
+	return m.Called(subs, repo, release).Error(0)
 }
 
 type testUseCases struct {
@@ -53,15 +72,17 @@ type testUseCases struct {
 	list        *list.UseCase
 }
 
-// newTestUseCases builds the four use cases against testPool with a mocked GitHub
-// (RepoExists -> repoExists) and a no-op confirmation app. Shared by the HTTP
-// and gRPC test servers, which differ only in the handler that wraps these.
 func newTestUseCases(repoExists bool) testUseCases {
 	gh := &mockGitHub{}
 	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(repoExists, nil).Maybe()
+	gh.On("GetLatestRelease", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, github.ErrNoRelease).Maybe()
 
 	notifier := &mockConfirmationNotifier{}
 	notifier.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	releaseNotifier := &mockReleaseNotifier{}
+	releaseNotifier.On("Notify", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	repos := repository.NewGitHubRepoRepository(testPool)
 	subs := repository.NewSubscriptionRepository(testPool)
@@ -69,7 +90,7 @@ func newTestUseCases(repoExists bool) testUseCases {
 
 	return testUseCases{
 		subscribe:   subscribe.New(repos, subs, gh, notifier, urls, testLogger),
-		confirm:     confirm.New(subs, testLogger),
+		confirm:     confirm.New(subs, gh, releaseNotifier, testLogger),
 		unsubscribe: unsubscribe.New(subs, testLogger),
 		list:        list.New(subs),
 	}
@@ -81,7 +102,7 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	uc := newTestUseCases(repoExists)
 	svc := connectapi.NewService(uc.subscribe, uc.confirm, uc.unsubscribe, uc.list, testLogger)
 
-	handler, err := server.NewHandler(svc, testAPIKey, testLogger)
+	handler, err := subscription.NewHandler(svc, testAPIKey, testLogger)
 	require.NoError(t, err)
 
 	srv := httptest.NewUnstartedServer(handler)
@@ -94,14 +115,12 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 	return srv
 }
 
-// truncateAll removes all rows between tests so each test starts with a clean DB.
 func truncateAll(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(t.Context(), "TRUNCATE subscriptions, repositories CASCADE")
 	require.NoError(t, err)
 }
 
-// randomHex64 returns a syntactically valid 64-char hex token that does not exist in the DB.
 func randomHex64() string {
 	return strings.Repeat("ab", 32)
 }

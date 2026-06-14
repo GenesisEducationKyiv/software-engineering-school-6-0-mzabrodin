@@ -9,8 +9,9 @@ RUN go mod download
 
 # Copy source code and build binaries
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server && \
-    CGO_ENABLED=0 GOOS=linux go build -o emailer ./cmd/emailer
+RUN CGO_ENABLED=0 GOOS=linux go build -o subscription ./cmd/subscription && \
+    CGO_ENABLED=0 GOOS=linux go build -o emailer ./cmd/emailer && \
+    CGO_ENABLED=0 GOOS=linux go build -o scanner ./cmd/scanner
 
 # Stage 2: Run
 FROM alpine:3.23.3
@@ -22,12 +23,13 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates tzdata && \
     addgroup -S app && adduser -S -G app -h /app app
 
-COPY --from=builder --chown=app:app /app/server .
+COPY --from=builder --chown=app:app /app/subscription .
 COPY --from=builder --chown=app:app /app/emailer .
+COPY --from=builder --chown=app:app /app/scanner .
 COPY --from=builder --chown=app:app /app/migrations ./migrations
 
 USER app
 
 EXPOSE 8080
 
-CMD ["./server"]
+CMD ["./subscription"]

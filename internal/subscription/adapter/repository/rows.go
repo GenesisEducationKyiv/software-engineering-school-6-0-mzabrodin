@@ -49,6 +49,25 @@ func (row *subscriptionRow) toEntity() *entity.Subscription {
 	}
 }
 
+type confirmRow struct {
+	ID               uuid.UUID `db:"id"`
+	RepositoryID     uuid.UUID `db:"repository_id"`
+	Email            string    `db:"email"`
+	UnsubscribeToken string    `db:"unsubscribe_token"`
+	WasConfirmed     bool      `db:"was_confirmed"`
+	Repo             string    `db:"repo"`
+}
+
+func (row *confirmRow) toEntity() *entity.Subscription {
+	return &entity.Subscription{
+		ID:               row.ID,
+		RepositoryID:     row.RepositoryID,
+		Email:            row.Email,
+		UnsubscribeToken: row.UnsubscribeToken,
+		Confirmed:        true,
+	}
+}
+
 type subscriptionViewRow struct {
 	Email       string  `db:"email"`
 	Repo        string  `db:"repo"`

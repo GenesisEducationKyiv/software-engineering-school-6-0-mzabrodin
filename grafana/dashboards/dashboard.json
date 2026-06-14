@@ -231,7 +231,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "id": 102,
-      "title": "Scanner",
+      "title": "Scan Pass",
       "type": "row"
     },
     {
@@ -250,7 +250,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Scanner errors by reason: fetch_repos (failed to load repository list) or check_repo (failed to process a specific repository).",
+      "description": "Scanner errors by reason. From the subscription scan pass: list_repos (failed to load the repository list), scan (the scanner RPC call failed), process_release (failed to process one repo's release). From the scanner service: parse_repo (invalid repo name), fetch_release (GitHub fetch failed).",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
         "overrides": []
@@ -357,7 +357,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Redis operation rate by type (get, set) and result (hit, miss, error, success).",
+      "description": "Redis operation rate by service (job), type (get, set), and result (hit, miss, error, success).",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "ops" },
         "overrides": []
@@ -365,7 +365,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 42 },
       "id": 40,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(cache_operations_total[$__rate_interval])) by (operation, result)", "legendFormat": "{{operation}} {{result}}" }],
+      "targets": [{ "expr": "sum(rate(cache_operations_total[$__rate_interval])) by (job, operation, result)", "legendFormat": "{{job}} {{operation}} {{result}}" }],
       "title": "Cache Operation Rate",
       "type": "timeseries"
     },
@@ -391,7 +391,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "p99 Redis operation duration by operation type.",
+      "description": "p99 Redis operation duration by service (job) and operation type.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
         "overrides": []
@@ -399,7 +399,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 42 },
       "id": 42,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(cache_operation_duration_seconds_bucket[$__rate_interval])) by (le, operation))", "legendFormat": "p99 {{operation}}" }],
+      "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(cache_operation_duration_seconds_bucket[$__rate_interval])) by (le, job, operation))", "legendFormat": "p99 {{job}} {{operation}}" }],
       "title": "Cache Latency p99",
       "type": "timeseries"
     },
@@ -470,7 +470,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "GitHub API request rate by operation (repo_exists, latest_release) and result.",
+      "description": "GitHub API request rate by service (job), operation (repo_exists from subscription, latest_release from scanner), and result.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
         "overrides": []
@@ -478,7 +478,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 60 },
       "id": 60,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(github_api_requests_total[$__rate_interval])) by (operation, result)", "legendFormat": "{{operation}} {{result}}" }],
+      "targets": [{ "expr": "sum(rate(github_api_requests_total[$__rate_interval])) by (job, operation, result)", "legendFormat": "{{job}} {{operation}} {{result}}" }],
       "title": "GitHub API Rate",
       "type": "timeseries"
     },
@@ -492,13 +492,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 60 },
       "id": 61,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(github_api_errors_total[$__rate_interval])) by (type)", "legendFormat": "{{type}}" }],
+      "targets": [{ "expr": "sum(rate(github_api_errors_total[$__rate_interval])) by (job, type)", "legendFormat": "{{job}} {{type}}" }],
       "title": "GitHub API Errors by Type",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "GitHub API response time at the 50th and 99th percentile, by operation.",
+      "description": "GitHub API response time at the 50th and 99th percentile, by service (job) and operation.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
         "overrides": []
@@ -507,8 +507,8 @@
       "id": 62,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum(rate(github_api_request_duration_seconds_bucket[$__rate_interval])) by (le, operation))", "legendFormat": "p99 {{operation}}" },
-        { "expr": "histogram_quantile(0.50, sum(rate(github_api_request_duration_seconds_bucket[$__rate_interval])) by (le, operation))", "legendFormat": "p50 {{operation}}" }
+        { "expr": "histogram_quantile(0.99, sum(rate(github_api_request_duration_seconds_bucket[$__rate_interval])) by (le, job, operation))", "legendFormat": "p99 {{job}} {{operation}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(github_api_request_duration_seconds_bucket[$__rate_interval])) by (le, job, operation))", "legendFormat": "p50 {{job}} {{operation}}" }
       ],
       "title": "GitHub API Latency (p50/p99)",
       "type": "timeseries"
@@ -628,6 +628,64 @@
       ],
       "title": "Emailer Latency (p50/p99)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 86 },
+      "id": 110,
+      "title": "Scanner Service",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Per-second request rate on the internal app→scanner link, by RPC procedure.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 87 },
+      "id": 111,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Scanner Request Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Ratio of non-ok responses to total requests on the scanner link, per RPC procedure.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] },
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 87 },
+      "id": 112,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_scanner\",code!=\"ok\"}[$__rate_interval])) by (procedure) / sum(rate(requests_total{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Scanner Error Rate (non-ok)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Scanner response time at the 50th and 99th percentile, by RPC procedure.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 87 },
+      "id": 113,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p99 {{procedure}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_scanner\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p50 {{procedure}}" }
+      ],
+      "title": "Scanner Latency (p50/p99)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -651,5 +709,5 @@
   "timezone": "browser",
   "title": "GitHub Release Notifier",
   "uid": "github-release-notifier",
-  "version": 1
+  "version": 2
 }

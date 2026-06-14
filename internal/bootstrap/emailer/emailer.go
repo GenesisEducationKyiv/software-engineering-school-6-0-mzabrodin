@@ -11,9 +11,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github-release-notifier/internal/infrastructure/config"
-	"github-release-notifier/internal/notifier/adapter/emailerserver"
+	"github-release-notifier/internal/infrastructure/tlsconfig"
 	"github-release-notifier/internal/notifier/adapter/mailer"
-	"github-release-notifier/internal/notifier/tlsconfig"
+	"github-release-notifier/internal/notifier/adapter/notifierserver"
 )
 
 const shutdownTimeout = 5 * time.Second
@@ -36,7 +36,7 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 		return fmt.Errorf("build emailer tls config: %w", err)
 	}
 
-	handler, err := emailerserver.NewHandler(emailerserver.NewServer(mail, log), log)
+	handler, err := notifierserver.NewHandler(notifierserver.NewServer(mail, log), log)
 	if err != nil {
 		return fmt.Errorf("create emailer handler: %w", err)
 	}
