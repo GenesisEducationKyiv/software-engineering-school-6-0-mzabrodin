@@ -1,4 +1,4 @@
-package notifierserver
+package notifierconsumer
 
 import (
 	"github-release-notifier/internal/notifier"
