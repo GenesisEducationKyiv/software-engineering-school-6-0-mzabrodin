@@ -117,7 +117,7 @@ fabric.properties
 # Environment variables
 .env
 .env.subscription
-.env.emailer
+.env.notifier
 .env.scanner
 
 # Binary output

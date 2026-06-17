@@ -575,12 +575,12 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 77 },
       "id": 109,
-      "title": "Emailer",
+      "title": "Notifier",
       "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Per-second request rate on the internal app→emailer link, by RPC procedure.",
+      "description": "Per-second request rate on the internal app→notifier link, by RPC procedure.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
         "overrides": []
@@ -588,13 +588,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 78 },
       "id": 80,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
-      "title": "Emailer Request Rate",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_notifier\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Notifier Request Rate",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Ratio of non-ok responses to total requests on the emailer link, per RPC procedure.",
+      "description": "Ratio of non-ok responses to total requests on the notifier link, per RPC procedure.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -608,13 +608,13 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 78 },
       "id": 81,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_emailer\",code!=\"ok\"}[$__rate_interval])) by (procedure) / sum(rate(requests_total{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
-      "title": "Emailer Error Rate (non-ok)",
+      "targets": [{ "expr": "sum(rate(requests_total{job=\"github_release_notifier_notifier\",code!=\"ok\"}[$__rate_interval])) by (procedure) / sum(rate(requests_total{job=\"github_release_notifier_notifier\"}[$__rate_interval])) by (procedure)", "legendFormat": "{{procedure}}" }],
+      "title": "Notifier Error Rate (non-ok)",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Emailer response time at the 50th and 99th percentile, by RPC procedure.",
+      "description": "Notifier response time at the 50th and 99th percentile, by RPC procedure.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
         "overrides": []
@@ -623,10 +623,10 @@
       "id": 82,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p99 {{procedure}}" },
-        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_emailer\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p50 {{procedure}}" }
+        { "expr": "histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_notifier\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p99 {{procedure}}" },
+        { "expr": "histogram_quantile(0.50, sum(rate(request_duration_seconds_bucket{job=\"github_release_notifier_notifier\"}[$__rate_interval])) by (le, procedure))", "legendFormat": "p50 {{procedure}}" }
       ],
-      "title": "Emailer Latency (p50/p99)",
+      "title": "Notifier Latency (p50/p99)",
       "type": "timeseries"
     },
     {

@@ -1,4 +1,4 @@
-package emailer
+package notifier
 
 import (
 	"context"
@@ -20,11 +20,11 @@ import (
 const (
 	shutdownTimeout = bootstrap.ShutdownTimeout
 
-	confirmationConsumer = "emailer-confirmation"
-	releaseConsumer      = "emailer-release"
+	confirmationConsumer = "notifier-confirmation"
+	releaseConsumer      = "notifier-release"
 )
 
-func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error {
+func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) error {
 	mail, err := mailer.NewMailer(
 		cfg.SMTP.Host,
 		cfg.SMTP.Port,
@@ -125,5 +125,5 @@ func gracefulShutdown(metricsSrv *http.Server, log *slog.Logger) {
 		log.Warn("failed to shut down server", "server", "metrics", "error", err)
 	}
 
-	log.Info("emailer stopped")
+	log.Info("notifier stopped")
 }

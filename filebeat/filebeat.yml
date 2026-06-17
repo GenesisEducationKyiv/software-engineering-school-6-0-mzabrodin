@@ -16,12 +16,12 @@ processors:
       when:
         not:
           regexp:
-            container.name: "^github_release_notifier_(subscription|scanner|emailer|postgres|redis)$"
+            container.name: "^github_release_notifier_(subscription|scanner|notifier|postgres|redis)$"
 
   - decode_json_fields:
       when:
         regexp:
-          container.name: "^github_release_notifier_(subscription|scanner|emailer)$"
+          container.name: "^github_release_notifier_(subscription|scanner|notifier)$"
       fields: ["message"]
       target: ""
       overwrite_keys: true
@@ -30,7 +30,7 @@ processors:
   - drop_fields:
       when:
         regexp:
-          container.name: "^github_release_notifier_(subscription|scanner|emailer)$"
+          container.name: "^github_release_notifier_(subscription|scanner|notifier)$"
       ignore_missing: true
       fields:
         - message

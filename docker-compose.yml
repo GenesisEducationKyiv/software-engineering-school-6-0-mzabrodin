@@ -87,14 +87,14 @@ services:
         limits:
           memory: 256m
 
-  emailer:
+  notifier:
     <<: [ *service, *app-image ]
-    container_name: github_release_notifier_emailer
-    command: [ "./emailer" ]
+    container_name: github_release_notifier_notifier
+    command: [ "./notifier" ]
     env_file:
       - .env
     environment:
-      EMAILER_HTTP_PORT: "8081"
+      NOTIFIER_HTTP_PORT: "8081"
       NATS_URL: nats://nats:4222
     networks:
       - app_net
@@ -290,7 +290,7 @@ services:
     depends_on:
       subscription:
         condition: service_healthy
-      emailer:
+      notifier:
         condition: service_healthy
       scanner:
         condition: service_healthy

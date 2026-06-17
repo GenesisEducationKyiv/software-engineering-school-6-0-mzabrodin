@@ -17,13 +17,13 @@ import (
 	"github-release-notifier/internal/notifier/adapter/notifierpublisher"
 )
 
-type mockEmailerMailer struct{ mock.Mock }
+type mockNotifierMailer struct{ mock.Mock }
 
-func (m *mockEmailerMailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) {
+func (m *mockNotifierMailer) SendConfirmation(ctx context.Context, to, repo, confirmURL string) {
 	m.Called(ctx, to, repo, confirmURL)
 }
 
-func (m *mockEmailerMailer) SendReleaseNotifications(
+func (m *mockNotifierMailer) SendReleaseNotifications(
 	ctx context.Context,
 	notifications []notifier.ReleaseNotification,
 ) notifier.BatchResult {
@@ -37,7 +37,7 @@ type NotifierNATSSuite struct {
 	suite.Suite
 
 	conn   *broker.Conn
-	mailer *mockEmailerMailer
+	mailer *mockNotifierMailer
 	pub    *notifierpublisher.Publisher
 	stops  []func()
 }
@@ -57,7 +57,7 @@ func (s *NotifierNATSSuite) SetupTest() {
 	validator, err := protovalidate.New()
 	s.Require().NoError(err)
 
-	s.mailer = &mockEmailerMailer{}
+	s.mailer = &mockNotifierMailer{}
 	consumer := notifierconsumer.New(s.mailer, validator, testLogger)
 
 	stopConfirm, err := conn.Consume(s.T().Context(), notifier.StreamEmail, "test-confirmation",

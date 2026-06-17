@@ -26,8 +26,8 @@ var requiredScannerEnv = map[string]string{
 	"TLS_CA_FILE":   "/certs/ca.crt",
 }
 
-// requiredEmailerEnv lists every variable marked required:"true" in EmailerConfig.
-var requiredEmailerEnv = map[string]string{
+// requiredNotifierEnv lists every variable marked required:"true" in NotifierConfig.
+var requiredNotifierEnv = map[string]string{
 	"SMTP_HOST":     "smtp.example.com",
 	"SMTP_USER":     "mailer",
 	"SMTP_PASSWORD": "secret",
@@ -121,31 +121,31 @@ func (s *ConfigSuite) TestLoadScannerMissingRequired() {
 	}
 }
 
-func (s *ConfigSuite) TestLoadEmailerAllRequiredSet() {
-	s.setEnv(requiredEmailerEnv)
+func (s *ConfigSuite) TestLoadNotifierAllRequiredSet() {
+	s.setEnv(requiredNotifierEnv)
 
-	cfg, err := config.LoadEmailer()
+	cfg, err := config.LoadNotifier()
 	s.Require().NoError(err)
 	s.Require().NotNil(cfg)
 
-	s.Equal(requiredEmailerEnv["SMTP_HOST"], cfg.SMTP.Host)
-	s.Equal(requiredEmailerEnv["SMTP_FROM"], cfg.SMTP.FromEmail)
+	s.Equal(requiredNotifierEnv["SMTP_HOST"], cfg.SMTP.Host)
+	s.Equal(requiredNotifierEnv["SMTP_FROM"], cfg.SMTP.FromEmail)
 	s.Equal(587, cfg.SMTP.Port)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
 	s.Equal("8081", cfg.HTTPPort)
 }
 
-func (s *ConfigSuite) TestLoadEmailerMissingRequired() {
-	for missing := range requiredEmailerEnv {
+func (s *ConfigSuite) TestLoadNotifierMissingRequired() {
+	for missing := range requiredNotifierEnv {
 		s.Run(missing, func() {
-			for k, v := range requiredEmailerEnv {
+			for k, v := range requiredNotifierEnv {
 				if k == missing {
 					continue
 				}
 				s.T().Setenv(k, v)
 			}
 
-			cfg, err := config.LoadEmailer()
+			cfg, err := config.LoadNotifier()
 			s.Require().Error(err)
 			s.Nil(cfg)
 		})
