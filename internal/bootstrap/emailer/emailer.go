@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"buf.build/go/protovalidate"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github-release-notifier/internal/bootstrap"
 	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/notifier"
@@ -19,7 +18,7 @@ import (
 )
 
 const (
-	shutdownTimeout = 5 * time.Second
+	shutdownTimeout = bootstrap.ShutdownTimeout
 
 	confirmationConsumer = "emailer-confirmation"
 	releaseConsumer      = "emailer-release"
@@ -37,27 +36,19 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 	if err != nil {
 		return fmt.Errorf("create mailer: %w", err)
 	}
+	defer shutdownMailer(mail)
 
 	validator, err := protovalidate.New()
 	if err != nil {
 		return fmt.Errorf("create validator: %w", err)
 	}
 
-	conn, err := broker.Connect(cfg.NATSURL, log)
+	conn, closeBroker, err := bootstrap.ConnectBroker(ctx, cfg.NATSURL,
+		notifier.StreamEmail, []string{notifier.SubjectConfirmation, notifier.SubjectRelease}, log)
 	if err != nil {
-		return fmt.Errorf("connect broker: %w", err)
+		return err
 	}
-	defer func() {
-		if err := conn.Close(); err != nil {
-			log.Warn("failed to close broker", "error", err)
-		}
-	}()
-	log.Info("broker connected", "url", cfg.NATSURL)
-
-	if err := conn.EnsureStream(ctx, notifier.StreamEmail,
-		[]string{notifier.SubjectConfirmation, notifier.SubjectRelease}); err != nil {
-		return fmt.Errorf("ensure stream: %w", err)
-	}
+	defer closeBroker()
 
 	consumer := notifierconsumer.New(mail, validator, log)
 
@@ -65,14 +56,22 @@ func Run(ctx context.Context, cfg *config.EmailerConfig, log *slog.Logger) error
 	if err != nil {
 		return fmt.Errorf("start consumers: %w", err)
 	}
+	defer stop()
 
 	metricsSrv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
-		Handler:           metricsHandler(),
+		Handler:           bootstrap.MetricsHandler(),
 		ReadHeaderTimeout: shutdownTimeout,
 	}
 
-	return serve(ctx, metricsSrv, stop, mail, log)
+	return serve(ctx, metricsSrv, log)
+}
+
+func shutdownMailer(mail *mailer.Mailer) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	mail.Shutdown(shutdownCtx)
 }
 
 func startConsumers(ctx context.Context, conn *broker.Conn, consumer *notifierconsumer.Consumer) (func(), error) {
@@ -96,24 +95,7 @@ func startConsumers(ctx context.Context, conn *broker.Conn, consumer *notifierco
 	}, nil
 }
 
-func metricsHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	return mux
-}
-
-func serve(
-	ctx context.Context,
-	metricsSrv *http.Server,
-	stopConsumers func(),
-	mail *mailer.Mailer,
-	log *slog.Logger,
-) error {
+func serve(ctx context.Context, metricsSrv *http.Server, log *slog.Logger) error {
 	serverError := make(chan error, 1)
 
 	go func() {
@@ -125,32 +107,23 @@ func serve(
 
 	select {
 	case err := <-serverError:
-		gracefulShutdown(metricsSrv, stopConsumers, mail, log)
+		gracefulShutdown(metricsSrv, log)
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
 		log.Info("shutting down")
-		gracefulShutdown(metricsSrv, stopConsumers, mail, log)
+		gracefulShutdown(metricsSrv, log)
 	}
 
 	return nil
 }
 
-func gracefulShutdown(
-	metricsSrv *http.Server,
-	stopConsumers func(),
-	mail *mailer.Mailer,
-	log *slog.Logger,
-) {
-	stopConsumers()
-
+func gracefulShutdown(metricsSrv *http.Server, log *slog.Logger) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
 		log.Warn("failed to shut down server", "server", "metrics", "error", err)
 	}
-
-	mail.Shutdown(shutdownCtx)
 
 	log.Info("emailer stopped")
 }
