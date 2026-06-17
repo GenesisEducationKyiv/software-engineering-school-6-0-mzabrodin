@@ -8,9 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"github-release-notifier/internal/infrastructure/cache"
+	"github-release-notifier/internal/bootstrap"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/tlsconfig"
 	"github-release-notifier/internal/scanner/adapter/scannerserver"
@@ -18,19 +16,14 @@ import (
 	"github-release-notifier/internal/shared/github"
 )
 
-const shutdownTimeout = 5 * time.Second
+const shutdownTimeout = bootstrap.ShutdownTimeout
 
 func Run(ctx context.Context, cfg *config.ScannerConfig, log *slog.Logger) error {
-	redisCache, err := cache.NewRedisCache(ctx, cfg.RedisURL)
+	redisCache, closeRedis, err := bootstrap.ConnectRedis(ctx, cfg.RedisURL, log)
 	if err != nil {
-		return fmt.Errorf("connect to redis: %w", err)
+		return err
 	}
-	defer func() {
-		if err := redisCache.Close(); err != nil {
-			log.Warn("failed to close redis connection", "error", err)
-		}
-	}()
-	log.Info("redis connected")
+	defer closeRedis()
 
 	gh := github.NewClient(cfg.GitHubToken, log).WithCache(redisCache, 10*time.Minute)
 	scanner := scanneruc.New(gh, cfg.WorkerCount, log)
@@ -58,22 +51,11 @@ func Run(ctx context.Context, cfg *config.ScannerConfig, log *slog.Logger) error
 
 	metricsSrv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
-		Handler:           metricsHandler(),
+		Handler:           bootstrap.MetricsHandler(),
 		ReadHeaderTimeout: shutdownTimeout,
 	}
 
 	return serve(ctx, grpcSrv, metricsSrv, log)
-}
-
-func metricsHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	return mux
 }
 
 func serve(ctx context.Context, grpcSrv, metricsSrv *http.Server, log *slog.Logger) error {
@@ -95,15 +77,17 @@ func serve(ctx context.Context, grpcSrv, metricsSrv *http.Server, log *slog.Logg
 
 	select {
 	case err := <-serverError:
+		gracefulShutdown(grpcSrv, metricsSrv, log)
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
 		log.Info("shutting down")
+		gracefulShutdown(grpcSrv, metricsSrv, log)
 	}
 
-	return gracefulShutdown(grpcSrv, metricsSrv, log)
+	return nil
 }
 
-func gracefulShutdown(grpcSrv, metricsSrv *http.Server, log *slog.Logger) error {
+func gracefulShutdown(grpcSrv, metricsSrv *http.Server, log *slog.Logger) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
@@ -116,6 +100,4 @@ func gracefulShutdown(grpcSrv, metricsSrv *http.Server, log *slog.Logger) error 
 	}
 
 	log.Info("scanner stopped")
-
-	return nil
 }

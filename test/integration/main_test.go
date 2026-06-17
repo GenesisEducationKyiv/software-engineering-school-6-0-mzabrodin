@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	tcnats "github.com/testcontainers/testcontainers-go/modules/nats"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
@@ -21,6 +22,7 @@ import (
 var (
 	testPool     *pgxpool.Pool
 	testRedisURL string
+	testNATSURL  string
 )
 
 func TestMain(m *testing.M) {
@@ -90,6 +92,23 @@ func run(m *testing.M) int {
 	testRedisURL, err = redisContainer.ConnectionString(ctx)
 	if err != nil {
 		slog.Error("get redis connection string", "err", err)
+		return 1
+	}
+
+	natsContainer, err := tcnats.Run(ctx, "nats:2-alpine")
+	if err != nil {
+		slog.Error("start nats container", "err", err)
+		return 1
+	}
+	defer func() {
+		if err := natsContainer.Terminate(ctx); err != nil {
+			slog.Error("terminate nats container", "err", err)
+		}
+	}()
+
+	testNATSURL, err = natsContainer.ConnectionString(ctx)
+	if err != nil {
+		slog.Error("get nats connection string", "err", err)
 		return 1
 	}
 

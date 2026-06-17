@@ -15,22 +15,21 @@ type SMTPConfig struct {
 	FromEmail string `envconfig:"SMTP_FROM"     required:"true"`
 }
 
-type EmailerConfig struct {
-	GRPCPort string `envconfig:"EMAILER_GRPC_PORT" default:"50052"`
-	HTTPPort string `envconfig:"EMAILER_HTTP_PORT" default:"8081"`
-	LogLevel string `envconfig:"LOG_LEVEL"         default:"info"`
+type NotifierConfig struct {
+	HTTPPort string `envconfig:"NOTIFIER_HTTP_PORT" default:"8081"`
+	NATSURL  string `envconfig:"NATS_URL"           default:"nats://localhost:4222"`
+	LogLevel string `envconfig:"LOG_LEVEL"          default:"info"`
 	SMTP     SMTPConfig
-	TLS      TLSConfig
 }
 
-func (c *EmailerConfig) SlogLevel() slog.Level {
+func (c *NotifierConfig) SlogLevel() slog.Level {
 	return slogLevel(c.LogLevel)
 }
 
-func LoadEmailer() (*EmailerConfig, error) {
-	var cfg EmailerConfig
+func LoadNotifier() (*NotifierConfig, error) {
+	var cfg NotifierConfig
 	if err := envconfig.Process("", &cfg); err != nil {
-		return nil, fmt.Errorf("process emailer config: %w", err)
+		return nil, fmt.Errorf("process notifier config: %w", err)
 	}
 
 	return &cfg, nil

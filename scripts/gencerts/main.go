@@ -18,5 +18,5 @@ func main() {
 		log.Fatalf("gencerts: %v", err)
 	}
 
-	fmt.Printf("wrote ca.crt and subscription/scanner/emailer .crt/.key to %s\n", dir)
+	fmt.Printf("wrote ca.crt and subscription/scanner .crt/.key to %s\n", dir)
 }

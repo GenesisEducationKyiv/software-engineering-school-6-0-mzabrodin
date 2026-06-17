@@ -8,17 +8,19 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/net/http2"
 
-	"github-release-notifier/internal/infrastructure/cache"
+	"github-release-notifier/internal/bootstrap"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/infrastructure/scheduler"
 	"github-release-notifier/internal/infrastructure/tlsconfig"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
+	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/adapter/mailer"
-	"github-release-notifier/internal/notifier/adapter/notifierclient"
+	"github-release-notifier/internal/notifier/adapter/notifierpublisher"
 	"github-release-notifier/internal/scanner/adapter/scannerclient"
 	"github-release-notifier/internal/shared/github"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
@@ -30,73 +32,23 @@ import (
 	"github-release-notifier/internal/subscription/usecase/unsubscribe"
 )
 
-const shutdownTimeout = 5 * time.Second
+const shutdownTimeout = bootstrap.ShutdownTimeout
 
 func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
-	if err := db.RunMigrations(cfg.DatabaseURL, "file://migrations", log); err != nil {
-		return fmt.Errorf("run migrations: %w", err)
-	}
-
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL, metrics.NewPgxTracer(), log)
-	if err != nil {
-		return fmt.Errorf("connect to database: %w", err)
-	}
-	defer pool.Close()
-
-	redisCache, err := cache.NewRedisCache(ctx, cfg.RedisURL)
-	if err != nil {
-		return fmt.Errorf("connect to redis: %w", err)
-	}
-	defer func() {
-		if err := redisCache.Close(); err != nil {
-			log.Warn("failed to close redis connection", "error", err)
-		}
-	}()
-	log.Info("redis connected")
-
-	gh := github.NewClient(cfg.GitHubToken, log).WithCache(redisCache, 10*time.Minute)
-
-	notifierCli, err := newNotifierClient(cfg, log)
+	inf, cleanup, err := newInfrastructure(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := notifierCli.Close(); err != nil {
-			log.Warn("failed to close notifier client", "error", err)
-		}
-	}()
+	defer cleanup()
 
-	scannerCli, err := newScannerClient(cfg, log)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := scannerCli.Close(); err != nil {
-			log.Warn("failed to close scanner client", "error", err)
-		}
-	}()
-
-	repos := repository.NewGitHubRepoRepository(pool)
-	subs := repository.NewSubscriptionRepository(pool)
-	urls := urlbuilder.New(cfg.BaseURL)
-	releaseNotifier := mailer.NewReleaseNotifier(notifierCli, urls, log)
-
-	ucs := buildUseCases(repos, subs, gh, notifierCli, releaseNotifier, urls, log)
-	svc := connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
+	svc, scanUseCase := buildApp(inf, cfg, log)
 
 	publicSrv, err := newPublicServer(cfg, svc, log)
 	if err != nil {
 		return err
 	}
 
-	scanUseCase := scan.New(repos, subs, scannerCli, releaseNotifier, log)
-
-	schedulerCtx, cancelScheduler := context.WithCancel(ctx)
-	schedulerDone := make(chan struct{})
-	go func() {
-		scheduler.New(scanRunner{scanUseCase}, cfg.ScanInterval, log).Start(schedulerCtx)
-		close(schedulerDone)
-	}()
+	schedulerDone, cancelScheduler := startScheduler(ctx, scanUseCase, cfg.ScanInterval, log)
 
 	return serve(ctx, serveDeps{
 		publicSrv:       publicSrv,
@@ -104,6 +56,105 @@ func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		cancelScheduler: cancelScheduler,
 		log:             log,
 	})
+}
+
+type infrastructure struct {
+	pool        *pgxpool.Pool
+	gh          *github.Client
+	notifierPub *notifierpublisher.Publisher
+	scannerCli  *scannerclient.Client
+}
+
+func newInfrastructure(ctx context.Context, cfg *config.Config, log *slog.Logger) (*infrastructure, func(), error) {
+	var closers []func()
+	cleanup := func() {
+		for i := len(closers) - 1; i >= 0; i-- {
+			closers[i]()
+		}
+	}
+
+	ok := false
+	defer func() {
+		if !ok {
+			cleanup()
+		}
+	}()
+
+	if err := db.RunMigrations(cfg.DatabaseURL, "file://migrations", log); err != nil {
+		return nil, nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL, metrics.NewPgxTracer(), log)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect to database: %w", err)
+	}
+	closers = append(closers, pool.Close)
+
+	redisCache, closeRedis, err := bootstrap.ConnectRedis(ctx, cfg.RedisURL, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	closers = append(closers, closeRedis)
+
+	gh := github.NewClient(cfg.GitHubToken, log).WithCache(redisCache, 10*time.Minute)
+
+	brokerConn, closeBroker, err := bootstrap.ConnectBroker(ctx, cfg.NATSURL,
+		notifier.StreamEmail, []string{notifier.SubjectConfirmation, notifier.SubjectRelease}, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	closers = append(closers, closeBroker)
+
+	notifierPub := notifierpublisher.New(brokerConn, log)
+	closers = append(closers, func() {
+		if err := notifierPub.Close(); err != nil {
+			log.Warn("failed to close notifier publisher", "error", err)
+		}
+	})
+
+	scannerCli, err := newScannerClient(cfg, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	closers = append(closers, func() {
+		if err := scannerCli.Close(); err != nil {
+			log.Warn("failed to close scanner client", "error", err)
+		}
+	})
+
+	ok = true
+
+	return &infrastructure{pool: pool, gh: gh, notifierPub: notifierPub, scannerCli: scannerCli}, cleanup, nil
+}
+
+func buildApp(inf *infrastructure, cfg *config.Config, log *slog.Logger) (*connectapi.Service, *scan.UseCase) {
+	repos := repository.NewGitHubRepoRepository(inf.pool)
+	subs := repository.NewSubscriptionRepository(inf.pool)
+	urls := urlbuilder.New(cfg.BaseURL)
+	releaseNotifier := mailer.NewReleaseNotifier(inf.notifierPub, urls, log)
+
+	ucs := buildUseCases(repos, subs, inf.gh, inf.notifierPub, releaseNotifier, urls, log)
+	svc := connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
+
+	scanUseCase := scan.New(repos, subs, inf.scannerCli, releaseNotifier, log)
+
+	return svc, scanUseCase
+}
+
+func startScheduler(
+	ctx context.Context,
+	uc *scan.UseCase,
+	interval time.Duration,
+	log *slog.Logger,
+) (<-chan struct{}, context.CancelFunc) {
+	schedulerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		scheduler.New(scanRunner{uc}, interval, log).Start(schedulerCtx)
+		close(done)
+	}()
+
+	return done, cancel
 }
 
 type scanRunner struct {
@@ -131,15 +182,6 @@ func newPublicServer(cfg *config.Config, svc *connectapi.Service, log *slog.Logg
 		ReadHeaderTimeout: shutdownTimeout,
 		Protocols:         protocols,
 	}, nil
-}
-
-func newNotifierClient(cfg *config.Config, log *slog.Logger) (*notifierclient.Client, error) {
-	httpClient, closer, err := mtlsClient(cfg.TLS)
-	if err != nil {
-		return nil, fmt.Errorf("build notifier tls config: %w", err)
-	}
-
-	return notifierclient.New(httpClient, "https://"+cfg.EmailerAddr, closer, log), nil
 }
 
 func newScannerClient(cfg *config.Config, log *slog.Logger) (*scannerclient.Client, error) {
@@ -216,7 +258,7 @@ func buildUseCases(
 	repos *repository.GitHubRepoRepository,
 	subs *repository.SubscriptionRepository,
 	gh *github.Client,
-	mail *notifierclient.Client,
+	mail *notifierpublisher.Publisher,
 	releaseNotifier *mailer.ReleaseNotifier,
 	urls *urlbuilder.URLBuilder,
 	log *slog.Logger,

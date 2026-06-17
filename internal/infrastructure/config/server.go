@@ -15,7 +15,7 @@ type Config struct {
 	DatabaseURL  string        `envconfig:"DATABASE_URL"                                  required:"true"`
 	RedisURL     string        `envconfig:"REDIS_URL"                                     required:"true"`
 	ScannerAddr  string        `envconfig:"SCANNER_ADDR"  default:"localhost:50051"`
-	EmailerAddr  string        `envconfig:"EMAILER_ADDR"  default:"localhost:50052"`
+	NATSURL      string        `envconfig:"NATS_URL"      default:"nats://localhost:4222"`
 	ScanInterval time.Duration `envconfig:"SCAN_INTERVAL" default:"10m"`
 	APIKey       string        `envconfig:"API_KEY"`
 	LogLevel     string        `envconfig:"LOG_LEVEL"     default:"info"`

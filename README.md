@@ -34,8 +34,8 @@ enforced in CI by golangci-lint `depguard`.
 | Module         | Package                                                                                           | Responsibility                                                                                                                                                                                           |
 |----------------|---------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `subscription` | `internal/subscription/{usecase/*,adapter/{connectrpc,repository}}`                               | Public API (`subscription.v1`) via one connect-go handler & Vanguard; owns the repos & subscriptions tables; drives the scan (`scan` use case) and owns the notify decision; dials the scanner + emailer |
-| `scanner`      | `internal/scanner/{usecase/scanner,adapter/{scannerserver,scannerclient}}`                        | A reactive GitHub-fetch service (the `cmd/scanner` service lives behind this); `Scan(repos)` over mTLS; owns its proto + server + client, like the notifier                               |
-| `notifier`     | `internal/notifier/adapter/{notifierclient,notifierserver,mailer}`                                | Email delivery (the `cmd/emailer` service lives behind this); the app dials it through `notifierclient`                                                                                                  |
+| `scanner`      | `internal/scanner/{usecase/scanner,adapter/{scannerserver,scannerclient}}`                        | A reactive GitHub-fetch service (the `cmd/scanner` service lives behind this); `Scan(repos)` over mTLS; owns its proto + server + client, like the notifier                                              |
+| `notifier`     | `internal/notifier/adapter/{notifierpublisher,notifierconsumer,mailer}`                           | Email delivery (the `cmd/emailer` service lives behind this); the app publishes email commands via `notifierpublisher`, the emailer consumes them via `notifierconsumer`                                 |
 | Shared kernel  | `internal/shared/{entity,github}`                                                                 | Cross-context domain types + constructors + sentinel errors; GitHub REST client                                                                                                                          |
 | Infrastructure | `internal/infrastructure/{config,db,cache,urlbuilder,logging,metrics,tlsconfig,certgen}`          | Env config, pgx pool + migrations, Redis, URL building, slog, Prometheus, mTLS config + cert gen                                                                                                         |
 | Composition    | `internal/bootstrap/{subscription,scanner,emailer}`, `cmd/{subscription,scanner,emailer}/main.go` | Cross-module wiring lives in `internal/bootstrap`; the `cmd/` mains just load config and call `Run`                                                                                                      |
@@ -205,18 +205,19 @@ Exposed at `/metrics`.
 cp .env.example .env
 # Fill in GITHUB_TOKEN, SMTP_*, DB_*, REDIS_PASSWORD, GRAFANA_PASSWORD, API_KEY
 
-task certs                     # generate the mTLS certs (subscription/scanner/emailer) into certs/ (prerequisite)
+task certs                     # generate the mTLS certs (subscription/scanner) into certs/ (prerequisite)
 task up-build                  # build the images, then start the whole stack
 ```
 
 The app, the **emailer** service, PostgreSQL, Redis, and the observability stack start
 in dependency order. In Docker, the app's `DATABASE_URL` and `REDIS_URL` are constructed
 automatically from the `DB_*` / `REDIS_*` values. Database migrations run on startup.
-The emailer mounts the **server** cert, and the app mounts the **client** cert from `certs/`;
-both verify the peer against the shared CA, so `task certs` must run first.
+The scanner mounts the **server** cert, and the app mounts the **client** cert from `certs/`;
+both verify the peer against the shared CA, so `task certs` must run first. The app ↔ emailer link
+runs over a NATS message broker instead of mTLS gRPC, so the emailer needs no certificate.
 
-The public API (REST, Connect, gRPC, gRPC-Web) is served on `:8080`; the emailer listens on `:50052` (gRPC, internal
-only).
+The public API (REST, Connect, gRPC, gRPC-Web) is served on `:8080`; the app publishes email commands
+to NATS (`:4222`) and the emailer consumes them.
 
 ### Regenerating stubs and API docs
 
@@ -234,7 +235,7 @@ task proto      # requires the buf CLI; regenerates each module's grpc/gen/ stub
 | `BASE_URL`      | `http://localhost:8080` | —        | Used in confirmation/unsubscribe links                           |
 | `GITHUB_TOKEN`  | —                       | —        | GitHub PAT (optional; raises rate limit to 5 000/hr)             |
 | `SCANNER_ADDR`  | `localhost:50051`       | —        | Address of the scanner gRPC service (host must match a cert SAN) |
-| `EMAILER_ADDR`  | `localhost:50052`       | —        | Address of the emailer gRPC service (host must match a cert SAN) |
+| `NATS_URL`      | `nats://localhost:4222` | —        | Message broker the app publishes email commands to               |
 | `SCAN_INTERVAL` | `10m`                   | —        | How often the app runs a scan pass                               |
 | `DATABASE_URL`  | —                       | yes      | PostgreSQL connection URL                                        |
 | `REDIS_URL`     | —                       | yes      | Redis connection URL                                             |
@@ -260,21 +261,19 @@ task proto      # requires the buf CLI; regenerates each module's grpc/gen/ stub
 
 ### Emailer (`cmd/emailer`)
 
-| Variable            | Default | Required | Description                                         |
-|---------------------|---------|----------|-----------------------------------------------------|
-| `EMAILER_GRPC_PORT` | `50052` | —        | Emailer gRPC listen port (mTLS)                     |
-| `EMAILER_HTTP_PORT` | `8081`  | —        | Emailer metrics + health HTTP port                  |
-| `SMTP_HOST`         | —       | yes      | SMTP server host                                    |
-| `SMTP_PORT`         | `587`   | —        | SMTP server port                                    |
-| `SMTP_USER`         | —       | yes      | SMTP username                                       |
-| `SMTP_PASSWORD`     | —       | yes      | SMTP password                                       |
-| `SMTP_FROM`         | —       | yes      | From address for outgoing emails                    |
-| `TLS_CERT_FILE`     | —       | yes      | Path to the emailer's **server** certificate (mTLS) |
-| `TLS_KEY_FILE`      | —       | yes      | Path to the emailer's server key                    |
-| `TLS_CA_FILE`       | —       | yes      | Path to the shared CA certificate                   |
-| `LOG_LEVEL`         | `info`  | —        | `debug` / `info` / `warn` / `error`                 |
+| Variable            | Default                 | Required | Description                                        |
+|---------------------|-------------------------|----------|----------------------------------------------------|
+| `NATS_URL`          | `nats://localhost:4222` | —        | Message broker the emailer consumes commands from  |
+| `EMAILER_HTTP_PORT` | `8081`                  | —        | Emailer metrics + health HTTP port                 |
+| `SMTP_HOST`         | —                       | yes      | SMTP server host                                   |
+| `SMTP_PORT`         | `587`                   | —        | SMTP server port                                   |
+| `SMTP_USER`         | —                       | yes      | SMTP username                                      |
+| `SMTP_PASSWORD`     | —                       | yes      | SMTP password                                      |
+| `SMTP_FROM`         | —                       | yes      | From address for outgoing emails                   |
+| `LOG_LEVEL`         | `info`                  | —        | `debug` / `info` / `warn` / `error`                |
 
-The internal links (app ↔ scanner, app ↔ emailer) have no `API_KEY` — mutual TLS is the authentication.
+The app ↔ scanner link has no `API_KEY` — mutual TLS is the authentication. The app ↔ emailer link runs over
+the NATS broker (securing the NATS connection itself with TLS/credentials is a follow-up).
 
 ### Docker Compose only (build URLs and configure the stack)
 

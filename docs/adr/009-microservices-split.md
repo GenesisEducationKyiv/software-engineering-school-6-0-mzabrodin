@@ -1,7 +1,8 @@
 # ADR-009: Split into API, Scanner, and Emailer Services
 
 **Status:** Emailer extraction **Accepted** and implemented. Scanner extraction **Accepted** and
-implemented. Moving the Emailer link onto a **message queue** remains **Proposed**.
+implemented. Moving the Emailer link onto a message queue **Accepted** and
+implemented.
 
 **Author:** Zabrodin Maksym
 
@@ -87,12 +88,27 @@ GitHub client + Redis cache, makes no decision, and never touches Postgres or th
   `confirm` use case instead sends that subscriber the current release (best-effort), so a pre-existing release
   isn't missed and isn't double-sent.
 
-### Future direction (not adopted yet)
+#### Message-queue link (Accepted)
 
-Move the **API → Emailer** link off synchronous gRPC onto a **message queue** so delivery is decoupled and email
-jobs survive emailer downtime. The bus goes on this single edge only (the scan link stays request/response gRPC),
-and would need **outbox + ack** to keep today's guarantee that the app never advances `last_seen_tag` on a lost
-batch.
+The API → Emailer link now runs on NATS JetStream instead of synchronous gRPC, so delivery is decoupled, 
+and email jobs survive emailer downtime. The bus is on this single edge only — the API → Scanner link stays
+request/response gRPC.
+
+- The subscription app publishes protobuf-encoded email commands (`notifierv1.SendConfirmationRequest`,
+  `SendReleaseNotificationsRequest`) onto a durable `EMAIL` stream over two subjects — `email.confirmation`
+  and `email.release` — through `internal/notifier/adapter/notifierpublisher`. It still satisfies the subscription
+  use case's mailer port and `mailer.ReleaseNotifier`'s sender port, so no use cases changed. The gRPC
+  `notifierclient`/`notifierserver` adapters and the `NotifierService` RPC were removed; the proto messages stay
+  on as the broker payload schema.
+- The emailer consumes both subjects through `internal/notifier/adapter/notifierconsumer`, which re-runs
+  protovalidate on each decoded message before handing it to the mailer (validation is preserved off the
+  gRPC path). Per-message acks drive redelivery: a transient mailer failure naks (redeliver), a malformed or
+  invalid payload terminates (poison, dropped, bounded by `MaxDeliver`). The domain-agnostic broker wrapper
+  lives in `internal/infrastructure/broker`.
+- The old rule "advance `last_seen_tag` only when the email was actually sent" becomes
+  "advance only when the command is durably persisted (JetStream acks the publication)". The publisher reports a
+  failed publication as every recipient failing, so a lost-publish batch is retried on the next scan; once enqueued,
+  the emailer owns delivery and redelivery.
 
 ```mermaid
 flowchart TB
@@ -126,7 +142,8 @@ flowchart TB
     API -->|confirmations + releases| Queue
 ```
 
-Only the message-queue pipeline remains *Proposed*; the API→Scanner and API→Emailer links are gRPC today.
+All three services are now split: the API → Scanner link is request/response gRPC, and the API → Emailer link is
+the NATS JetStream queue shown above.
 
 ## Consequences
 
@@ -145,6 +162,7 @@ Of the decided step — extracting the Emailer over gRPC:
   `BatchResult` over gRPC)
 - Another service plus a proto contract to build and operate
 
-The wider three-service split adds further distributed-system complexity (a message
-broker, cross-service data consistency, more to operate); those costs are deferred
-until that step is actually taken.
+The wider three-service split adds further distributed-system complexity — a message
+broker to operate, at-least-once delivery (and so possible duplicate emails on redelivery),
+and the weaker "durably enqueued" guarantee in place of "actually sent". These costs are
+accepted in exchange for decoupled, crash-durable email delivery.

@@ -38,11 +38,6 @@ func Write(dir string) error {
 		return err
 	}
 
-	emailer := leafTemplate("emailer", []string{"emailer", "localhost"}, loopback)
-	if err := writeLeaf(dir, "emailer", emailer, caCert, caKey); err != nil {
-		return err
-	}
-
 	subscription := leafTemplate("subscription", nil, nil)
 
 	return writeLeaf(dir, "subscription", subscription, caCert, caKey)

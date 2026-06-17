@@ -26,7 +26,7 @@ services:
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@postgres:5432/${DB_NAME:?DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
       SCANNER_ADDR: scanner:50051
-      EMAILER_ADDR: emailer:50052
+      NATS_URL: nats://nats:4222
       TLS_CERT_FILE: /certs/subscription.crt
       TLS_KEY_FILE: /certs/subscription.key
       TLS_CA_FILE: /certs/ca.crt
@@ -42,7 +42,7 @@ services:
         condition: service_healthy
       scanner:
         condition: service_healthy
-      emailer:
+      nats:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-qO-", "http://localhost:8080/health" ]
@@ -87,23 +87,21 @@ services:
         limits:
           memory: 256m
 
-  emailer:
+  notifier:
     <<: [ *service, *app-image ]
-    container_name: github_release_notifier_emailer
-    command: [ "./emailer" ]
+    container_name: github_release_notifier_notifier
+    command: [ "./notifier" ]
     env_file:
       - .env
     environment:
-      EMAILER_GRPC_PORT: "50052"
-      EMAILER_HTTP_PORT: "8081"
-      TLS_CERT_FILE: /certs/emailer.crt
-      TLS_KEY_FILE: /certs/emailer.key
-      TLS_CA_FILE: /certs/ca.crt
-    volumes:
-      - ./certs:/certs:ro
+      NOTIFIER_HTTP_PORT: "8081"
+      NATS_URL: nats://nats:4222
     networks:
       - app_net
       - monitoring_net
+    depends_on:
+      nats:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-qO-", "http://localhost:8081/health" ]
       interval: 10s
@@ -151,6 +149,25 @@ services:
       - app_net
     healthcheck:
       test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  nats:
+    <<: *service
+    image: nats:2-alpine
+    container_name: github_release_notifier_nats
+    command: [ "-js", "-sd", "/data", "-m", "8222" ]
+    volumes:
+      - nats_data:/data
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -273,7 +290,7 @@ services:
     depends_on:
       subscription:
         condition: service_healthy
-      emailer:
+      notifier:
         condition: service_healthy
       scanner:
         condition: service_healthy
@@ -316,6 +333,7 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  nats_data:
   elasticsearch_data:
   filebeat_data:
   prometheus_data:

@@ -10,10 +10,10 @@ scrape_configs:
           - subscription:8080
     metrics_path: /metrics
 
-  - job_name: github_release_notifier_emailer
+  - job_name: github_release_notifier_notifier
     static_configs:
       - targets:
-          - emailer:8081
+          - notifier:8081
     metrics_path: /metrics
 
   - job_name: github_release_notifier_scanner
