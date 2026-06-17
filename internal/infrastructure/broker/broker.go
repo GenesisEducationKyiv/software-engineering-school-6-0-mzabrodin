@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -12,7 +13,10 @@ import (
 
 var ErrTerminal = errors.New("terminal message error")
 
-const maxDeliver = 5
+const (
+	maxDeliver = 5
+	ackWait    = 90 * time.Second
+)
 
 type Handler func(ctx context.Context, data []byte) error
 
@@ -62,6 +66,8 @@ func (c *Conn) Consume(ctx context.Context, stream, durable, subject string, han
 		Durable:       durable,
 		FilterSubject: subject,
 		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       ackWait,
+		MaxAckPending: 1,
 		MaxDeliver:    maxDeliver,
 	})
 	if err != nil {
