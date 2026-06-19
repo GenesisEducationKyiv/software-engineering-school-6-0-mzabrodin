@@ -25,6 +25,7 @@ import (
 	"github-release-notifier/internal/shared/github"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 	"github-release-notifier/internal/subscription/adapter/repository"
+	submigrations "github-release-notifier/internal/subscription/migrations"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
 	"github-release-notifier/internal/subscription/usecase/scan"
@@ -80,7 +81,7 @@ func newInfrastructure(ctx context.Context, cfg *config.Config, log *slog.Logger
 		}
 	}()
 
-	if err := db.RunMigrations(cfg.DatabaseURL, "file://migrations", log); err != nil {
+	if err := db.RunMigrationsFS(cfg.DatabaseURL, submigrations.FS, log); err != nil {
 		return nil, nil, fmt.Errorf("run migrations: %w", err)
 	}
 

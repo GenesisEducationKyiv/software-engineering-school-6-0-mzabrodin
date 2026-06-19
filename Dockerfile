@@ -26,7 +26,6 @@ RUN apk --no-cache add ca-certificates tzdata && \
 COPY --from=builder --chown=app:app /app/subscription .
 COPY --from=builder --chown=app:app /app/notifier .
 COPY --from=builder --chown=app:app /app/scanner .
-COPY --from=builder --chown=app:app /app/migrations ./migrations
 
 USER app
 
