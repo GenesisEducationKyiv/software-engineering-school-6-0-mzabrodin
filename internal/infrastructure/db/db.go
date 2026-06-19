@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -35,8 +37,28 @@ func NewPool(ctx context.Context, databaseURL string, tracer pgx.QueryTracer, lo
 	return pool, nil
 }
 
-func RunMigrations(databaseURL, migrationsURL string, log *slog.Logger) error {
-	migrator, err := migrate.New(migrationsURL, databaseURL)
+type MigrateOption func(*migrateConfig)
+
+type migrateConfig struct {
+	migrationsTable string
+}
+
+func WithMigrationsTable(name string) MigrateOption {
+	return func(c *migrateConfig) { c.migrationsTable = name }
+}
+
+func RunMigrationsFS(databaseURL string, fsys fs.FS, log *slog.Logger, opts ...MigrateOption) error {
+	var cfg migrateConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	src, err := iofs.New(fsys, migrationsRoot(fsys))
+	if err != nil {
+		return fmt.Errorf("create migration source: %w", err)
+	}
+
+	migrator, err := migrate.NewWithSourceInstance("iofs", src, withMigrationsTable(databaseURL, cfg.migrationsTable))
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}
@@ -57,5 +79,31 @@ func RunMigrations(databaseURL, migrationsURL string, log *slog.Logger) error {
 	}
 
 	log.Info("migrations applied successfully")
+
 	return nil
+}
+
+func migrationsRoot(fsys fs.FS) string {
+	if _, err := fs.Stat(fsys, "migrations"); err == nil {
+		return "migrations"
+	}
+
+	return "."
+}
+
+func withMigrationsTable(databaseURL, table string) string {
+	if table == "" {
+		return databaseURL
+	}
+
+	u, err := url.Parse(databaseURL)
+	if err != nil {
+		return databaseURL
+	}
+
+	q := u.Query()
+	q.Set("x-migrations-table", table)
+	u.RawQuery = q.Encode()
+
+	return u.String()
 }

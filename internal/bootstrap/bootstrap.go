@@ -16,6 +16,7 @@ import (
 	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/cache"
 	"github-release-notifier/internal/infrastructure/logging"
+	"github-release-notifier/internal/shared/events"
 )
 
 const ShutdownTimeout = 5 * time.Second
@@ -98,6 +99,25 @@ func ConnectBroker(
 	}
 
 	return conn, closer, nil
+}
+
+func EnsureEventStreams(ctx context.Context, conn *broker.Conn) error {
+	streams := []struct {
+		name     string
+		subjects []string
+	}{
+		{events.StreamSubscriptions, events.SubjectsSubscriptions},
+		{events.StreamReleases, events.SubjectsReleases},
+		{events.StreamNotifications, events.SubjectsNotifications},
+	}
+
+	for _, s := range streams {
+		if err := conn.EnsureStream(ctx, s.name, s.subjects); err != nil {
+			return fmt.Errorf("ensure stream %q: %w", s.name, err)
+		}
+	}
+
+	return nil
 }
 
 func MetricsHandler() http.Handler {
