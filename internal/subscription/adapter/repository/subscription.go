@@ -31,11 +31,9 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *entity.Subscri
 		ON CONFLICT (email, repository_id) DO NOTHING
 		RETURNING id, created_at
 	`, sub.RepositoryID, sub.Email, sub.ConfirmToken, sub.UnsubscribeToken, sub.Confirmed).Scan(&sub.ID, &sub.CreatedAt)
-
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.ErrAlreadyExists
 	}
-
 	if err != nil {
 		return fmt.Errorf("create subscription: %w", err)
 	}
@@ -56,17 +54,16 @@ func (r *SubscriptionRepository) GetByEmail(
 		WHERE s.email = $1
 		ORDER BY s.created_at DESC
 	`, email)
-
 	if err != nil {
 		return nil, fmt.Errorf("get by email: %w", err)
 	}
 
-	collected, err := pgx.CollectRows(rows, pgx.RowToStructByName[subscriptionViewRow])
+	collectedRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[subscriptionViewRow])
 	if err != nil {
 		return nil, fmt.Errorf("collect subscription views: %w", err)
 	}
 
-	return toSubscriptionViewEntities(collected), nil
+	return toSubscriptionViewEntities(collectedRows), nil
 }
 
 func (r *SubscriptionRepository) GetConfirmedByRepoID(
@@ -79,17 +76,16 @@ func (r *SubscriptionRepository) GetConfirmedByRepoID(
 		SELECT id, repository_id, email, confirm_token, unsubscribe_token, confirmed, created_at
 		FROM subscriptions WHERE repository_id = $1 AND confirmed = true
 	`, repoID)
-
 	if err != nil {
 		return nil, fmt.Errorf("get confirmed by repo id: %w", err)
 	}
 
-	collected, err := pgx.CollectRows(rows, pgx.RowToStructByName[subscriptionRow])
+	collectedRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[subscriptionRow])
 	if err != nil {
 		return nil, fmt.Errorf("collect subscriptions: %w", err)
 	}
 
-	return toSubscriptionEntities(collected), nil
+	return toSubscriptionEntities(collectedRows), nil
 }
 
 func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) (*entity.Subscription, string, error) {
@@ -106,31 +102,29 @@ func (r *SubscriptionRepository) Confirm(ctx context.Context, token string) (*en
 		)
 		SELECT id, repository_id, email, unsubscribe_token, was_confirmed, repo FROM target
 	`, token)
-
 	if err != nil {
 		return nil, "", fmt.Errorf("confirm subscription: %w", err)
 	}
 
-	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[confirmRow])
+	collectedRow, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[confirmRow])
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", entity.ErrNotFound
 	}
-
 	if err != nil {
 		return nil, "", fmt.Errorf("confirm subscription: %w", err)
 	}
 
-	if row.WasConfirmed {
+	if collectedRow.WasConfirmed {
 		return nil, "", nil
 	}
 
-	return row.toEntity(), row.Repo, nil
+	return collectedRow.toEntity(), collectedRow.Repo, nil
 }
 
 func (r *SubscriptionRepository) Delete(ctx context.Context, token string) error {
 	ctx = metrics.WithDBOp(ctx, "delete", "subscriptions")
 
-	result, err := r.pool.Exec(ctx, `
+	commandTag, err := r.pool.Exec(ctx, `
 		DELETE FROM subscriptions WHERE unsubscribe_token = $1
 	`, token)
 
@@ -138,7 +132,7 @@ func (r *SubscriptionRepository) Delete(ctx context.Context, token string) error
 		return fmt.Errorf("delete subscription: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
+	if commandTag.RowsAffected() == 0 {
 		return entity.ErrNotFound
 	}
 
