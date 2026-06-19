@@ -28,6 +28,7 @@ var requiredScannerEnv = map[string]string{
 
 // requiredNotifierEnv lists every variable marked required:"true" in NotifierConfig.
 var requiredNotifierEnv = map[string]string{
+	"DATABASE_URL":  "postgres://user:pass@localhost:5432/db",
 	"SMTP_HOST":     "smtp.example.com",
 	"SMTP_USER":     "mailer",
 	"SMTP_PASSWORD": "secret",
@@ -128,11 +129,15 @@ func (s *ConfigSuite) TestLoadNotifierAllRequiredSet() {
 	s.Require().NoError(err)
 	s.Require().NotNil(cfg)
 
+	s.Equal(requiredNotifierEnv["DATABASE_URL"], cfg.DatabaseURL)
 	s.Equal(requiredNotifierEnv["SMTP_HOST"], cfg.SMTP.Host)
 	s.Equal(requiredNotifierEnv["SMTP_FROM"], cfg.SMTP.FromEmail)
 	s.Equal(587, cfg.SMTP.Port)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
 	s.Equal("8081", cfg.HTTPPort)
+	s.Equal(15*time.Minute, cfg.RetryInterval)
+	s.Equal(5, cfg.MaxRetries)
+	s.Equal(24*time.Hour, cfg.ConfirmationTTL)
 }
 
 func (s *ConfigSuite) TestLoadNotifierMissingRequired() {
