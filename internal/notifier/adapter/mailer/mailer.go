@@ -152,6 +152,40 @@ func (m *Mailer) SendConfirmation(ctx context.Context, to, repo, confirmURL stri
 	}
 }
 
+func (m *Mailer) DeliverConfirmation(ctx context.Context, to, repo, confirmURL string) error {
+	body, err := renderTemplate(confirmationTemplate, map[string]string{
+		"Repo":       repo,
+		"ConfirmURL": confirmURL,
+	})
+	if err != nil {
+		return fmt.Errorf("render confirmation email: %w", err)
+	}
+
+	msg, err := m.buildMessage(to, fmt.Sprintf("Confirm your subscription to %s", repo), body)
+	if err != nil {
+		return fmt.Errorf("build confirmation email: %w", err)
+	}
+
+	resultCh := make(chan []error, 1)
+
+	select {
+	case m.jobs <- mailJob{ctx: ctx, kind: kindConfirmation, messages: []*mail.Msg{msg}, result: resultCh}:
+	case <-ctx.Done():
+		return fmt.Errorf("queue confirmation email: %w", ctx.Err())
+	}
+
+	select {
+	case errs := <-resultCh:
+		if len(errs) > 0 && errs[0] != nil {
+			return fmt.Errorf("send confirmation email: %w", errs[0])
+		}
+
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("await confirmation email result: %w", ctx.Err())
+	}
+}
+
 func (m *Mailer) SendReleaseNotifications(
 	ctx context.Context,
 	notifications []notifier.ReleaseNotification,
@@ -180,15 +214,28 @@ func (m *Mailer) SendReleaseNotifications(
 	}
 
 	resultCh := make(chan []error, 1)
-	m.jobs <- mailJob{ctx: ctx, kind: kindNotification, messages: messages, result: resultCh}
-	errs := <-resultCh
 
-	for i, err := range errs {
-		if err != nil {
-			result.Failed = append(result.Failed, recipients[i])
-		} else {
-			result.Sent++
+	select {
+	case m.jobs <- mailJob{ctx: ctx, kind: kindNotification, messages: messages, result: resultCh}:
+	case <-ctx.Done():
+		m.log.WarnContext(ctx, "context done before release batch could be queued", "count", len(recipients))
+		result.Failed = append(result.Failed, recipients...)
+
+		return result
+	}
+
+	select {
+	case errs := <-resultCh:
+		for i, err := range errs {
+			if err != nil {
+				result.Failed = append(result.Failed, recipients[i])
+			} else {
+				result.Sent++
+			}
 		}
+	case <-ctx.Done():
+		m.log.WarnContext(ctx, "context done while awaiting release batch result", "count", len(recipients))
+		result.Failed = append(result.Failed, recipients...)
 	}
 
 	return result
