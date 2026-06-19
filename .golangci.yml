@@ -115,6 +115,9 @@ linters:
         - diagnostic
         - style
         - performance
+      settings:
+        hugeParam:
+          sizeThreshold: 128
 
     errorlint:
       errorf: true
