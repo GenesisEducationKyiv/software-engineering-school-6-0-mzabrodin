@@ -69,6 +69,21 @@ func (s *EventsSuite) TestRoundTrip() {
 	s.Nil(gotNoFailures.FailedEmails)
 }
 
+func (s *EventsSuite) TestRoundTripConfirmationDead() {
+	dead := events.NotificationConfirmationDead{
+		SagaID: s.sagaID,
+		Email:  "user@example.com",
+		Reason: "confirmation email delivery failed after max retries",
+	}
+
+	data, err := events.Marshal(dead)
+	s.Require().NoError(err)
+
+	got, err := events.Unmarshal[events.NotificationConfirmationDead](data)
+	s.Require().NoError(err)
+	s.Equal(dead, got)
+}
+
 func (s *EventsSuite) TestMarshalValidationRejects() {
 	tests := map[string]events.SubscriptionPending{
 		"missing saga id": {
