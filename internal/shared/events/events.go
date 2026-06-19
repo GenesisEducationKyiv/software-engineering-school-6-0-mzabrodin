@@ -21,6 +21,7 @@ const (
 const (
 	SubjectNotificationConfirmationSent   = "notifications.confirmation.sent"
 	SubjectNotificationConfirmationFailed = "notifications.confirmation.failed"
+	SubjectNotificationConfirmationDead   = "notifications.confirmation.dead"
 	SubjectNotificationReleaseSent        = "notifications.release.sent"
 	SubjectNotificationReleaseFailed      = "notifications.release.failed"
 	SubjectNotificationReleaseDead        = "notifications.release.dead"
@@ -41,6 +42,7 @@ var SubjectsReleases = []string{
 var SubjectsNotifications = []string{
 	SubjectNotificationConfirmationSent,
 	SubjectNotificationConfirmationFailed,
+	SubjectNotificationConfirmationDead,
 	SubjectNotificationReleaseSent,
 	SubjectNotificationReleaseFailed,
 	SubjectNotificationReleaseDead,
@@ -93,6 +95,12 @@ type NotificationConfirmationSent struct {
 }
 
 type NotificationConfirmationFailed struct {
+	SagaID string `json:"sagaID" validate:"required,uuid"`
+	Email  string `json:"email"  validate:"required,email"`
+	Reason string `json:"reason" validate:"required"`
+}
+
+type NotificationConfirmationDead struct {
 	SagaID string `json:"sagaID" validate:"required,uuid"`
 	Email  string `json:"email"  validate:"required,email"`
 	Reason string `json:"reason" validate:"required"`

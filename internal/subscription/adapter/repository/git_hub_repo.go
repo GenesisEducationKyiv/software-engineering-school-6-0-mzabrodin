@@ -23,12 +23,11 @@ func NewGitHubRepoRepository(pool *pgxpool.Pool) *GitHubRepoRepository {
 func (r *GitHubRepoRepository) Create(ctx context.Context, repo *entity.Repository) error {
 	ctx = metrics.WithDBOp(ctx, "create", "repositories")
 
-	err := r.pool.QueryRow(ctx, `
+	if err := r.pool.QueryRow(ctx, `
 		INSERT INTO repositories (name)
 		VALUES ($1)
 		RETURNING id, created_at
-	`, repo.Name).Scan(&repo.ID, &repo.CreatedAt)
-	if err != nil {
+	`, repo.Name).Scan(&repo.ID, &repo.CreatedAt); err != nil {
 		return fmt.Errorf("create repository: %w", err)
 	}
 
@@ -46,7 +45,7 @@ func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (*ent
 		return nil, fmt.Errorf("get repository by name: %w", err)
 	}
 
-	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[repositoryRow])
+	collectedRow, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[repositoryRow])
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, entity.ErrNotFound
 	}
@@ -55,7 +54,7 @@ func (r *GitHubRepoRepository) GetByName(ctx context.Context, name string) (*ent
 		return nil, fmt.Errorf("get repository by name: %w", err)
 	}
 
-	return row.toEntity(), nil
+	return collectedRow.toEntity(), nil
 }
 
 func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) ([]*entity.Repository, error) {
@@ -71,25 +70,25 @@ func (r *GitHubRepoRepository) GetAllWithSubscriptions(ctx context.Context) ([]*
 		return nil, fmt.Errorf("get all repositories with subscriptions: %w", err)
 	}
 
-	collected, err := pgx.CollectRows(rows, pgx.RowToStructByName[repositoryRow])
+	collectedRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[repositoryRow])
 	if err != nil {
 		return nil, fmt.Errorf("collect repositories: %w", err)
 	}
 
-	return toRepositoryEntities(collected), nil
+	return toRepositoryEntities(collectedRows), nil
 }
 
 func (r *GitHubRepoRepository) UpdateLastSeenTag(ctx context.Context, name, tag string) error {
 	ctx = metrics.WithDBOp(ctx, "update_last_seen_tag", "repositories")
 
-	cmd, err := r.pool.Exec(ctx, `
+	commandTag, err := r.pool.Exec(ctx, `
 		UPDATE repositories SET last_seen_tag = $1, checked_at = NOW() WHERE name = $2
 	`, tag, name)
 	if err != nil {
 		return fmt.Errorf("update last seen tag: %w", err)
 	}
 
-	if cmd.RowsAffected() == 0 {
+	if commandTag.RowsAffected() == 0 {
 		return entity.ErrNotFound
 	}
 
