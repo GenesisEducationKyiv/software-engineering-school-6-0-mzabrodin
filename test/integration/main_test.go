@@ -7,8 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +15,8 @@ import (
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
 	"github-release-notifier/internal/infrastructure/db"
+	"github-release-notifier/internal/infrastructure/outbox"
+	submigrations "github-release-notifier/internal/subscription/migrations"
 )
 
 var (
@@ -55,19 +55,16 @@ func run(m *testing.M) int {
 		return 1
 	}
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		slog.Error("cannot determine source file path")
+	integrationLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	if err := db.RunMigrationsFS(pgDSN, submigrations.FS, integrationLogger); err != nil {
+		slog.Error("run subscription migrations", "err", err)
 		return 1
 	}
 
-	migrationsDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations")
-	migrationsURL := "file://" + filepath.ToSlash(migrationsDir)
-
-	integrationLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	if err := db.RunMigrations(pgDSN, migrationsURL, integrationLogger); err != nil {
-		slog.Error("run migrations", "err", err)
+	if err := db.RunMigrationsFS(pgDSN, outbox.Migrations, integrationLogger,
+		db.WithMigrationsTable("outbox_schema_migrations")); err != nil {
+		slog.Error("run outbox migrations", "err", err)
 		return 1
 	}
 
