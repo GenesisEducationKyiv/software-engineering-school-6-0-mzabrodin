@@ -13,6 +13,10 @@ import (
 
 var ErrTerminal = errors.New("terminal message error")
 
+func Terminal(err error) error {
+	return fmt.Errorf("%w: %w", ErrTerminal, err)
+}
+
 const (
 	maxDeliver = 5
 	ackWait    = 90 * time.Second
