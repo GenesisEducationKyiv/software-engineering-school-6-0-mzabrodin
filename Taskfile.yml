@@ -6,11 +6,6 @@ tasks:
     cmds:
       - go build ./...
 
-  certs:
-    desc: Generate the mTLS certificates (subscription/scanner) into certs/
-    cmds:
-      - go run ./scripts/gencerts certs
-
   test-unit:
     desc: Run unit tests
     cmds:
