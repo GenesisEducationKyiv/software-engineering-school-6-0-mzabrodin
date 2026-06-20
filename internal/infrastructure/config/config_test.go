@@ -11,11 +11,9 @@ import (
 
 // requiredEnv lists every variable marked required:"true" in the config structs.
 var requiredEnv = map[string]string{
-	"DATABASE_URL":  "postgres://user:pass@localhost:5432/db",
-	"REDIS_URL":     "redis://localhost:6379",
-	"TLS_CERT_FILE": "/certs/subscription.crt",
-	"TLS_KEY_FILE":  "/certs/subscription.key",
-	"TLS_CA_FILE":   "/certs/ca.crt",
+	"DATABASE_URL": "postgres://user:pass@localhost:5432/db",
+	"REDIS_URL":    "redis://localhost:6379",
+	"JWT_SECRET":   "test-secret",
 }
 
 // requiredScannerEnv lists every variable marked required:"true" in ScannerConfig.
@@ -59,9 +57,7 @@ func (s *ConfigSuite) TestLoadAllRequiredSet() {
 
 	s.Equal(requiredEnv["DATABASE_URL"], cfg.DatabaseURL)
 	s.Equal(requiredEnv["REDIS_URL"], cfg.RedisURL)
-	s.Equal(requiredEnv["TLS_CERT_FILE"], cfg.TLS.CertFile)
-	s.Equal(requiredEnv["TLS_KEY_FILE"], cfg.TLS.KeyFile)
-	s.Equal(requiredEnv["TLS_CA_FILE"], cfg.TLS.CAFile)
+	s.Equal(requiredEnv["JWT_SECRET"], cfg.JWTSecret)
 }
 
 func (s *ConfigSuite) TestLoadMissingRequired() {
@@ -89,9 +85,8 @@ func (s *ConfigSuite) TestLoadDefaults() {
 
 	s.Equal("8080", cfg.Port)
 	s.Equal("http://localhost:8080", cfg.BaseURL)
-	s.Equal("localhost:50051", cfg.ScannerAddr)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
-	s.Equal(10*time.Minute, cfg.ScanInterval)
+	s.Equal(24*time.Hour, cfg.ConfirmTokenTTL)
 }
 
 func (s *ConfigSuite) TestLoadScannerDefaults() {
