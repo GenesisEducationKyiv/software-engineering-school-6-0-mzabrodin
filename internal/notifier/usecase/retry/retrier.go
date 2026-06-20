@@ -102,6 +102,10 @@ func (r *Retrier) Releases(ctx context.Context) error {
 		return fmt.Errorf("list retryable notifications: %w", err)
 	}
 
+	if len(rows) > 0 {
+		r.log.InfoContext(ctx, "retrying failed release notifications", "count", len(rows))
+	}
+
 	for i := range rows {
 		r.retryRelease(ctx, &rows[i])
 	}
@@ -117,6 +121,10 @@ func (r *Retrier) Confirmations(ctx context.Context) error {
 		return fmt.Errorf("list expired confirmations: %w", err)
 	}
 
+	if len(expired) > 0 {
+		r.log.InfoContext(ctx, "dead-lettering expired confirmations", "count", len(expired))
+	}
+
 	for i := range expired {
 		r.deadLetterConfirmation(ctx, &expired[i], confirmationExpiredReason)
 	}
@@ -124,6 +132,10 @@ func (r *Retrier) Confirmations(ctx context.Context) error {
 	rows, err := r.confirmations.ListRetryable(ctx, r.cfg.MaxRetries, cutoff)
 	if err != nil {
 		return fmt.Errorf("list retryable confirmations: %w", err)
+	}
+
+	if len(rows) > 0 {
+		r.log.InfoContext(ctx, "retrying failed confirmations", "count", len(rows))
 	}
 
 	for i := range rows {

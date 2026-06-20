@@ -14,7 +14,6 @@ import (
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
-	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/adapter/eventconsumer"
 	"github-release-notifier/internal/notifier/adapter/eventpublisher"
 	"github-release-notifier/internal/notifier/adapter/mailer"
@@ -24,6 +23,7 @@ import (
 	"github-release-notifier/internal/notifier/usecase/readmodel"
 	"github-release-notifier/internal/notifier/usecase/retry"
 	"github-release-notifier/internal/notifier/usecase/sendconfirmation"
+	"github-release-notifier/internal/shared/events"
 )
 
 const shutdownTimeout = bootstrap.ShutdownTimeout
@@ -48,7 +48,7 @@ func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) erro
 	defer pool.Close()
 
 	conn, closeBroker, err := bootstrap.ConnectBroker(ctx, cfg.NATSURL,
-		notifier.StreamEmail, []string{notifier.SubjectConfirmation, notifier.SubjectRelease}, log)
+		events.StreamNotifications, events.SubjectsNotifications, log)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) erro
 
 	comps := buildComponents(pool, conn, mail, cfg, log)
 
-	stop, err := startConsumers(ctx, conn, mail, comps.eventConsumer, log)
+	stop, err := startConsumers(ctx, conn, comps.eventConsumer, log)
 	if err != nil {
 		return fmt.Errorf("start consumers: %w", err)
 	}
@@ -69,7 +69,7 @@ func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) erro
 	maintenanceDone, cancelMaintenance := startMaintenance(ctx, comps.retrier, comps.processed, cfg, log)
 
 	metricsSrv := &http.Server{
-		Addr:              ":" + cfg.HTTPPort,
+		Addr:              ":" + cfg.Port,
 		Handler:           bootstrap.MetricsHandler(),
 		ReadHeaderTimeout: shutdownTimeout,
 	}
@@ -104,7 +104,7 @@ func buildComponents(
 	urls := urlbuilder.New(cfg.BaseURL)
 
 	confirmUC := sendconfirmation.New(mail, failedConf, pub, log)
-	projector := readmodel.New(readRepo)
+	projector := readmodel.New(readRepo, log)
 	releaseUC := notifyrelease.New(readRepo, processed, failedNotif, mail, urls, pub, log)
 	retrier := retry.New(failedNotif, failedConf, readRepo, mail, mail, urls, pub, retry.Config{
 		MaxRetries:      cfg.MaxRetries,

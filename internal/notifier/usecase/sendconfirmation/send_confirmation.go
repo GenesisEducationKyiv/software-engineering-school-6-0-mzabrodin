@@ -47,6 +47,8 @@ func New(mailSender sender, failed failedStore, pub publisher, log *slog.Logger)
 }
 
 func (uc *UseCase) Execute(ctx context.Context, in Input) error {
+	uc.log.InfoContext(ctx, "sending confirmation email", "email", in.Email, "repo", in.RepoName)
+
 	if err := uc.sender.DeliverConfirmation(ctx, in.Email, in.RepoName, in.ConfirmURL); err != nil {
 		uc.log.WarnContext(ctx, "confirmation send failed; queued for retry",
 			"email", in.Email, "repo", in.RepoName, "error", err)
@@ -71,6 +73,8 @@ func (uc *UseCase) Execute(ctx context.Context, in Input) error {
 
 		return nil
 	}
+
+	uc.log.InfoContext(ctx, "confirmation email sent", "email", in.Email, "repo", in.RepoName)
 
 	notifier.TryPublish(ctx, uc.log, "confirmation sent", func() error {
 		return uc.publisher.ConfirmationSent(ctx, events.NotificationConfirmationSent{

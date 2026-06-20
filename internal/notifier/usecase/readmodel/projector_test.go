@@ -1,6 +1,8 @@
 package readmodel
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/google/uuid"
@@ -23,7 +25,7 @@ func TestProjectorSuite(t *testing.T) {
 
 func (s *ProjectorSuite) SetupTest() {
 	s.store = &mockStore{}
-	s.projector = New(s.store)
+	s.projector = New(s.store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func (s *ProjectorSuite) TearDownTest() {
