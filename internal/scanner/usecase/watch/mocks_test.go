@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github-release-notifier/internal/scanner/domain"
-	"github-release-notifier/internal/shared/entity"
 	"github-release-notifier/internal/shared/events"
 )
 
@@ -26,10 +25,10 @@ func (m *mockRepository) AdvanceTag(ctx context.Context, repoName, tag string) e
 
 type mockScanner struct{ mock.Mock }
 
-func (m *mockScanner) Scan(ctx context.Context, repos []string) ([]entity.ObservedRelease, error) {
+func (m *mockScanner) Scan(ctx context.Context, repos []string) ([]domain.ObservedRelease, error) {
 	args := m.Called(ctx, repos)
 
-	observed, _ := args.Get(0).([]entity.ObservedRelease)
+	observed, _ := args.Get(0).([]domain.ObservedRelease)
 
 	return observed, args.Error(1)
 }

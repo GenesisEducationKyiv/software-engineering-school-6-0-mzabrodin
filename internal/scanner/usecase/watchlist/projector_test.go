@@ -1,6 +1,8 @@
 package watchlist
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/google/uuid"
@@ -23,7 +25,7 @@ func TestProjectorSuite(t *testing.T) {
 
 func (s *ProjectorSuite) SetupTest() {
 	s.repo = &mockRepository{}
-	s.projector = New(s.repo)
+	s.projector = New(s.repo, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func (s *ProjectorSuite) TearDownTest() {

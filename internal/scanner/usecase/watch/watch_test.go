@@ -42,8 +42,8 @@ func (s *WatchSuite) TearDownTest() {
 
 func ptr(s string) *string { return &s }
 
-func observed(repo, tag string) entity.ObservedRelease {
-	return entity.ObservedRelease{
+func observed(repo, tag string) domain.ObservedRelease {
+	return domain.ObservedRelease{
 		Repo:    repo,
 		Release: &entity.Release{TagName: tag, HTMLURL: "https://example.test/" + tag},
 	}
@@ -59,7 +59,7 @@ func (s *WatchSuite) TestSeedsSilentlyWhenNoTag() {
 	s.repos.On("ListWatched", mock.Anything).
 		Return([]domain.WatchedRepo{{RepoName: "golang/go", LastSeenTag: nil}}, nil)
 	s.scanner.On("Scan", mock.Anything, []string{"golang/go"}).
-		Return([]entity.ObservedRelease{observed("golang/go", "v1.0.0")}, nil)
+		Return([]domain.ObservedRelease{observed("golang/go", "v1.0.0")}, nil)
 	s.repos.On("AdvanceTag", mock.Anything, "golang/go", "v1.0.0").Return(nil)
 
 	s.Require().NoError(s.uc.Run(s.T().Context()))
@@ -70,7 +70,7 @@ func (s *WatchSuite) TestPublishesOnNewTag() {
 	s.repos.On("ListWatched", mock.Anything).
 		Return([]domain.WatchedRepo{{RepoName: "golang/go", LastSeenTag: ptr("v1.0.0")}}, nil)
 	s.scanner.On("Scan", mock.Anything, []string{"golang/go"}).
-		Return([]entity.ObservedRelease{observed("golang/go", "v1.1.0")}, nil)
+		Return([]domain.ObservedRelease{observed("golang/go", "v1.1.0")}, nil)
 	s.publisher.On("ReleaseDetected", mock.Anything, detectedFor("golang/go", "v1.1.0")).Return(nil)
 
 	s.Require().NoError(s.uc.Run(s.T().Context()))
@@ -81,7 +81,7 @@ func (s *WatchSuite) TestSkipsWhenTagUnchanged() {
 	s.repos.On("ListWatched", mock.Anything).
 		Return([]domain.WatchedRepo{{RepoName: "golang/go", LastSeenTag: ptr("v1.0.0")}}, nil)
 	s.scanner.On("Scan", mock.Anything, []string{"golang/go"}).
-		Return([]entity.ObservedRelease{observed("golang/go", "v1.0.0")}, nil)
+		Return([]domain.ObservedRelease{observed("golang/go", "v1.0.0")}, nil)
 
 	s.Require().NoError(s.uc.Run(s.T().Context()))
 	s.repos.AssertNotCalled(s.T(), "AdvanceTag")
@@ -93,7 +93,7 @@ func (s *WatchSuite) TestContinuesWhenPublishFails() {
 		{RepoName: "golang/go", LastSeenTag: ptr("v1.0.0")},
 		{RepoName: "rust-lang/rust", LastSeenTag: ptr("v2.0.0")},
 	}, nil)
-	s.scanner.On("Scan", mock.Anything, []string{"golang/go", "rust-lang/rust"}).Return([]entity.ObservedRelease{
+	s.scanner.On("Scan", mock.Anything, []string{"golang/go", "rust-lang/rust"}).Return([]domain.ObservedRelease{
 		observed("golang/go", "v1.1.0"),
 		observed("rust-lang/rust", "v2.1.0"),
 	}, nil)

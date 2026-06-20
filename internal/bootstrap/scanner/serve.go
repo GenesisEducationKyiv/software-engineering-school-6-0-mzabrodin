@@ -9,7 +9,6 @@ import (
 )
 
 type serveDeps struct {
-	grpcSrv         *http.Server
 	metricsSrv      *http.Server
 	schedulerDone   <-chan struct{}
 	cancelScheduler context.CancelFunc
@@ -17,14 +16,7 @@ type serveDeps struct {
 }
 
 func serve(ctx context.Context, d serveDeps) error {
-	serverError := make(chan error, 2)
-
-	go func() {
-		d.log.Info("server started", "server", "grpc", "addr", d.grpcSrv.Addr)
-		if err := d.grpcSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverError <- err
-		}
-	}()
+	serverError := make(chan error, 1)
 
 	go func() {
 		d.log.Info("server started", "server", "metrics", "addr", d.metricsSrv.Addr)
@@ -51,10 +43,6 @@ func gracefulShutdown(d serveDeps) {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	if err := d.grpcSrv.Shutdown(shutdownCtx); err != nil {
-		d.log.Warn("failed to shut down server", "server", "grpc", "error", err)
-	}
 
 	if err := d.metricsSrv.Shutdown(shutdownCtx); err != nil {
 		d.log.Warn("failed to shut down server", "server", "metrics", "error", err)

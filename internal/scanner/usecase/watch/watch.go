@@ -20,7 +20,7 @@ type repository interface {
 }
 
 type scanner interface {
-	Scan(ctx context.Context, repos []string) ([]entity.ObservedRelease, error)
+	Scan(ctx context.Context, repos []string) ([]domain.ObservedRelease, error)
 }
 
 type publisher interface {
@@ -49,6 +49,7 @@ func (uc *UseCase) Run(ctx context.Context) error {
 	}
 
 	if len(watched) == 0 {
+		uc.log.DebugContext(ctx, "no watched repos, skipping scan")
 		return nil
 	}
 
@@ -59,25 +60,46 @@ func (uc *UseCase) Run(ctx context.Context) error {
 		byName[repo.RepoName] = repo
 	}
 
+	uc.log.InfoContext(ctx, "scan started", "repos", len(names))
+
 	observed, err := uc.scanner.Scan(ctx, names)
 	if err != nil {
 		metrics.ScannerErrorsTotal.WithLabelValues("scan").Inc()
 		return fmt.Errorf("scan repos: %w", err)
 	}
 
+	var seeded, detected int
 	for _, rel := range observed {
 		repo, ok := byName[rel.Repo]
 		if !ok {
 			continue
 		}
 
-		uc.process(ctx, repo, rel.Release)
+		switch uc.process(ctx, repo, rel.Release) {
+		case outcomeSeeded:
+			seeded++
+		case outcomeDetected:
+			detected++
+		case outcomeUnchanged:
+		}
 	}
+
+	uc.log.InfoContext(ctx, "scan completed",
+		"repos", len(names), "fetched", len(observed),
+		"detected", detected, "seeded", seeded, "duration", time.Since(start).String())
 
 	return nil
 }
 
-func (uc *UseCase) process(ctx context.Context, repo domain.WatchedRepo, release *entity.Release) {
+type outcome int
+
+const (
+	outcomeUnchanged outcome = iota
+	outcomeSeeded
+	outcomeDetected
+)
+
+func (uc *UseCase) process(ctx context.Context, repo domain.WatchedRepo, release *entity.Release) outcome {
 	tag := release.TagName
 
 	if repo.LastSeenTag == nil {
@@ -88,18 +110,17 @@ func (uc *UseCase) process(ctx context.Context, repo domain.WatchedRepo, release
 			uc.log.ErrorContext(ctx, "failed to seed last seen tag", "repo", repo.RepoName, "error", err)
 		}
 
-		return
+		return outcomeSeeded
 	}
 
 	if *repo.LastSeenTag == tag {
-		return
+		uc.log.DebugContext(ctx, "no new release", "repo", repo.RepoName, "tag", tag)
+		return outcomeUnchanged
 	}
 
-	uc.log.InfoContext(ctx, "new release detected", "repo", repo.RepoName, "tag", tag)
+	uc.log.InfoContext(ctx, "new release detected",
+		"repo", repo.RepoName, "tag", tag, "previous_tag", *repo.LastSeenTag)
 
-	// Publish only; last_seen_tag advances when releases.notified reports a
-	// successful delivery. A failed publish is re-detected next pass (the tag is
-	// unchanged), so direct publishing needs no outbox.
 	if err := uc.publisher.ReleaseDetected(ctx, events.ReleaseDetected{
 		SagaID:     uuid.NewString(),
 		RepoName:   repo.RepoName,
@@ -109,4 +130,6 @@ func (uc *UseCase) process(ctx context.Context, repo domain.WatchedRepo, release
 		metrics.ScannerErrorsTotal.WithLabelValues("publish_detected").Inc()
 		uc.log.ErrorContext(ctx, "failed to publish release detected", "repo", repo.RepoName, "tag", tag, "error", err)
 	}
+
+	return outcomeDetected
 }

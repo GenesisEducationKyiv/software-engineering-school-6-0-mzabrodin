@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/scanner/domain"
 	"github-release-notifier/internal/shared/entity"
 	"github-release-notifier/internal/shared/github"
 )
@@ -27,10 +28,10 @@ func New(gh gitHubClient, workers int, log *slog.Logger) *Scanner {
 	return &Scanner{github: gh, workers: workers, log: log.With("component", "scanner")}
 }
 
-func (s *Scanner) Scan(ctx context.Context, repos []string) ([]entity.ObservedRelease, error) {
+func (s *Scanner) Scan(ctx context.Context, repos []string) ([]domain.ObservedRelease, error) {
 	var (
 		mu       sync.Mutex
-		observed = make([]entity.ObservedRelease, 0, len(repos))
+		observed = make([]domain.ObservedRelease, 0, len(repos))
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -52,7 +53,7 @@ func (s *Scanner) Scan(ctx context.Context, repos []string) ([]entity.ObservedRe
 			}
 
 			mu.Lock()
-			observed = append(observed, entity.ObservedRelease{Repo: repo, Release: release})
+			observed = append(observed, domain.ObservedRelease{Repo: repo, Release: release})
 			mu.Unlock()
 
 			return nil
