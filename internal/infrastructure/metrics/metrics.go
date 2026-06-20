@@ -35,11 +35,20 @@ var (
 		},
 	)
 
-	NotificationsSentTotal = prometheus.NewCounter(
+	EventsPublishedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "notifications_sent_total",
-			Help: "Total number of release notification emails sent.",
+			Name: "events_published_total",
+			Help: "Total number of events published to the broker by subject and result.",
 		},
+		[]string{"subject", "result"},
+	)
+
+	EventsConsumedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "events_consumed_total",
+			Help: "Total number of events consumed from the broker by subject and acknowledgement (ack, nak, term).",
+		},
+		[]string{"subject", "result"},
 	)
 
 	GitHubAPIErrorsTotal = prometheus.NewCounterVec(
@@ -149,7 +158,8 @@ func init() {
 		RequestDuration,
 		ScannerRunsTotal,
 		ScannerDuration,
-		NotificationsSentTotal,
+		EventsPublishedTotal,
+		EventsConsumedTotal,
 		GitHubAPIErrorsTotal,
 		SubscriptionOperationsTotal,
 		ScannerErrorsTotal,
