@@ -3,7 +3,7 @@
 A service that monitors GitHub repositories for new releases and delivers email notifications to subscribers.
 
 > This README states the facts about the project. For design rationale and detail, see the
-> [system design document](docs/sdd.md) and the [architecture decision records](docs/adr/).
+> [system design document](docs/SDD.md) and the [architecture decision records](docs/adr/).
 
 ## What it does
 
