@@ -120,6 +120,37 @@ func EnsureEventStreams(ctx context.Context, conn *broker.Conn) error {
 	return nil
 }
 
+type ConsumerSpec struct {
+	Stream  string
+	Durable string
+	Subject string
+	Handler broker.Handler
+}
+
+func StartConsumers(ctx context.Context, conn *broker.Conn, specs []ConsumerSpec, log *slog.Logger) (func(), error) {
+	stops := make([]func(), 0, len(specs))
+	stopAll := func() {
+		for i := len(stops) - 1; i >= 0; i-- {
+			stops[i]()
+		}
+	}
+
+	for _, s := range specs {
+		stop, err := conn.Consume(ctx, s.Stream, s.Durable, s.Subject, s.Handler)
+		if err != nil {
+			stopAll()
+
+			return nil, fmt.Errorf("consume %q: %w", s.Durable, err)
+		}
+
+		stops = append(stops, stop)
+	}
+
+	log.Info("consumers started", "count", len(specs))
+
+	return stopAll, nil
+}
+
 func MetricsHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
