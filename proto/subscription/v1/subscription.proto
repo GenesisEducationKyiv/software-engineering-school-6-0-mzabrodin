@@ -40,8 +40,8 @@ message SubscribeResponse {
 }
 
 message ConfirmRequest {
-  // token is the 64-character hex confirmation token.
-  string token = 1 [(buf.validate.field).string.len = 64];
+  // token is the signed JWT confirmation token.
+  string token = 1 [(buf.validate.field).string.min_len = 1];
 }
 
 message ConfirmResponse {
@@ -69,5 +69,4 @@ message Subscription {
   string email = 1;
   string repo = 2;
   bool confirmed = 3;
-  optional string last_seen_tag = 4;
 }
