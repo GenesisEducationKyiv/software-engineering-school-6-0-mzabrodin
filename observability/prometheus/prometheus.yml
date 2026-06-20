@@ -3,6 +3,7 @@ global:
   scrape_timeout: 10s
   evaluation_interval: 30s
 
+# Scrape targets are static, so the ports below must match the service ports configured in .env
 scrape_configs:
   - job_name: github_release_notifier
     static_configs:

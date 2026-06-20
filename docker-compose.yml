@@ -19,14 +19,14 @@ services:
     <<: [ *service, *app-image ]
     container_name: github_release_notifier_subscription_svc
     ports:
-      - "${SUBSCRIPTION_PORT:-8080}:8080"
+      - "${SUBSCRIPTION_PORT:-8080}:${SUBSCRIPTION_PORT:-8080}"
     environment:
-      SUBSCRIPTION_PORT: "8080"
+      SUBSCRIPTION_PORT: ${SUBSCRIPTION_PORT:-8080}
       BASE_URL: ${BASE_URL:-http://localhost:8080}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@subscription-postgres:5432/${SUBSCRIPTION_DB_NAME:?SUBSCRIPTION_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
-      NATS_URL: nats://nats:4222
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
       CONFIRM_TOKEN_TTL: ${CONFIRM_TOKEN_TTL:-24h}
       PENDING_CLEANUP_INTERVAL: ${PENDING_CLEANUP_INTERVAL:-24h}
@@ -43,7 +43,7 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:8080/health" ]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${SUBSCRIPTION_PORT:-8080}/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,8 +63,8 @@ services:
       SCAN_INTERVAL: ${SCAN_INTERVAL:-10m}
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@scanner-postgres:5432/${SCANNER_DB_NAME:?SCANNER_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
-      NATS_URL: nats://nats:4222
-      SCANNER_PORT: "8082"
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      SCANNER_PORT: ${SCANNER_PORT:-8082}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     networks:
       - app_net
@@ -77,7 +77,7 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:8082/health" ]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${SCANNER_PORT:-8082}/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -93,8 +93,8 @@ services:
     command: [ "./notifier" ]
     environment:
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@notifier-postgres:5432/${NOTIFIER_DB_NAME:?NOTIFIER_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
-      NATS_URL: nats://nats:4222
-      NOTIFIER_PORT: "8081"
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      NOTIFIER_PORT: ${NOTIFIER_PORT:-8081}
       BASE_URL: ${BASE_URL:-http://localhost:8080}
       RETRY_INTERVAL: ${RETRY_INTERVAL:-15m}
       MAX_RETRIES: ${MAX_RETRIES:-5}
@@ -115,7 +115,7 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:8081/health" ]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${NOTIFIER_PORT:-8081}/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
