@@ -1,89 +1,45 @@
-# ADR-001: Primary Database
+# ADR-001: PostgreSQL as the Primary Database
 
-**Status:** Accepted
+**Status:** Accepted (per-service ownership added by [ADR-012](012-event-driven-services.md))
 
 **Author:** Zabrodin Maksym
 
 ## Context
 
-The service needs storage for repositories and subscriptions. The data is relational: each subscription belongs to one repository, tokens must be globally unique and (email, repository) pairs must be unique.
-
-## Candidates
-
-1. **PostgreSQL**
-   - Pro: Foreign keys, UNIQUE constraints and transactions are enforced at the database level
-   - Con: Requires a separate running service
-
-2. **MongoDB**
-   - Pro: Flexible schema, easy to start with
-   - Con: No built-in referential integrity, this data is relational, not document-oriented
-
-3. **SQLite**
-   - Pro: Zero infrastructure, single file
-   - Con: Serializes writes, not suitable for containerized deployment
+The system needs persistence for relational data: subscriptions belong to repositories, tokens are
+unique, and `(email, repository)` pairs are unique. Referential integrity and unique constraints
+should be enforced by the store, not the application.
 
 ## Decision
 
-Use PostgreSQL with `pgxpool` for connection pooling.
+Use PostgreSQL with `pgxpool`. Each service owns its own database — no shared tables (see
+[ADR-012](012-event-driven-services.md)). Schema migrations are embedded in each binary and applied on
+startup via `golang-migrate`.
 
-**Schema:**
+| Database     | Tables                                                                                                                                                                                                                                                                         |
+|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| subscription | `repositories{id, name, created_at}`; `subscriptions{id, repository_id→repositories, email, unsubscribe_token, confirmed, created_at}` with `UNIQUE(email, repository_id)` and an index on `email`; `outbox_messages{id, subject, payload, created_at}` (transactional outbox) |
+| scanner      | `watched_repos{repo_name PK, last_seen_tag, subscriber_count}`                                                                                                                                                                                                                 |
+| notifier     | `subscriptions_read{PK(email, repo_name), unsub_token}` (read model); `failed_notifications` / `failed_confirmations` (retry/dead-letter); `processed_releases{PK(repo_name, tag)}` (dedupe)                                                                                   |
 
-```sql
-CREATE TABLE repositories
-(
-    id            UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
-    name          TEXT        NOT NULL UNIQUE,
-    last_seen_tag TEXT,
-    checked_at    TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+Notes:
 
-CREATE TABLE subscriptions
-(
-    id                UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
-    repository_id     UUID        NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-    email             TEXT        NOT NULL,
-    confirm_token     TEXT        NOT NULL UNIQUE,
-    unsubscribe_token TEXT        NOT NULL UNIQUE,
-    confirmed         BOOLEAN     NOT NULL DEFAULT FALSE,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (email, repository_id)
-);
-
-CREATE INDEX idx_subscriptions_email ON subscriptions (email);
-```
-
-```mermaid
-erDiagram
-    REPOSITORIES {
-        UUID id PK
-        TEXT name UK
-        TEXT last_seen_tag
-        TIMESTAMPTZ checked_at
-        TIMESTAMPTZ created_at
-    }
-
-    SUBSCRIPTIONS {
-        UUID id PK
-        UUID repository_id FK
-        TEXT email
-        TEXT confirm_token UK
-        TEXT unsubscribe_token UK
-        BOOLEAN confirmed
-        TIMESTAMPTZ created_at
-    }
-
-    REPOSITORIES ||--o{ SUBSCRIPTIONS : "Has"
-```
-
-- **`last_seen_tag` is on `repositories`, not `subscriptions`:** the scanner makes one GitHub API call per repository per tick, regardless of subscriber count.
-- **`confirmed` is a boolean, not an enum:** the subscription has exactly two states.
+- The confirmation token is a stateless JWT ([ADR-004](004-tokens.md)) — there is no
+  `confirm_token` column.
+- `last_seen_tag` lives on the scanner's `watched_repos` (the scanner owns release tracking), not
+  on `repositories`.
+- `confirmed` is a boolean — a subscription has exactly two states (pending / confirmed).
 
 ## Consequences
 
 **Pros:**
-- UNIQUE constraints on tokens and (email, repository_id) enforce correctness at the database level
-- Email index makes `GET /api/subscriptions?email=...` fast without a full table scan
+
+- Unique constraints and foreign keys enforce correctness in the store.
+- The email index keeps `GET /api/subscriptions?email=` off a full scan.
+- Database-per-service keeps each service independently deployable and lets the schemas evolve apart.
 
 **Cons:**
-- Requires a running PostgreSQL instance
+
+- Three PostgreSQL instances to run instead of one.
+- Subscriber state is replicated across three stores (eventual consistency —
+  see [ADR-012](012-event-driven-services.md)).

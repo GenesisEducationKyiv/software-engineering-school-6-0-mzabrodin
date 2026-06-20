@@ -14,7 +14,7 @@ The project uses [Task](https://taskfile.dev) (`Taskfile.yml`).
 ## Unit tests
 
 Unit tests live alongside the code in `_test.go` files and use no external infrastructure. They use
-`testify` suites with inline mocks (mocks are hand-written in the `_test.go` files, not generated).
+`testify` suites with inline mocks (mocks are handwritten in the `_test.go` files, not generated).
 
 ```bash
 task test-unit
