@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github-release-notifier/internal/bootstrap"
+	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
@@ -18,10 +19,12 @@ import (
 	"github-release-notifier/internal/shared/github"
 	"github-release-notifier/internal/subscription/adapter/confirmtoken"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
+	"github-release-notifier/internal/subscription/adapter/eventconsumer"
 	"github-release-notifier/internal/subscription/adapter/eventpublisher"
 	"github-release-notifier/internal/subscription/adapter/repository"
 	submigrations "github-release-notifier/internal/subscription/migrations"
 	"github-release-notifier/internal/subscription/usecase/cleanup"
+	"github-release-notifier/internal/subscription/usecase/compensate"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
@@ -41,12 +44,18 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 	}
 	defer cleanupInfra()
 
-	svc, cleanupUC := buildApp(inf, cfg, log)
+	svc, cleanupUC, subConsumer := buildApp(inf, cfg, log)
 
 	publicSrv, err := newPublicServer(cfg, svc, log)
 	if err != nil {
 		return err
 	}
+
+	stopConsumers, err := startConsumers(ctx, inf.broker, subConsumer, log)
+	if err != nil {
+		return fmt.Errorf("start consumers: %w", err)
+	}
+	defer stopConsumers()
 
 	backgroundDone, cancelBackground := startBackground(ctx, inf.relay, cleanupUC, cfg.PendingCleanupInterval, log)
 
@@ -59,9 +68,10 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 }
 
 type infrastructure struct {
-	pool  *pgxpool.Pool
-	gh    *github.Client
-	relay *outbox.Relay
+	pool   *pgxpool.Pool
+	gh     *github.Client
+	relay  *outbox.Relay
+	broker *broker.Conn
 }
 
 func newInfrastructure(
@@ -123,14 +133,14 @@ func newInfrastructure(
 
 	ok = true
 
-	return &infrastructure{pool: pool, gh: gh, relay: relay}, cleanupClosers, nil
+	return &infrastructure{pool: pool, gh: gh, relay: relay, broker: brokerConn}, cleanupClosers, nil
 }
 
 func buildApp(
 	inf *infrastructure,
 	cfg *config.SubscriptionConfig,
 	log *slog.Logger,
-) (*connectapi.Service, *cleanup.UseCase) {
+) (*connectapi.Service, *cleanup.UseCase, *eventconsumer.Consumer) {
 	repos := repository.NewGitHubRepoRepository(inf.pool)
 	subs := repository.NewSubscriptionRepository(inf.pool)
 	urls := urlbuilder.New(cfg.BaseURL)
@@ -143,7 +153,9 @@ func buildApp(
 
 	cleanupUC := cleanup.New(subs, transactor, pub, cfg.ConfirmTokenTTL, log)
 
-	return svc, cleanupUC
+	consumer := eventconsumer.New(compensate.New(subs, log), log)
+
+	return svc, cleanupUC, consumer
 }
 
 type useCases struct {
