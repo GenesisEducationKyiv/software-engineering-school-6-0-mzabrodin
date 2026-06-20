@@ -113,6 +113,7 @@ func EnsureEventStreams(ctx context.Context, conn *broker.Conn) error {
 		{events.StreamSubscriptions, events.SubjectsSubscriptions},
 		{events.StreamReleases, events.SubjectsReleases},
 		{events.StreamNotifications, events.SubjectsNotifications},
+		{events.StreamSagas, events.SubjectsSagas},
 	}
 
 	for _, s := range streams {
