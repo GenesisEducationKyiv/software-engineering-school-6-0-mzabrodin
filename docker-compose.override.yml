@@ -1,7 +1,13 @@
 services:
-  postgres:
+  subscription-postgres:
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${SUBSCRIPTION_DB_PORT:-5432}:5432"
+  scanner-postgres:
+    ports:
+      - "${SCANNER_DB_PORT:-5433}:5432"
+  notifier-postgres:
+    ports:
+      - "${NOTIFIER_DB_PORT:-5434}:5432"
   redis:
     ports:
       - "${REDIS_PORT:-6379}:6379"
