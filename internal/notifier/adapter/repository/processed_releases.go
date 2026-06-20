@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
 )
 
@@ -34,7 +35,7 @@ func (r *ProcessedReleasesRepository) Exists(ctx context.Context, repoName, tag 
 func (r *ProcessedReleasesRepository) Mark(ctx context.Context, repoName, tag string) error {
 	ctx = metrics.WithDBOp(ctx, "mark", "processed_releases")
 
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := db.FromContext(ctx, r.pool).Exec(ctx, `
 		INSERT INTO processed_releases (repo_name, tag) VALUES ($1, $2)
 		ON CONFLICT (repo_name, tag) DO NOTHING
 	`, repoName, tag); err != nil {

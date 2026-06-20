@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/notifier/domain"
 )
@@ -23,7 +24,7 @@ func NewFailedConfirmationsRepository(pool *pgxpool.Pool) *FailedConfirmationsRe
 func (r *FailedConfirmationsRepository) Add(ctx context.Context, fc *domain.FailedConfirmation) error {
 	ctx = metrics.WithDBOp(ctx, "add", "failed_confirmations")
 
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := db.FromContext(ctx, r.pool).Exec(ctx, `
 		INSERT INTO failed_confirmations (saga_id, email, repo_name, confirm_url, reason)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (email, repo_name) DO NOTHING
@@ -98,7 +99,7 @@ func (r *FailedConfirmationsRepository) IncrementRetry(ctx context.Context, id i
 func (r *FailedConfirmationsRepository) Delete(ctx context.Context, id int64) error {
 	ctx = metrics.WithDBOp(ctx, "delete", "failed_confirmations")
 
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := db.FromContext(ctx, r.pool).Exec(ctx, `
 		DELETE FROM failed_confirmations WHERE id = $1
 	`, id); err != nil {
 		return fmt.Errorf("delete failed_confirmations: %w", err)

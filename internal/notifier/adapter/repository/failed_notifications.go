@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/notifier/domain"
 )
@@ -22,7 +23,7 @@ func NewFailedNotificationsRepository(pool *pgxpool.Pool) *FailedNotificationsRe
 func (r *FailedNotificationsRepository) Add(ctx context.Context, fn *domain.FailedNotification) error {
 	ctx = metrics.WithDBOp(ctx, "add", "failed_notifications")
 
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := db.FromContext(ctx, r.pool).Exec(ctx, `
 		INSERT INTO failed_notifications (saga_id, repo_name, tag, release_url, email, reason)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (repo_name, tag, email) DO NOTHING
@@ -72,7 +73,7 @@ func (r *FailedNotificationsRepository) IncrementRetry(ctx context.Context, id i
 func (r *FailedNotificationsRepository) Delete(ctx context.Context, id int64) error {
 	ctx = metrics.WithDBOp(ctx, "delete", "failed_notifications")
 
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := db.FromContext(ctx, r.pool).Exec(ctx, `
 		DELETE FROM failed_notifications WHERE id = $1
 	`, id); err != nil {
 		return fmt.Errorf("delete failed_notifications: %w", err)
