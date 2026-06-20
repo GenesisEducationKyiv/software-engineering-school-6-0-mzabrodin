@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/subscription/adapter/confirmtoken"
 	"github-release-notifier/internal/subscription/domain"
@@ -84,8 +84,8 @@ func (s *ConfirmSuite) TestConfirmRepositoryErrorPropagates() {
 	m.tokens.On("Verify", "token").Return("u@example.com", "owner/repo", nil)
 	m.tx.On("Within", mock.Anything).Return(nil)
 	m.subs.On("Confirm", mock.Anything, "u@example.com", "owner/repo").
-		Return(domain.ConfirmResult{}, entity.ErrNotFound)
+		Return(domain.ConfirmResult{}, shareddomain.ErrNotFound)
 
 	_, err := m.useCase().Execute(s.T().Context(), confirm.Input{Token: "token"})
-	s.ErrorIs(err, entity.ErrNotFound)
+	s.ErrorIs(err, shareddomain.ErrNotFound)
 }

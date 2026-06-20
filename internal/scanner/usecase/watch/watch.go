@@ -10,7 +10,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/scanner/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 )
 
@@ -99,7 +99,7 @@ const (
 	outcomeDetected
 )
 
-func (uc *UseCase) process(ctx context.Context, repo domain.WatchedRepo, release *entity.Release) outcome {
+func (uc *UseCase) process(ctx context.Context, repo domain.WatchedRepo, release *shareddomain.Release) outcome {
 	tag := release.TagName
 
 	if repo.LastSeenTag == nil {

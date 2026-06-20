@@ -9,7 +9,7 @@ import (
 
 	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 )
 
@@ -147,7 +147,7 @@ func (r *Retrier) Confirmations(ctx context.Context) error {
 
 func (r *Retrier) retryRelease(ctx context.Context, fn *domain.FailedNotification) {
 	rec, err := r.recipients.Recipient(ctx, fn.Email, fn.RepoName)
-	if errors.Is(err, entity.ErrNotFound) {
+	if errors.Is(err, shareddomain.ErrNotFound) {
 		r.deleteNotification(ctx, fn.ID)
 
 		return

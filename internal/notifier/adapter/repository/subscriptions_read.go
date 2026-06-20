@@ -10,7 +10,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/notifier/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 )
 
 type SubscriptionsReadRepository struct {
@@ -80,7 +80,7 @@ func (r *SubscriptionsReadRepository) Recipient(ctx context.Context, email, repo
 
 	collectedRow, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[recipientRow])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Recipient{}, entity.ErrNotFound
+		return domain.Recipient{}, shareddomain.ErrNotFound
 	}
 
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/scanner/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 )
 
@@ -45,7 +45,7 @@ func ptr(s string) *string { return &s }
 func observed(repo, tag string) domain.ObservedRelease {
 	return domain.ObservedRelease{
 		Repo:    repo,
-		Release: &entity.Release{TagName: tag, HTMLURL: "https://example.test/" + tag},
+		Release: &shareddomain.Release{TagName: tag, HTMLURL: "https://example.test/" + tag},
 	}
 }
 

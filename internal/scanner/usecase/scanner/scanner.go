@@ -10,12 +10,12 @@ import (
 
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/scanner/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 )
 
 type gitHubClient interface {
-	GetLatestRelease(ctx context.Context, owner, repo string) (*entity.Release, error)
+	GetLatestRelease(ctx context.Context, owner, repo string) (*shareddomain.Release, error)
 }
 
 type Scanner struct {
@@ -67,7 +67,7 @@ func (s *Scanner) Scan(ctx context.Context, repos []string) ([]domain.ObservedRe
 	return observed, nil
 }
 
-func (s *Scanner) fetchRelease(ctx context.Context, repoName string) (*entity.Release, error) {
+func (s *Scanner) fetchRelease(ctx context.Context, repoName string) (*shareddomain.Release, error) {
 	select {
 	case <-ctx.Done():
 		return nil, nil

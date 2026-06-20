@@ -6,7 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 	"github-release-notifier/internal/subscription/adapter/confirmtoken"
 )
@@ -18,8 +18,8 @@ var domainErrorMappings = []struct {
 }{
 	{github.ErrInvalidRepo, connect.CodeInvalidArgument, "invalid repo format, expected owner/repo"},
 	{github.ErrRepoNotFound, connect.CodeNotFound, "repository not found on GitHub"},
-	{entity.ErrAlreadyExists, connect.CodeAlreadyExists, "email already subscribed to this repository"},
-	{entity.ErrNotFound, connect.CodeNotFound, "token not found"},
+	{domain.ErrAlreadyExists, connect.CodeAlreadyExists, "email already subscribed to this repository"},
+	{domain.ErrNotFound, connect.CodeNotFound, "token not found"},
 	{confirmtoken.ErrExpired, connect.CodeNotFound, "confirmation link has expired"},
 	{confirmtoken.ErrInvalid, connect.CodeInvalidArgument, "invalid confirmation token"},
 }

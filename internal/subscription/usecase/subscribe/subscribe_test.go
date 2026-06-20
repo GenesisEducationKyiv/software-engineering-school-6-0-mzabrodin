@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/shared/github"
 	"github-release-notifier/internal/subscription/domain"
@@ -79,7 +79,7 @@ func (s *SubscribeSuite) TestExecute() {
 				repoID := uuid.New()
 				m.expectRepoResolved(repoID)
 				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
-					Return(domain.Subscription{}, entity.ErrNotFound)
+					Return(domain.Subscription{}, shareddomain.ErrNotFound)
 				m.tokens.On("Issue", "user@example.com", "owner/repo").Return("jwt-token", nil)
 				m.urls.On("ConfirmURL", "jwt-token").Return("http://localhost:8080/api/confirm/jwt-token")
 				m.tx.On("Within", mock.Anything).Return(nil)
@@ -119,7 +119,7 @@ func (s *SubscribeSuite) TestExecute() {
 				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
 					Return(domain.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: true}, nil)
 			},
-			wantErrIs: entity.ErrAlreadyExists,
+			wantErrIs: shareddomain.ErrAlreadyExists,
 		},
 	}
 

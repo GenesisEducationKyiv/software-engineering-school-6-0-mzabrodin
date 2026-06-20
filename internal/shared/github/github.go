@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/domain"
 )
 
 const (
@@ -100,7 +100,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (exists boo
 	return true, nil
 }
 
-func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (release *entity.Release, err error) {
+func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (release *domain.Release, err error) {
 	start := time.Now()
 	defer func() {
 		metrics.GitHubAPIRequestsTotal.WithLabelValues("latest_release", metrics.ResultLabel(err)).Inc()
@@ -132,7 +132,7 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, repo string) (rele
 	return c.parseAndCacheRelease(ctx, key, body)
 }
 
-func (c *Client) getCachedRelease(ctx context.Context, key string) (*entity.Release, bool, error) {
+func (c *Client) getCachedRelease(ctx context.Context, key string) (*domain.Release, bool, error) {
 	val, found, err := c.cache.Get(ctx, key)
 	if err != nil {
 		c.log.WarnContext(ctx, "cache get failed, falling through to GitHub API", "key", key, "error", err)
@@ -147,7 +147,7 @@ func (c *Client) getCachedRelease(ctx context.Context, key string) (*entity.Rele
 		return nil, true, ErrNoRelease
 	}
 
-	var r entity.Release
+	var r domain.Release
 	if err := json.Unmarshal([]byte(val), &r); err != nil {
 		c.log.WarnContext(ctx, "failed to unmarshal cached release", "key", key, "error", err)
 		return nil, false, nil
@@ -156,13 +156,13 @@ func (c *Client) getCachedRelease(ctx context.Context, key string) (*entity.Rele
 	return &r, true, nil
 }
 
-func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []byte) (*entity.Release, error) {
+func (c *Client) parseAndCacheRelease(ctx context.Context, key string, body []byte) (*domain.Release, error) {
 	var r githubRelease
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("decode release: %w", err)
 	}
 
-	release := &entity.Release{TagName: r.TagName, HTMLURL: r.HTMLURL}
+	release := &domain.Release{TagName: r.TagName, HTMLURL: r.HTMLURL}
 
 	data, err := json.Marshal(release)
 	if err != nil {

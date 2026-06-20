@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/shared/github"
 	"github-release-notifier/internal/subscription/domain"
@@ -111,10 +111,10 @@ func (uc *UseCase) resolveExisting(ctx context.Context, email string, repoID uui
 	existing, err := uc.subs.FindByEmailAndRepo(ctx, email, repoID)
 	switch {
 	case err == nil && existing.Confirmed:
-		return false, entity.ErrAlreadyExists
+		return false, shareddomain.ErrAlreadyExists
 	case err == nil:
 		return false, nil
-	case errors.Is(err, entity.ErrNotFound):
+	case errors.Is(err, shareddomain.ErrNotFound):
 		return true, nil
 	default:
 		return false, fmt.Errorf("find subscription: %w", err)

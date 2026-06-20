@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/scanner/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 )
 
-func release(tag string) *entity.Release {
-	return &entity.Release{TagName: tag, HTMLURL: "https://github.com/owner/repo/releases/tag/" + tag}
+func release(tag string) *shareddomain.Release {
+	return &shareddomain.Release{TagName: tag, HTMLURL: "https://github.com/owner/repo/releases/tag/" + tag}
 }
 
 func newScanner(gh *mockGitHub, workers int) *Scanner {

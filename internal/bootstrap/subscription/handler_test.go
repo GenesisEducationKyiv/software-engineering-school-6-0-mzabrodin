@@ -18,7 +18,7 @@ import (
 	"golang.org/x/net/http2"
 
 	"github-release-notifier/internal/bootstrap/subscription"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 	"github-release-notifier/internal/subscription/domain"
@@ -201,7 +201,7 @@ func (s *HandlerSuite) TestREST_Subscribe_RepoNotFound_NotFound() {
 }
 
 func (s *HandlerSuite) TestREST_Subscribe_Duplicate_Conflict() {
-	s.subscribe.On("Execute", mock.Anything, mock.Anything).Return(subscribe.Output{}, entity.ErrAlreadyExists)
+	s.subscribe.On("Execute", mock.Anything, mock.Anything).Return(subscribe.Output{}, shareddomain.ErrAlreadyExists)
 
 	resp := s.doREST(http.MethodPost, "/api/subscribe",
 		`{"email":"user@example.com","repo":"owner/repo"}`, testKey)

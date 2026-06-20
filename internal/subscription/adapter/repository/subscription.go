@@ -12,7 +12,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/subscription/domain"
 )
 
@@ -37,7 +37,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub domain.Subscrip
 	}
 
 	if commandTag.RowsAffected() == 0 {
-		return entity.ErrAlreadyExists
+		return shareddomain.ErrAlreadyExists
 	}
 
 	return nil
@@ -60,7 +60,7 @@ func (r *SubscriptionRepository) FindByEmailAndRepo(
 
 	collectedRow, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[subscriptionRow])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Subscription{}, entity.ErrNotFound
+		return domain.Subscription{}, shareddomain.ErrNotFound
 	}
 	if err != nil {
 		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
@@ -104,7 +104,7 @@ func (r *SubscriptionRepository) Delete(ctx context.Context, token string) (doma
 		SELECT d.email, r.name FROM deleted d JOIN repositories r ON r.id = d.repository_id
 	`, token).Scan(&removed.Email, &removed.Repo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.RemovedSubscription{}, entity.ErrNotFound
+		return domain.RemovedSubscription{}, shareddomain.ErrNotFound
 	}
 	if err != nil {
 		return domain.RemovedSubscription{}, fmt.Errorf("delete subscription: %w", err)

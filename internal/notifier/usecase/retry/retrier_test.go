@@ -13,7 +13,7 @@ import (
 
 	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/domain"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 )
 
 const maxRetries = 3
@@ -132,7 +132,7 @@ func (s *RetrySuite) TestReleaseRetryDropsUnsubscribedRecipient() {
 	s.notifications.On("ListRetryable", mock.Anything, maxRetries).
 		Return([]domain.FailedNotification{s.failedNotification(0)}, nil)
 	s.recipients.On("Recipient", mock.Anything, mock.Anything, mock.Anything).
-		Return(domain.Recipient{}, entity.ErrNotFound)
+		Return(domain.Recipient{}, shareddomain.ErrNotFound)
 	s.notifications.On("Delete", mock.Anything, int64(1)).Return(nil)
 
 	s.Require().NoError(s.retrier.Releases(s.T().Context()))
@@ -198,7 +198,7 @@ func (s *RetrySuite) TestReleaseRetryContinuesPastRecipientError() {
 	s.notifications.On("ListRetryable", mock.Anything, maxRetries).
 		Return([]domain.FailedNotification{fn1, fn2}, nil)
 	s.recipients.On("Recipient", mock.Anything, fn1.Email, mock.Anything).
-		Return(domain.Recipient{}, entity.ErrNotFound)
+		Return(domain.Recipient{}, shareddomain.ErrNotFound)
 	s.recipients.On("Recipient", mock.Anything, fn2.Email, mock.Anything).
 		Return(domain.Recipient{Email: fn2.Email, UnsubToken: "t"}, nil)
 	s.notifications.On("Delete", mock.Anything, int64(1)).Return(nil)
