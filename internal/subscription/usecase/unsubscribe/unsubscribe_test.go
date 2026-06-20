@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/events"
+	"github-release-notifier/internal/subscription/domain"
 	"github-release-notifier/internal/subscription/usecase/unsubscribe"
 )
 
@@ -18,28 +20,33 @@ func TestUnsubscribeSuite(t *testing.T) {
 	suite.Run(t, new(UnsubscribeSuite))
 }
 
-func (s *UnsubscribeSuite) TestExecute() {
-	cases := []struct {
-		name      string
-		mockErr   error
-		wantErrIs error
-	}{
-		{"success", nil, nil},
-		{"not found", entity.ErrNotFound, entity.ErrNotFound},
-	}
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			subs := &mockSubRepository{}
-			subs.On("Delete", mock.Anything, "sometoken").Return(tc.mockErr)
-			defer subs.AssertExpectations(s.T())
+func (s *UnsubscribeSuite) TestSuccessPublishesRemoved() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
 
-			uc := unsubscribe.New(subs, testLogger)
-			_, err := uc.Execute(s.T().Context(), unsubscribe.Input{Token: "sometoken"})
-			if tc.wantErrIs != nil {
-				s.ErrorIs(err, tc.wantErrIs)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
+	m.subs.On("Delete", mock.Anything, "sometoken").
+		Return(domain.RemovedSubscription{Email: "u@example.com", Repo: "owner/repo"}, nil)
+	m.tx.On("Within", mock.Anything).Return(nil)
+	m.pub.On("SubscriptionRemoved", mock.Anything, mock.MatchedBy(func(ev events.SubscriptionRemoved) bool {
+		return ev.Email == "u@example.com" && ev.RepoName == "owner/repo" && ev.SagaID != ""
+	})).Return(nil)
+	m.pub.On("Notify").Return()
+
+	_, err := m.useCase().Execute(s.T().Context(), unsubscribe.Input{Token: "sometoken"})
+	s.Require().NoError(err)
+}
+
+func (s *UnsubscribeSuite) TestNotFoundPropagates() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
+
+	m.subs.On("Delete", mock.Anything, "sometoken").
+		Return(domain.RemovedSubscription{}, entity.ErrNotFound)
+	m.tx.On("Within", mock.Anything).Return(nil)
+
+	_, err := m.useCase().Execute(s.T().Context(), unsubscribe.Input{Token: "sometoken"})
+	s.ErrorIs(err, entity.ErrNotFound)
+
+	m.pub.AssertNotCalled(s.T(), "SubscriptionRemoved", mock.Anything, mock.Anything)
+	m.pub.AssertNotCalled(s.T(), "Notify")
 }

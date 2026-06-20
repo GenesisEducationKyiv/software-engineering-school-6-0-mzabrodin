@@ -2,13 +2,14 @@ package confirm_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/shared/entity"
-	"github-release-notifier/internal/shared/github"
+	"github-release-notifier/internal/shared/events"
+	"github-release-notifier/internal/subscription/adapter/confirmtoken"
+	"github-release-notifier/internal/subscription/domain"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 )
 
@@ -20,86 +21,71 @@ func TestConfirmSuite(t *testing.T) {
 	suite.Run(t, new(ConfirmSuite))
 }
 
-func (s *ConfirmSuite) requireClosed(ch <-chan struct{}) {
-	select {
-	case <-ch:
-	case <-time.After(2 * time.Second):
-		s.FailNow("timed out waiting for async welcome send")
-	}
+func (s *ConfirmSuite) TestInvalidTokenReturnsError() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
+
+	m.tokens.On("Verify", "bad").Return("", "", confirmtoken.ErrInvalid)
+
+	_, err := m.useCase().Execute(s.T().Context(), confirm.Input{Token: "bad"})
+	s.ErrorIs(err, confirmtoken.ErrInvalid)
 }
 
-func (s *ConfirmSuite) TestReturnsErrorWhenNotFound() {
-	subs := &mockSubRepository{}
-	subs.On("Confirm", mock.Anything, "token").Return(nil, "", entity.ErrNotFound)
-	defer subs.AssertExpectations(s.T())
+func (s *ConfirmSuite) TestExpiredTokenReturnsError() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
 
-	uc := confirm.New(subs, &mockGitHub{}, &mockNotifier{}, testLogger)
-	_, err := uc.Execute(s.T().Context(), confirm.Input{Token: "token"})
+	m.tokens.On("Verify", "expired").Return("", "", confirmtoken.ErrExpired)
+
+	_, err := m.useCase().Execute(s.T().Context(), confirm.Input{Token: "expired"})
+	s.ErrorIs(err, confirmtoken.ErrExpired)
+}
+
+func (s *ConfirmSuite) TestFreshConfirmPublishesConfirmed() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
+
+	m.tokens.On("Verify", "token").Return("u@example.com", "owner/repo", nil)
+	m.tx.On("Within", mock.Anything).Return(nil)
+	m.subs.On("Confirm", mock.Anything, "u@example.com", "owner/repo").
+		Return(domain.ConfirmResult{Confirmed: true, UnsubToken: "unsub-tok"}, nil)
+	m.pub.On("SubscriptionConfirmed", mock.Anything, mock.MatchedBy(func(ev events.SubscriptionConfirmed) bool {
+		return ev.Email == "u@example.com" &&
+			ev.RepoName == "owner/repo" &&
+			ev.UnsubToken == "unsub-tok" &&
+			ev.SagaID != ""
+	})).Return(nil)
+	m.pub.On("Notify").Return()
+
+	_, err := m.useCase().Execute(s.T().Context(), confirm.Input{Token: "token"})
+	s.Require().NoError(err)
+}
+
+func (s *ConfirmSuite) TestIdempotentReconfirmPublishesNothing() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
+
+	m.tokens.On("Verify", "token").Return("u@example.com", "owner/repo", nil)
+	m.tx.On("Within", mock.Anything).Return(nil)
+	m.subs.On("Confirm", mock.Anything, "u@example.com", "owner/repo").
+		Return(domain.ConfirmResult{Confirmed: false}, nil)
+
+	_, err := m.useCase().Execute(s.T().Context(), confirm.Input{Token: "token"})
+	s.Require().NoError(err)
+
+	m.pub.AssertNotCalled(s.T(), "SubscriptionConfirmed", mock.Anything, mock.Anything)
+	m.pub.AssertNotCalled(s.T(), "Notify")
+}
+
+func (s *ConfirmSuite) TestConfirmRepositoryErrorPropagates() {
+	m := newMocks()
+	defer m.assertExpectations(s.T())
+
+	m.tokens.On("Verify", "token").Return("u@example.com", "owner/repo", nil)
+	m.tx.On("Within", mock.Anything).Return(nil)
+	m.subs.On("Confirm", mock.Anything, "u@example.com", "owner/repo").
+		Return(domain.ConfirmResult{}, entity.ErrNotFound)
+
+	_, err := m.useCase().Execute(s.T().Context(), confirm.Input{Token: "token"})
 	s.ErrorIs(err, entity.ErrNotFound)
-}
-
-func (s *ConfirmSuite) TestIdempotentReconfirmSkipsWelcome() {
-	subs := &mockSubRepository{}
-	subs.On("Confirm", mock.Anything, "token").Return(nil, "", nil)
-	defer subs.AssertExpectations(s.T())
-
-	gh := &mockGitHub{}
-	notifier := &mockNotifier{}
-
-	uc := confirm.New(subs, gh, notifier, testLogger)
-	_, err := uc.Execute(s.T().Context(), confirm.Input{Token: "token"})
-	s.Require().NoError(err)
-
-	gh.AssertNotCalled(s.T(), "GetLatestRelease", mock.Anything, mock.Anything, mock.Anything)
-	notifier.AssertNotCalled(s.T(), "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
-
-func (s *ConfirmSuite) TestSendsWelcomeReleaseOnFreshConfirm() {
-	sub := &entity.Subscription{Email: "u@example.com", UnsubscribeToken: "tok"}
-	subs := &mockSubRepository{}
-	subs.On("Confirm", mock.Anything, "token").Return(sub, "owner/repo", nil)
-
-	release := &entity.Release{TagName: "v1.0.0", HTMLURL: "https://github.com/owner/repo/releases/tag/v1.0.0"}
-	gh := &mockGitHub{}
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").Return(release, nil)
-
-	done := make(chan struct{})
-	notifier := &mockNotifier{}
-	notifier.On("Notify", mock.Anything,
-		mock.MatchedBy(func(subs []*entity.Subscription) bool {
-			return len(subs) == 1 && subs[0].Email == "u@example.com"
-		}),
-		mock.Anything, release,
-	).Run(func(mock.Arguments) { close(done) }).Return(nil)
-
-	uc := confirm.New(subs, gh, notifier, testLogger)
-	_, err := uc.Execute(s.T().Context(), confirm.Input{Token: "token"})
-	s.Require().NoError(err)
-
-	s.requireClosed(done)
-	subs.AssertExpectations(s.T())
-	gh.AssertExpectations(s.T())
-	notifier.AssertExpectations(s.T())
-}
-
-func (s *ConfirmSuite) TestSkipsWelcomeWhenNoRelease() {
-	sub := &entity.Subscription{Email: "u@example.com", UnsubscribeToken: "tok"}
-	subs := &mockSubRepository{}
-	subs.On("Confirm", mock.Anything, "token").Return(sub, "owner/repo", nil)
-
-	done := make(chan struct{})
-	gh := &mockGitHub{}
-	gh.On("GetLatestRelease", mock.Anything, "owner", "repo").
-		Run(func(mock.Arguments) { close(done) }).
-		Return(nil, github.ErrNoRelease)
-
-	notifier := &mockNotifier{}
-
-	uc := confirm.New(subs, gh, notifier, testLogger)
-	_, err := uc.Execute(s.T().Context(), confirm.Input{Token: "token"})
-	s.Require().NoError(err)
-
-	s.requireClosed(done)
-	gh.AssertExpectations(s.T())
-	notifier.AssertNotCalled(s.T(), "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
