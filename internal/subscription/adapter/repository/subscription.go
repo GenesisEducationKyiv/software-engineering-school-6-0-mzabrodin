@@ -113,6 +113,24 @@ func (r *SubscriptionRepository) Delete(ctx context.Context, token string) (doma
 	return removed, nil
 }
 
+func (r *SubscriptionRepository) DeletePendingByEmailAndRepo(
+	ctx context.Context,
+	email, repoName string,
+) (bool, error) {
+	ctx = metrics.WithDBOp(ctx, "delete_pending_by_email_and_repo", "subscriptions")
+
+	commandTag, err := db.FromContext(ctx, r.pool).Exec(ctx, `
+		DELETE FROM subscriptions s
+		USING repositories r
+		WHERE s.repository_id = r.id AND r.name = $2 AND s.email = $1 AND s.confirmed = false
+	`, email, repoName)
+	if err != nil {
+		return false, fmt.Errorf("delete pending subscription: %w", err)
+	}
+
+	return commandTag.RowsAffected() > 0, nil
+}
+
 func (r *SubscriptionRepository) DeleteExpiredPending(
 	ctx context.Context,
 	cutoff time.Time,
