@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/shared/github"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
 )
@@ -26,7 +27,7 @@ func (s *SubscribeSuite) TestExecute() {
 		name       string
 		email      string
 		repo       string
-		setupMocks func(*mockRepoRepository, *mockSubRepository, *mockGitHub, *mockMailer)
+		setupMocks func(mocks)
 		wantErrIs  error
 		wantAnyErr bool
 		check      func(*SubscribeSuite, error)
@@ -41,8 +42,8 @@ func (s *SubscribeSuite) TestExecute() {
 			name:  "repo not found on github",
 			email: "user@example.com",
 			repo:  "owner/repo",
-			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
-				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(false, nil)
+			setupMocks: func(m mocks) {
+				m.gh.On("RepoExists", mock.Anything, "owner", "repo").Return(false, nil)
 			},
 			wantErrIs: github.ErrRepoNotFound,
 		},
@@ -50,8 +51,8 @@ func (s *SubscribeSuite) TestExecute() {
 			name:  "github error",
 			email: "user@example.com",
 			repo:  "owner/repo",
-			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
-				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(false, github.ErrRateLimited)
+			setupMocks: func(m mocks) {
+				m.gh.On("RepoExists", mock.Anything, "owner", "repo").Return(false, github.ErrRateLimited)
 			},
 			wantAnyErr: true,
 			check: func(s *SubscribeSuite, err error) {
@@ -59,48 +60,63 @@ func (s *SubscribeSuite) TestExecute() {
 			},
 		},
 		{
-			name:  "new repo creates and subscribes",
+			name:  "ensure repository error",
 			email: "user@example.com",
 			repo:  "owner/repo",
-			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
-				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
-				repos.On("GetByName", mock.Anything, "owner/repo").Return(nil, entity.ErrNotFound)
-				repos.On("Create", mock.Anything, mock.Anything).Return(nil)
-				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
-				mailer.On("SendConfirmation", "user@example.com", "owner/repo", mock.Anything)
-			},
-		},
-		{
-			name:  "repo get error",
-			email: "user@example.com",
-			repo:  "owner/repo",
-			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
-				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
-				repos.On("GetByName", mock.Anything, "owner/repo").Return(nil, assert.AnError)
+			setupMocks: func(m mocks) {
+				m.gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
+				m.repos.On("GetOrCreate", mock.Anything, "owner/repo").
+					Return(entity.Repository{}, assert.AnError)
 			},
 			wantAnyErr: true,
 		},
 		{
-			name:  "existing repo skips create",
+			name:  "new subscriber creates and publishes pending",
 			email: "user@example.com",
 			repo:  "owner/repo",
-			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
-				existingRepo := &entity.Repository{ID: uuid.New(), Name: "owner/repo"}
-				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
-				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
-				subs.On("Create", mock.Anything, mock.Anything).Return(nil)
-				mailer.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything)
+			setupMocks: func(m mocks) {
+				repoID := uuid.New()
+				m.expectRepoResolved(repoID)
+				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
+					Return(entity.Subscription{}, entity.ErrNotFound)
+				m.tokens.On("Issue", "user@example.com", "owner/repo").Return("jwt-token", nil)
+				m.urls.On("ConfirmURL", "jwt-token").Return("http://localhost:8080/api/confirm/jwt-token")
+				m.tx.On("Within", mock.Anything).Return(nil)
+				m.subs.On("Create", mock.Anything, mock.Anything).Return(nil)
+				m.pub.On("SubscriptionPending", mock.Anything, mock.MatchedBy(func(ev events.SubscriptionPending) bool {
+					return ev.Email == "user@example.com" &&
+						ev.RepoName == "owner/repo" &&
+						ev.ConfirmURL == "http://localhost:8080/api/confirm/jwt-token" &&
+						ev.SagaID != ""
+				})).Return(nil)
+				m.pub.On("Notify").Return()
 			},
 		},
 		{
-			name:  "already subscribed",
+			name:  "resubscribe pending republishes without create",
 			email: "user@example.com",
 			repo:  "owner/repo",
-			setupMocks: func(repos *mockRepoRepository, subs *mockSubRepository, gh *mockGitHub, mailer *mockMailer) {
-				existingRepo := &entity.Repository{ID: uuid.New(), Name: "owner/repo"}
-				gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
-				repos.On("GetByName", mock.Anything, "owner/repo").Return(existingRepo, nil)
-				subs.On("Create", mock.Anything, mock.Anything).Return(entity.ErrAlreadyExists)
+			setupMocks: func(m mocks) {
+				repoID := uuid.New()
+				m.expectRepoResolved(repoID)
+				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
+					Return(entity.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: false}, nil)
+				m.tokens.On("Issue", "user@example.com", "owner/repo").Return("jwt-token", nil)
+				m.urls.On("ConfirmURL", "jwt-token").Return("http://localhost:8080/api/confirm/jwt-token")
+				m.tx.On("Within", mock.Anything).Return(nil)
+				m.pub.On("SubscriptionPending", mock.Anything, mock.Anything).Return(nil)
+				m.pub.On("Notify").Return()
+			},
+		},
+		{
+			name:  "already confirmed returns already exists",
+			email: "user@example.com",
+			repo:  "owner/repo",
+			setupMocks: func(m mocks) {
+				repoID := uuid.New()
+				m.expectRepoResolved(repoID)
+				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
+					Return(entity.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: true}, nil)
 			},
 			wantErrIs: entity.ErrAlreadyExists,
 		},
@@ -108,20 +124,14 @@ func (s *SubscribeSuite) TestExecute() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			repos := &mockRepoRepository{}
-			subs := &mockSubRepository{}
-			gh := &mockGitHub{}
-			mailer := &mockMailer{}
-			defer repos.AssertExpectations(s.T())
-			defer subs.AssertExpectations(s.T())
-			defer gh.AssertExpectations(s.T())
-			defer mailer.AssertExpectations(s.T())
+			m := newMocks()
+			defer m.assertExpectations(s.T())
 
 			if tc.setupMocks != nil {
-				tc.setupMocks(repos, subs, gh, mailer)
+				tc.setupMocks(m)
 			}
 
-			uc := newUseCase(repos, subs, gh, mailer)
+			uc := m.useCase()
 			_, err := uc.Execute(s.T().Context(), subscribe.Input{Email: tc.email, Repo: tc.repo})
 			switch {
 			case tc.wantErrIs != nil:

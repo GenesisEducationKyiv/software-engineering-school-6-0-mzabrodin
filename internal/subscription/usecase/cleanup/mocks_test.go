@@ -1,31 +1,35 @@
-package unsubscribe_test
+package cleanup_test
 
 import (
 	"context"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/subscription/domain"
-	"github-release-notifier/internal/subscription/usecase/unsubscribe"
+	"github-release-notifier/internal/subscription/usecase/cleanup"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type mockSubRepository struct{ mock.Mock }
 
-func (m *mockSubRepository) Delete(ctx context.Context, token string) (domain.RemovedSubscription, error) {
-	args := m.Called(ctx, token)
-	res, _ := args.Get(0).(domain.RemovedSubscription)
+func (m *mockSubRepository) DeleteExpiredPending(
+	ctx context.Context,
+	cutoff time.Time,
+) ([]domain.ExpiredSubscription, error) {
+	args := m.Called(ctx, cutoff)
+	v, _ := args.Get(0).([]domain.ExpiredSubscription)
 
-	return res, args.Error(1)
+	return v, args.Error(1)
 }
 
 type mockPublisher struct{ mock.Mock }
 
-func (m *mockPublisher) SubscriptionRemoved(ctx context.Context, ev events.SubscriptionRemoved) error {
+func (m *mockPublisher) SubscriptionExpired(ctx context.Context, ev events.SubscriptionExpired) error {
 	return m.Called(ctx, ev).Error(0)
 }
 
@@ -55,8 +59,8 @@ func newMocks() mocks {
 	}
 }
 
-func (m mocks) useCase() *unsubscribe.UseCase {
-	return unsubscribe.New(m.subs, m.tx, m.pub, testLogger)
+func (m mocks) useCase(maxAge time.Duration) *cleanup.UseCase {
+	return cleanup.New(m.subs, m.tx, m.pub, maxAge, testLogger)
 }
 
 func (m mocks) assertExpectations(t mock.TestingT) {

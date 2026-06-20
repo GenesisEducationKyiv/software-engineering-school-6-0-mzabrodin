@@ -55,10 +55,10 @@ func subscribeAndGetTokens(t *testing.T, srv *httptest.Server) (confirmToken, un
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	row := testPool.QueryRow(t.Context(),
-		"SELECT confirm_token, unsubscribe_token FROM subscriptions WHERE email=$1", testEmail)
-	require.NoError(t, row.Scan(&confirmToken, &unsubToken))
+		"SELECT unsubscribe_token FROM subscriptions WHERE email=$1", testEmail)
+	require.NoError(t, row.Scan(&unsubToken))
 
-	return
+	return confirmTokenFor(t, testEmail), unsubToken
 }
 
 func decodeJSON(t *testing.T, resp *http.Response, dst any) {

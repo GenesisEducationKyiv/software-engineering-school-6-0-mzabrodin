@@ -212,16 +212,13 @@ func (s *HandlerSuite) TestREST_Subscribe_Duplicate_Conflict() {
 func (s *HandlerSuite) TestREST_Confirm() {
 	s.confirm.On("Execute", mock.Anything, mock.Anything).Return(confirm.Output{}, nil)
 
-	bad := s.doREST(http.MethodGet, "/api/confirm/tooshort", "", "")
-	s.Equal(http.StatusBadRequest, bad.StatusCode)
-
 	ok := s.doREST(http.MethodGet, "/api/confirm/"+validToken, "", "")
 	s.Equal(http.StatusOK, ok.StatusCode)
 }
 
 func (s *HandlerSuite) TestREST_List_WrappedShape() {
-	s.list.On("Execute", mock.Anything, mock.Anything).Return(list.Output{Views: []*domain.SubscriptionView{
-		{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: new("v1.0.0")},
+	s.list.On("Execute", mock.Anything, mock.Anything).Return(list.Output{Views: []domain.SubscriptionView{
+		{Email: "user@example.com", Repo: "owner/repo", Confirmed: true},
 	}}, nil)
 
 	resp := s.doREST(http.MethodGet, "/api/subscriptions?email=user@example.com", "", testKey)

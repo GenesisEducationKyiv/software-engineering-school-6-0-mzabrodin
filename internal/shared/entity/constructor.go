@@ -11,25 +11,19 @@ import (
 // tokenBytes is the number of random bytes per token; hex-encoded to 64 chars.
 const tokenBytes = 32
 
-func NewRepository(name string) *Repository {
-	return &Repository{Name: name}
+func NewRepository(name string) Repository {
+	return Repository{Name: name}
 }
 
-func NewSubscription(repositoryID uuid.UUID, email string) (*Subscription, error) {
-	confirmToken, err := randomToken()
-	if err != nil {
-		return nil, fmt.Errorf("generate confirm token: %w", err)
-	}
-
+func NewSubscription(repositoryID uuid.UUID, email string) (Subscription, error) {
 	unsubscribeToken, err := randomToken()
 	if err != nil {
-		return nil, fmt.Errorf("generate unsubscribe token: %w", err)
+		return Subscription{}, fmt.Errorf("generate unsubscribe token: %w", err)
 	}
 
-	return &Subscription{
+	return Subscription{
 		RepositoryID:     repositoryID,
 		Email:            email,
-		ConfirmToken:     confirmToken,
 		UnsubscribeToken: unsubscribeToken,
 	}, nil
 }

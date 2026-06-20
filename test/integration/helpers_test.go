@@ -10,15 +10,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github-release-notifier/internal/bootstrap/subscription"
+	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
 	"github-release-notifier/internal/shared/entity"
-	"github-release-notifier/internal/shared/github"
+	"github-release-notifier/internal/subscription/adapter/confirmtoken"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
+	"github-release-notifier/internal/subscription/adapter/eventpublisher"
 	"github-release-notifier/internal/subscription/adapter/repository"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
@@ -29,11 +32,15 @@ import (
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 const (
-	testAPIKey   = "test-api-key"
-	testBaseURL  = "http://test.example.com"
-	testEmail    = "user@example.com"
-	testRepoName = "owner/repo"
+	testAPIKey     = "test-api-key"
+	testBaseURL    = "http://test.example.com"
+	testEmail      = "user@example.com"
+	testRepoName   = "owner/repo"
+	testJWTSecret  = "integration-test-secret"
+	testConfirmTTL = time.Hour
 )
+
+var testTokenizer = confirmtoken.New(testJWTSecret, testConfirmTTL)
 
 type mockGitHub struct{ mock.Mock }
 
@@ -48,22 +55,9 @@ func (m *mockGitHub) GetLatestRelease(ctx context.Context, owner, repo string) (
 	return rel, args.Error(1)
 }
 
-type mockConfirmationNotifier struct{ mock.Mock }
+type mockRelay struct{ mock.Mock }
 
-func (m *mockConfirmationNotifier) SendConfirmation(_ context.Context, email, repo, url string) {
-	m.Called(email, repo, url)
-}
-
-type mockReleaseNotifier struct{ mock.Mock }
-
-func (m *mockReleaseNotifier) Notify(
-	_ context.Context,
-	subs []*entity.Subscription,
-	repo *entity.Repository,
-	release *entity.Release,
-) error {
-	return m.Called(subs, repo, release).Error(0)
-}
+func (m *mockRelay) Notify() { m.Called() }
 
 type testUseCases struct {
 	subscribe   *subscribe.UseCase
@@ -75,23 +69,19 @@ type testUseCases struct {
 func newTestUseCases(repoExists bool) testUseCases {
 	gh := &mockGitHub{}
 	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(repoExists, nil).Maybe()
-	gh.On("GetLatestRelease", mock.Anything, mock.Anything, mock.Anything).
-		Return(nil, github.ErrNoRelease).Maybe()
-
-	notifier := &mockConfirmationNotifier{}
-	notifier.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-
-	releaseNotifier := &mockReleaseNotifier{}
-	releaseNotifier.On("Notify", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	repos := repository.NewGitHubRepoRepository(testPool)
 	subs := repository.NewSubscriptionRepository(testPool)
 	urls := urlbuilder.New(testBaseURL)
+	tx := db.NewTransactor(testPool)
+	relay := &mockRelay{}
+	relay.On("Notify").Return().Maybe()
+	pub := eventpublisher.New(relay, testLogger)
 
 	return testUseCases{
-		subscribe:   subscribe.New(repos, subs, gh, notifier, urls, testLogger),
-		confirm:     confirm.New(subs, gh, releaseNotifier, testLogger),
-		unsubscribe: unsubscribe.New(subs, testLogger),
+		subscribe:   subscribe.New(repos, subs, gh, testTokenizer, urls, tx, pub, testLogger),
+		confirm:     confirm.New(subs, testTokenizer, tx, pub, testLogger),
+		unsubscribe: unsubscribe.New(subs, tx, pub, testLogger),
 		list:        list.New(subs),
 	}
 }
@@ -117,8 +107,16 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 
 func truncateAll(t *testing.T) {
 	t.Helper()
-	_, err := testPool.Exec(t.Context(), "TRUNCATE subscriptions, repositories CASCADE")
+	_, err := testPool.Exec(t.Context(), "TRUNCATE subscriptions, repositories, outbox_messages CASCADE")
 	require.NoError(t, err)
+}
+
+func confirmTokenFor(t *testing.T, email string) string {
+	t.Helper()
+	token, err := testTokenizer.Issue(email, testRepoName)
+	require.NoError(t, err)
+
+	return token
 }
 
 func randomHex64() string {

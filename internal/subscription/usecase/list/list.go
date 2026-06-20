@@ -7,7 +7,7 @@ import (
 )
 
 type subRepository interface {
-	GetByEmail(ctx context.Context, email string) ([]*domain.SubscriptionView, error)
+	GetByEmail(ctx context.Context, email string) ([]domain.SubscriptionView, error)
 }
 
 type Input struct {
@@ -15,7 +15,7 @@ type Input struct {
 }
 
 type Output struct {
-	Views []*domain.SubscriptionView
+	Views []domain.SubscriptionView
 }
 
 type UseCase struct {

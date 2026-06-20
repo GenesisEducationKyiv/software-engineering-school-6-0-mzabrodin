@@ -20,30 +20,29 @@ func TestListSuite(t *testing.T) {
 }
 
 func (s *ListSuite) TestExecute() {
-	tag := "v1.0.0"
 	cases := []struct {
 		name      string
 		email     string
-		setupMock func(*mockSubRepository)
+		setupMock func(mocks)
 		wantLen   int
 		wantErr   bool
 	}{
 		{
 			name:  "returns list",
 			email: "user@example.com",
-			setupMock: func(subs *mockSubRepository) {
-				views := []*domain.SubscriptionView{
-					{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: &tag},
+			setupMock: func(m mocks) {
+				views := []domain.SubscriptionView{
+					{Email: "user@example.com", Repo: "owner/repo", Confirmed: true},
 				}
-				subs.On("GetByEmail", mock.Anything, "user@example.com").Return(views, nil)
+				m.subs.On("GetByEmail", mock.Anything, "user@example.com").Return(views, nil)
 			},
 			wantLen: 1,
 		},
 		{
 			name:  "repository error",
 			email: "user@example.com",
-			setupMock: func(subs *mockSubRepository) {
-				subs.On("GetByEmail", mock.Anything, "user@example.com").Return(nil, assert.AnError)
+			setupMock: func(m mocks) {
+				m.subs.On("GetByEmail", mock.Anything, "user@example.com").Return(nil, assert.AnError)
 			},
 			wantErr: true,
 		},
@@ -51,14 +50,13 @@ func (s *ListSuite) TestExecute() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			subs := &mockSubRepository{}
-			defer subs.AssertExpectations(s.T())
+			m := newMocks()
+			defer m.assertExpectations(s.T())
 			if tc.setupMock != nil {
-				tc.setupMock(subs)
+				tc.setupMock(m)
 			}
 
-			uc := list.New(subs)
-			out, err := uc.Execute(s.T().Context(), list.Input{Email: tc.email})
+			out, err := m.useCase().Execute(s.T().Context(), list.Input{Email: tc.email})
 			switch {
 			case tc.wantErr:
 				s.Error(err)

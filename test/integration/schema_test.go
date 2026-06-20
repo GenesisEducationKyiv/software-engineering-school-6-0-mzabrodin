@@ -38,23 +38,23 @@ func (s *SchemaSuite) TestUniqueConstraint_EmailRepository() {
 	s.Require().NoError(err)
 
 	_, err = testPool.Exec(s.T().Context(),
-		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
-		 VALUES ($1, $2, $3, $4)`,
-		repoID, testEmail, "token-a"+uuid.NewString(), "unsub-a"+uuid.NewString())
+		`INSERT INTO subscriptions (repository_id, email, unsubscribe_token)
+		 VALUES ($1, $2, $3)`,
+		repoID, testEmail, "unsub-a"+uuid.NewString())
 	s.Require().NoError(err)
 
 	_, err = testPool.Exec(s.T().Context(),
-		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
-		 VALUES ($1, $2, $3, $4)`,
-		repoID, testEmail, "token-b"+uuid.NewString(), "unsub-b"+uuid.NewString())
+		`INSERT INTO subscriptions (repository_id, email, unsubscribe_token)
+		 VALUES ($1, $2, $3)`,
+		repoID, testEmail, "unsub-b"+uuid.NewString())
 	s.Error(err, "duplicate email+repository_id should violate unique constraint")
 }
 
 func (s *SchemaSuite) TestForeignKey_RepositoryID() {
 	_, err := testPool.Exec(s.T().Context(),
-		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
-		 VALUES ($1, $2, $3, $4)`,
-		uuid.New(), testEmail, uuid.NewString(), uuid.NewString())
+		`INSERT INTO subscriptions (repository_id, email, unsubscribe_token)
+		 VALUES ($1, $2, $3)`,
+		uuid.New(), testEmail, uuid.NewString())
 	s.Error(err, "non-existent repository_id should violate FK constraint")
 }
 
@@ -65,9 +65,9 @@ func (s *SchemaSuite) TestCascadeDelete() {
 	s.Require().NoError(err)
 
 	_, err = testPool.Exec(s.T().Context(),
-		`INSERT INTO subscriptions (repository_id, email, confirm_token, unsubscribe_token)
-		 VALUES ($1, $2, $3, $4)`,
-		repoID, testEmail, uuid.NewString(), uuid.NewString())
+		`INSERT INTO subscriptions (repository_id, email, unsubscribe_token)
+		 VALUES ($1, $2, $3)`,
+		repoID, testEmail, uuid.NewString())
 	s.Require().NoError(err)
 
 	_, err = testPool.Exec(s.T().Context(),
