@@ -14,8 +14,7 @@ import (
 )
 
 type repoRepository interface {
-	Create(ctx context.Context, repo entity.Repository) (entity.Repository, error)
-	GetByName(ctx context.Context, name string) (entity.Repository, error)
+	GetOrCreate(ctx context.Context, name string) (entity.Repository, error)
 }
 
 type subRepository interface {
@@ -94,9 +93,9 @@ func (uc *UseCase) Execute(ctx context.Context, in Input) (Output, error) {
 		return Output{}, err
 	}
 
-	repo, err := uc.ensureRepoStored(ctx, in.Repo)
+	repo, err := uc.repos.GetOrCreate(ctx, in.Repo)
 	if err != nil {
-		return Output{}, err
+		return Output{}, fmt.Errorf("ensure repository: %w", err)
 	}
 
 	isNew, err := uc.resolveExisting(ctx, in.Email, repo.ID)
@@ -171,24 +170,4 @@ func (uc *UseCase) ensureRepoExists(ctx context.Context, owner, name string) err
 	}
 
 	return nil
-}
-
-func (uc *UseCase) ensureRepoStored(ctx context.Context, repoName string) (entity.Repository, error) {
-	repo, err := uc.repos.GetByName(ctx, repoName)
-	if err == nil {
-		return repo, nil
-	}
-
-	if !errors.Is(err, entity.ErrNotFound) {
-		return entity.Repository{}, fmt.Errorf("get repository: %w", err)
-	}
-
-	created, err := uc.repos.Create(ctx, entity.NewRepository(repoName))
-	if err != nil {
-		return entity.Repository{}, fmt.Errorf("create repository: %w", err)
-	}
-
-	uc.log.InfoContext(ctx, "repository tracked", "repo", repoName)
-
-	return created, nil
 }
