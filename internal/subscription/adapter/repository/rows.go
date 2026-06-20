@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github-release-notifier/internal/shared/entity"
 	"github-release-notifier/internal/subscription/domain"
 )
 
@@ -15,8 +14,8 @@ type repositoryRow struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-func (row repositoryRow) toEntity() entity.Repository {
-	return entity.Repository{
+func (row repositoryRow) toEntity() domain.Repository {
+	return domain.Repository{
 		ID:        row.ID,
 		Name:      row.Name,
 		CreatedAt: row.CreatedAt,
@@ -32,8 +31,8 @@ type subscriptionRow struct {
 	CreatedAt        time.Time `db:"created_at"`
 }
 
-func (row subscriptionRow) toEntity() entity.Subscription {
-	return entity.Subscription{
+func (row subscriptionRow) toEntity() domain.Subscription {
+	return domain.Subscription{
 		ID:               row.ID,
 		RepositoryID:     row.RepositoryID,
 		Email:            row.Email,

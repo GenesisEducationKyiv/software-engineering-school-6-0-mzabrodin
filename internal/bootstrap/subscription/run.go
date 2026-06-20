@@ -34,7 +34,7 @@ const (
 	relayBatchSize  = 100
 )
 
-func Run(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
+func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) error {
 	inf, cleanupInfra, err := newInfrastructure(ctx, cfg, log)
 	if err != nil {
 		return err
@@ -64,7 +64,11 @@ type infrastructure struct {
 	relay *outbox.Relay
 }
 
-func newInfrastructure(ctx context.Context, cfg *config.Config, log *slog.Logger) (*infrastructure, func(), error) {
+func newInfrastructure(
+	ctx context.Context,
+	cfg *config.SubscriptionConfig,
+	log *slog.Logger,
+) (*infrastructure, func(), error) {
 	var closers []func()
 	cleanupClosers := func() {
 		for i := len(closers) - 1; i >= 0; i-- {
@@ -122,7 +126,11 @@ func newInfrastructure(ctx context.Context, cfg *config.Config, log *slog.Logger
 	return &infrastructure{pool: pool, gh: gh, relay: relay}, cleanupClosers, nil
 }
 
-func buildApp(inf *infrastructure, cfg *config.Config, log *slog.Logger) (*connectapi.Service, *cleanup.UseCase) {
+func buildApp(
+	inf *infrastructure,
+	cfg *config.SubscriptionConfig,
+	log *slog.Logger,
+) (*connectapi.Service, *cleanup.UseCase) {
 	repos := repository.NewGitHubRepoRepository(inf.pool)
 	subs := repository.NewSubscriptionRepository(inf.pool)
 	urls := urlbuilder.New(cfg.BaseURL)

@@ -24,7 +24,7 @@ func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
 	return &SubscriptionRepository{pool: pool}
 }
 
-func (r *SubscriptionRepository) Create(ctx context.Context, sub entity.Subscription) error {
+func (r *SubscriptionRepository) Create(ctx context.Context, sub domain.Subscription) error {
 	ctx = metrics.WithDBOp(ctx, "create", "subscriptions")
 
 	commandTag, err := db.FromContext(ctx, r.pool).Exec(ctx, `
@@ -47,7 +47,7 @@ func (r *SubscriptionRepository) FindByEmailAndRepo(
 	ctx context.Context,
 	email string,
 	repoID uuid.UUID,
-) (entity.Subscription, error) {
+) (domain.Subscription, error) {
 	ctx = metrics.WithDBOp(ctx, "find_by_email_and_repo", "subscriptions")
 
 	rows, err := db.FromContext(ctx, r.pool).Query(ctx, `
@@ -55,15 +55,15 @@ func (r *SubscriptionRepository) FindByEmailAndRepo(
 		FROM subscriptions WHERE email = $1 AND repository_id = $2
 	`, email, repoID)
 	if err != nil {
-		return entity.Subscription{}, fmt.Errorf("find subscription: %w", err)
+		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
 	}
 
 	collectedRow, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[subscriptionRow])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return entity.Subscription{}, entity.ErrNotFound
+		return domain.Subscription{}, entity.ErrNotFound
 	}
 	if err != nil {
-		return entity.Subscription{}, fmt.Errorf("find subscription: %w", err)
+		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
 	}
 
 	return collectedRow.toEntity(), nil
