@@ -48,7 +48,7 @@ func (s *ConfigSuite) setEnv(env map[string]string) {
 func (s *ConfigSuite) TestLoadAllRequiredSet() {
 	s.setEnv(requiredEnv)
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadSubscription()
 	s.Require().NoError(err)
 	s.Require().NotNil(cfg)
 
@@ -67,7 +67,7 @@ func (s *ConfigSuite) TestLoadMissingRequired() {
 				s.T().Setenv(k, v)
 			}
 
-			cfg, err := config.Load()
+			cfg, err := config.LoadSubscription()
 			s.Require().Error(err)
 			s.Nil(cfg)
 		})
@@ -77,7 +77,7 @@ func (s *ConfigSuite) TestLoadMissingRequired() {
 func (s *ConfigSuite) TestLoadDefaults() {
 	s.setEnv(requiredEnv)
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadSubscription()
 	s.Require().NoError(err)
 
 	s.Equal("8080", cfg.Port)
@@ -97,7 +97,7 @@ func (s *ConfigSuite) TestLoadScannerDefaults() {
 	s.Equal(5, cfg.WorkerCount)
 	s.Equal(10*time.Minute, cfg.ScanInterval)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
-	s.Equal("8082", cfg.HTTPPort)
+	s.Equal("8082", cfg.Port)
 }
 
 func (s *ConfigSuite) TestLoadScannerMissingRequired() {
@@ -129,7 +129,7 @@ func (s *ConfigSuite) TestLoadNotifierAllRequiredSet() {
 	s.Equal(requiredNotifierEnv["SMTP_FROM"], cfg.SMTP.FromEmail)
 	s.Equal(587, cfg.SMTP.Port)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
-	s.Equal("8081", cfg.HTTPPort)
+	s.Equal("8081", cfg.Port)
 	s.Equal(15*time.Minute, cfg.RetryInterval)
 	s.Equal(5, cfg.MaxRetries)
 	s.Equal(24*time.Hour, cfg.ConfirmationTTL)

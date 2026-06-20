@@ -8,8 +8,8 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-type Config struct {
-	Port                   string        `envconfig:"PORT"                     default:"8080"`
+type SubscriptionConfig struct {
+	Port                   string        `envconfig:"SUBSCRIPTION_PORT"        default:"8080"`
 	BaseURL                string        `envconfig:"BASE_URL"                 default:"http://localhost:8080"`
 	GitHubToken            string        `envconfig:"GITHUB_TOKEN"`
 	DatabaseURL            string        `envconfig:"DATABASE_URL"                                             required:"true"`
@@ -22,12 +22,12 @@ type Config struct {
 	LogLevel               string        `envconfig:"LOG_LEVEL"                default:"info"`
 }
 
-func (c *Config) SlogLevel() slog.Level {
+func (c *SubscriptionConfig) SlogLevel() slog.Level {
 	return slogLevel(c.LogLevel)
 }
 
-func Load() (*Config, error) {
-	var cfg Config
+func LoadSubscription() (*SubscriptionConfig, error) {
+	var cfg SubscriptionConfig
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, fmt.Errorf("process config: %w", err)
 	}

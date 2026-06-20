@@ -17,7 +17,7 @@ type SMTPConfig struct {
 }
 
 type NotifierConfig struct {
-	HTTPPort        string        `envconfig:"NOTIFIER_HTTP_PORT"    default:"8081"`
+	Port            string        `envconfig:"NOTIFIER_PORT"         default:"8081"`
 	NATSURL         string        `envconfig:"NATS_URL"              default:"nats://localhost:4222"`
 	DatabaseURL     string        `envconfig:"DATABASE_URL"                                          required:"true"`
 	BaseURL         string        `envconfig:"BASE_URL"              default:"http://localhost:8080"`
