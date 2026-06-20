@@ -62,7 +62,9 @@ services:
     env_file:
       - .env
     environment:
+      DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@scanner-postgres:5432/${SCANNER_DB_NAME:?SCANNER_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      NATS_URL: nats://nats:4222
       SCANNER_GRPC_PORT: "50051"
       SCANNER_HTTP_PORT: "8082"
       TLS_CERT_FILE: /certs/scanner.crt
@@ -74,7 +76,11 @@ services:
       - app_net
       - monitoring_net
     depends_on:
+      scanner-postgres:
+        condition: service_healthy
       redis:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-qO-", "http://localhost:8082/health" ]
@@ -152,6 +158,28 @@ services:
       - app_net
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${NOTIFIER_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  scanner-postgres:
+    <<: *service
+    image: postgres:18-alpine
+    container_name: github_release_notifier_scanner_postgres
+    environment:
+      POSTGRES_DB: ${SCANNER_DB_NAME:?SCANNER_DB_NAME required}
+      POSTGRES_USER: ${DB_USER:?DB_USER required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - scanner_postgres_data:/var/lib/postgresql
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${SCANNER_DB_NAME}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -358,6 +386,7 @@ networks:
 volumes:
   postgres_data:
   notifier_postgres_data:
+  scanner_postgres_data:
   redis_data:
   nats_data:
   elasticsearch_data:
