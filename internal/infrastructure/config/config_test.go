@@ -18,11 +18,8 @@ var requiredEnv = map[string]string{
 
 // requiredScannerEnv lists every variable marked required:"true" in ScannerConfig.
 var requiredScannerEnv = map[string]string{
-	"REDIS_URL":     "redis://localhost:6379",
-	"DATABASE_URL":  "postgres://user:pass@localhost:5432/db",
-	"TLS_CERT_FILE": "/certs/scanner.crt",
-	"TLS_KEY_FILE":  "/certs/scanner.key",
-	"TLS_CA_FILE":   "/certs/ca.crt",
+	"REDIS_URL":    "redis://localhost:6379",
+	"DATABASE_URL": "postgres://user:pass@localhost:5432/db",
 }
 
 // requiredNotifierEnv lists every variable marked required:"true" in NotifierConfig.
@@ -100,7 +97,6 @@ func (s *ConfigSuite) TestLoadScannerDefaults() {
 	s.Equal(5, cfg.WorkerCount)
 	s.Equal(10*time.Minute, cfg.ScanInterval)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
-	s.Equal("50051", cfg.GRPCPort)
 	s.Equal("8082", cfg.HTTPPort)
 }
 

@@ -15,10 +15,8 @@ type ScannerConfig struct {
 	RedisURL     string        `envconfig:"REDIS_URL"                                         required:"true"`
 	DatabaseURL  string        `envconfig:"DATABASE_URL"                                      required:"true"`
 	NATSURL      string        `envconfig:"NATS_URL"          default:"nats://localhost:4222"`
-	GRPCPort     string        `envconfig:"SCANNER_GRPC_PORT" default:"50051"`
 	HTTPPort     string        `envconfig:"SCANNER_HTTP_PORT" default:"8082"`
 	LogLevel     string        `envconfig:"LOG_LEVEL"         default:"info"`
-	TLS          TLSConfig
 }
 
 func (c *ScannerConfig) SlogLevel() slog.Level {
