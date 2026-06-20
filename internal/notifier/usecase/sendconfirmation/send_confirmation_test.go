@@ -32,9 +32,10 @@ func (s *SendConfirmationSuite) SetupTest() {
 	s.sender = &mockSender{}
 	s.failed = &mockFailedStore{}
 	s.publisher = &mockPublisher{}
+	s.publisher.On("Notify").Return().Maybe()
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s.uc = New(s.sender, s.failed, s.publisher, log)
+	s.uc = New(s.sender, s.failed, mockTransactor{}, s.publisher, log)
 
 	s.input = Input{
 		SagaID:     uuid.NewString(),
@@ -94,13 +95,15 @@ func (s *SendConfirmationSuite) TestReturnsErrorWhenRecordFails() {
 	s.Require().Error(err)
 }
 
-func (s *SendConfirmationSuite) TestPublishFailureIsIgnored() {
+func (s *SendConfirmationSuite) TestReturnsErrorWhenEnqueueFails() {
 	s.sender.On("DeliverConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("smtp down"))
 	s.failed.On("Add", mock.Anything, mock.Anything).Return(nil)
-	s.publisher.On("ConfirmationFailed", mock.Anything, mock.Anything).Return(errors.New("nats down"))
+	s.publisher.On("ConfirmationFailed", mock.Anything, mock.Anything).Return(errors.New("db down"))
 
 	err := s.uc.Execute(s.T().Context(), s.input)
 
-	s.Require().NoError(err) // publish failure is logged, not returned
+	// The outbox enqueue is part of the tx; if it fails the whole handler fails so the
+	// message is redelivered rather than the failure event being silently lost.
+	s.Require().Error(err)
 }

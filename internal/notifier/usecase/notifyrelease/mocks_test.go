@@ -68,3 +68,11 @@ func (m *mockPublisher) ReleaseFailed(ctx context.Context, ev events.Notificatio
 func (m *mockPublisher) ReleaseNotified(ctx context.Context, ev events.ReleaseNotified) error {
 	return m.Called(ctx, ev).Error(0)
 }
+
+func (m *mockPublisher) Notify() { m.Called() }
+
+type mockTransactor struct{}
+
+func (mockTransactor) Within(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}

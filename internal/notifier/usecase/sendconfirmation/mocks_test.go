@@ -30,3 +30,11 @@ func (m *mockPublisher) ConfirmationSent(ctx context.Context, ev events.Notifica
 func (m *mockPublisher) ConfirmationFailed(ctx context.Context, ev events.NotificationConfirmationFailed) error {
 	return m.Called(ctx, ev).Error(0)
 }
+
+func (m *mockPublisher) Notify() { m.Called() }
+
+type mockTransactor struct{}
+
+func (mockTransactor) Within(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
