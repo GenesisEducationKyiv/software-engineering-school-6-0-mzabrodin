@@ -87,7 +87,7 @@ func (s *GRPCSubscribeSuite) TestRepoNotOnGitHub_NotFound() {
 	s.Equal(codes.NotFound, status.Code(err))
 }
 
-func (s *GRPCSubscribeSuite) TestDuplicate_AlreadyExists() {
+func (s *GRPCSubscribeSuite) TestDuplicatePending_OK() {
 	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
 	req := &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName}
 
@@ -95,5 +95,16 @@ func (s *GRPCSubscribeSuite) TestDuplicate_AlreadyExists() {
 	s.Require().NoError(err)
 
 	_, err = s.client.Subscribe(ctx, req)
+	s.NoError(err)
+}
+
+func (s *GRPCSubscribeSuite) TestDuplicateConfirmed_AlreadyExists() {
+	confirmToken, _ := grpcSubscribeAndGetTokens(s.T(), s.client)
+
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: confirmToken})
+	s.Require().NoError(err)
+
+	ctx := grpcAuthCtx(s.T().Context(), testAPIKey)
+	_, err = s.client.Subscribe(ctx, &subscriptionv1.SubscribeRequest{Email: testEmail, Repo: testRepoName})
 	s.Equal(codes.AlreadyExists, status.Code(err))
 }

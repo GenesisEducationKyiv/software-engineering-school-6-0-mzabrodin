@@ -34,19 +34,21 @@ func (s *GRPCConfirmSuite) TestSuccess() {
 
 	var confirmed bool
 	row := testPool.QueryRow(s.T().Context(),
-		"SELECT confirmed FROM subscriptions WHERE confirm_token=$1", confirmToken)
+		"SELECT confirmed FROM subscriptions WHERE email=$1", testEmail)
 	s.Require().NoError(row.Scan(&confirmed))
 	s.True(confirmed, "subscription should be marked confirmed after Confirm")
 }
 
-func (s *GRPCConfirmSuite) TestInvalidTokenLength_InvalidArgument() {
-	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: "tooshort"})
+func (s *GRPCConfirmSuite) TestMalformedToken_InvalidArgument() {
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: "not-a-jwt"})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
-func (s *GRPCConfirmSuite) TestUnknownToken_NotFound() {
-	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: randomHex64()})
-	s.Equal(codes.NotFound, status.Code(err))
+func (s *GRPCConfirmSuite) TestUnknownSubscriber_IsIdempotent() {
+	token := confirmTokenFor(s.T(), "stranger@example.com")
+
+	_, err := s.client.Confirm(s.T().Context(), &subscriptionv1.ConfirmRequest{Token: token})
+	s.NoError(err)
 }
 
 func (s *GRPCConfirmSuite) TestAlreadyConfirmed_IsIdempotent() {

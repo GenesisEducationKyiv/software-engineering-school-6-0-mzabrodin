@@ -32,19 +32,21 @@ func (s *HTTPConfirmSuite) TestSuccess() {
 
 	var confirmed bool
 	row := testPool.QueryRow(s.T().Context(),
-		"SELECT confirmed FROM subscriptions WHERE confirm_token=$1", confirmToken)
+		"SELECT confirmed FROM subscriptions WHERE email=$1", testEmail)
 	s.Require().NoError(row.Scan(&confirmed))
 	s.True(confirmed, "subscription should be marked confirmed after /api/confirm")
 }
 
-func (s *HTTPConfirmSuite) TestInvalidTokenLength_Returns400() {
-	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/tooshort", "", "")
+func (s *HTTPConfirmSuite) TestMalformedToken_Returns400() {
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/not-a-jwt", "", "")
 	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
-func (s *HTTPConfirmSuite) TestUnknownToken_Returns404() {
-	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+randomHex64(), "", "")
-	s.Equal(http.StatusNotFound, resp.StatusCode)
+func (s *HTTPConfirmSuite) TestUnknownSubscriber_IsIdempotent() {
+	token := confirmTokenFor(s.T(), "stranger@example.com")
+
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+token, "", "")
+	s.Equal(http.StatusOK, resp.StatusCode)
 }
 
 func (s *HTTPConfirmSuite) TestAlreadyConfirmed_IsIdempotent() {

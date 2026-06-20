@@ -90,10 +90,21 @@ func (s *HTTPSubscribeSuite) TestRepoNotOnGitHub_Returns404() {
 	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
-func (s *HTTPSubscribeSuite) TestDuplicate_Returns409() {
+func (s *HTTPSubscribeSuite) TestDuplicatePending_Returns200() {
 	body := `{"email":"user@example.com","repo":"owner/repo"}`
 	doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe", body, testAPIKey)
 
 	resp := doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe", body, testAPIKey)
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *HTTPSubscribeSuite) TestDuplicateConfirmed_Returns409() {
+	confirmToken, _ := subscribeAndGetTokens(s.T(), s.srv)
+
+	resp := doRequest(s.T(), http.MethodGet, s.srv.URL+"/api/confirm/"+confirmToken, "", "")
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	body := `{"email":"` + testEmail + `","repo":"` + testRepoName + `"}`
+	resp = doRequest(s.T(), http.MethodPost, s.srv.URL+"/api/subscribe", body, testAPIKey)
 	s.Equal(http.StatusConflict, resp.StatusCode)
 }
