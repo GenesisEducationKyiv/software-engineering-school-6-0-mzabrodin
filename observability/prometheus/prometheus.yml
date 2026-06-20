@@ -7,17 +7,17 @@ scrape_configs:
   - job_name: github_release_notifier
     static_configs:
       - targets:
-          - subscription:8080
+          - subscription-svc:8080
     metrics_path: /metrics
 
   - job_name: github_release_notifier_notifier
     static_configs:
       - targets:
-          - notifier:8081
+          - notifier-svc:8081
     metrics_path: /metrics
 
   - job_name: github_release_notifier_scanner
     static_configs:
       - targets:
-          - scanner:8082
+          - scanner-svc:8082
     metrics_path: /metrics

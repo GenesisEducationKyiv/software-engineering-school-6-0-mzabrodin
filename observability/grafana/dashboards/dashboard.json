@@ -281,16 +281,19 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Rate of individual release notification emails dispatched to subscribers.",
+      "description": "NATS event throughput: publish rate by result and consume outcomes (ack/nak/term). Sustained nak/term means redelivered or poison events.",
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 6, "x": 18, "y": 24 },
       "id": 23,
-      "options": { "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
-      "targets": [{ "expr": "sum(rate(notifications_sent_total[$__rate_interval]))", "legendFormat": "notifications/s" }],
-      "title": "Notifications Sent Rate",
+      "options": { "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "sum(rate(events_published_total[$__rate_interval])) by (result)", "legendFormat": "published {{result}}" },
+        { "expr": "sum(rate(events_consumed_total[$__rate_interval])) by (result)", "legendFormat": "consumed {{result}}" }
+      ],
+      "title": "Event Bus Throughput",
       "type": "timeseries"
     },
     {
