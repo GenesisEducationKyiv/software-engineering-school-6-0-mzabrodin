@@ -1,9 +1,10 @@
-package entity
+package domain
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -11,8 +12,19 @@ import (
 // tokenBytes is the number of random bytes per token; hex-encoded to 64 chars.
 const tokenBytes = 32
 
-func NewRepository(name string) Repository {
-	return Repository{Name: name}
+type Repository struct {
+	ID        uuid.UUID
+	Name      string
+	CreatedAt time.Time
+}
+
+type Subscription struct {
+	ID               uuid.UUID
+	RepositoryID     uuid.UUID
+	Email            string
+	UnsubscribeToken string
+	Confirmed        bool
+	CreatedAt        time.Time
 }
 
 func NewSubscription(repositoryID uuid.UUID, email string) (Subscription, error) {
