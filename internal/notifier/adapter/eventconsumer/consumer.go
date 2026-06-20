@@ -2,7 +2,6 @@ package eventconsumer
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"github-release-notifier/internal/infrastructure/broker"
@@ -48,7 +47,7 @@ func New(
 func (c *Consumer) HandlePending(ctx context.Context, data []byte) error {
 	ev, err := events.Unmarshal[events.SubscriptionPending](data)
 	if err != nil {
-		return terminal(err)
+		return broker.Terminal(err)
 	}
 
 	return c.confirmation.Execute(ctx, sendconfirmation.Input{
@@ -62,7 +61,7 @@ func (c *Consumer) HandlePending(ctx context.Context, data []byte) error {
 func (c *Consumer) HandleConfirmed(ctx context.Context, data []byte) error {
 	ev, err := events.Unmarshal[events.SubscriptionConfirmed](data)
 	if err != nil {
-		return terminal(err)
+		return broker.Terminal(err)
 	}
 
 	return c.projector.Confirmed(ctx, ev)
@@ -71,7 +70,7 @@ func (c *Consumer) HandleConfirmed(ctx context.Context, data []byte) error {
 func (c *Consumer) HandleRemoved(ctx context.Context, data []byte) error {
 	ev, err := events.Unmarshal[events.SubscriptionRemoved](data)
 	if err != nil {
-		return terminal(err)
+		return broker.Terminal(err)
 	}
 
 	return c.projector.Removed(ctx, ev)
@@ -80,7 +79,7 @@ func (c *Consumer) HandleRemoved(ctx context.Context, data []byte) error {
 func (c *Consumer) HandleReleaseDetected(ctx context.Context, data []byte) error {
 	ev, err := events.Unmarshal[events.ReleaseDetected](data)
 	if err != nil {
-		return terminal(err)
+		return broker.Terminal(err)
 	}
 
 	_, err = c.release.Execute(ctx, notifyrelease.Input{
@@ -91,8 +90,4 @@ func (c *Consumer) HandleReleaseDetected(ctx context.Context, data []byte) error
 	})
 
 	return err
-}
-
-func terminal(err error) error {
-	return fmt.Errorf("%w: decode event: %w", broker.ErrTerminal, err)
 }
