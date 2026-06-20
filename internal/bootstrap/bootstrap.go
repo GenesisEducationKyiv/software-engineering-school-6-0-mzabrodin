@@ -47,7 +47,11 @@ func launch[C Config](load func() (C, error), run func(context.Context, C, *slog
 
 	log := slog.New(
 		logging.NewRequestIDHandler(
-			logging.NewScanIDHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()})),
+			logging.NewScanIDHandler(
+				logging.NewSagaIDHandler(
+					slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}),
+				),
+			),
 		),
 	)
 	slog.SetDefault(log)

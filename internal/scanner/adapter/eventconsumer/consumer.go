@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github-release-notifier/internal/infrastructure/broker"
+	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/scanner/usecase/advancetag"
 	"github-release-notifier/internal/shared/events"
 )
@@ -38,7 +39,7 @@ func (c *Consumer) HandleConfirmed(ctx context.Context, data []byte) error {
 		return broker.Terminal(err)
 	}
 
-	return c.projector.Confirmed(ctx, ev)
+	return c.projector.Confirmed(logging.WithSagaID(ctx, ev.SagaID), ev)
 }
 
 func (c *Consumer) HandleRemoved(ctx context.Context, data []byte) error {
@@ -47,7 +48,7 @@ func (c *Consumer) HandleRemoved(ctx context.Context, data []byte) error {
 		return broker.Terminal(err)
 	}
 
-	return c.projector.Removed(ctx, ev)
+	return c.projector.Removed(logging.WithSagaID(ctx, ev.SagaID), ev)
 }
 
 func (c *Consumer) HandleReleaseNotified(ctx context.Context, data []byte) error {
@@ -56,7 +57,7 @@ func (c *Consumer) HandleReleaseNotified(ctx context.Context, data []byte) error
 		return broker.Terminal(err)
 	}
 
-	return c.advancer.Execute(ctx, advancetag.Input{
+	return c.advancer.Execute(logging.WithSagaID(ctx, ev.SagaID), advancetag.Input{
 		RepoName:  ev.RepoName,
 		Tag:       ev.Tag,
 		SentCount: ev.SentCount,

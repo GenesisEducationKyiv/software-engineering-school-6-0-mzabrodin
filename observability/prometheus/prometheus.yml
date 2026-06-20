@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+# Scrape targets are static, so the ports below must match the service ports configured in .env
+scrape_configs:
+  - job_name: github_release_notifier
+    static_configs:
+      - targets:
+          - subscription-svc:8080
+    metrics_path: /metrics
+
+  - job_name: github_release_notifier_notifier
+    static_configs:
+      - targets:
+          - notifier-svc:8081
+    metrics_path: /metrics
+
+  - job_name: github_release_notifier_scanner
+    static_configs:
+      - targets:
+          - scanner-svc:8082
+    metrics_path: /metrics

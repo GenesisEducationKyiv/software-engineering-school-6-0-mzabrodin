@@ -82,6 +82,8 @@ func New(
 }
 
 func (uc *UseCase) Execute(ctx context.Context, in Input) (Output, error) {
+	uc.log.InfoContext(ctx, "processing detected release", "repo", in.RepoName, "tag", in.Tag)
+
 	processed, err := uc.dedupe.Exists(ctx, in.RepoName, in.Tag)
 	if err != nil {
 		return Output{}, fmt.Errorf("check processed release: %w", err)
@@ -98,8 +100,14 @@ func (uc *UseCase) Execute(ctx context.Context, in Input) (Output, error) {
 		return Output{}, fmt.Errorf("resolve recipients: %w", err)
 	}
 
+	uc.log.InfoContext(ctx, "delivering release notifications",
+		"repo", in.RepoName, "tag", in.Tag, "recipients", len(recipients))
+
 	result := uc.deliver(ctx, in, recipients)
 	uc.publishOutcomes(ctx, in, recipients, result)
+
+	uc.log.InfoContext(ctx, "release notifications processed",
+		"repo", in.RepoName, "tag", in.Tag, "sent", result.Sent, "failed", len(result.Failed))
 
 	if err := uc.publisher.ReleaseNotified(ctx, events.ReleaseNotified{
 		SagaID:       in.SagaID,

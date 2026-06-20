@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github-release-notifier/internal/infrastructure/broker"
+	"github-release-notifier/internal/infrastructure/logging"
 	"github-release-notifier/internal/notifier/usecase/notifyrelease"
 	"github-release-notifier/internal/notifier/usecase/sendconfirmation"
 	"github-release-notifier/internal/shared/events"
@@ -50,7 +51,7 @@ func (c *Consumer) HandlePending(ctx context.Context, data []byte) error {
 		return broker.Terminal(err)
 	}
 
-	return c.confirmation.Execute(ctx, sendconfirmation.Input{
+	return c.confirmation.Execute(logging.WithSagaID(ctx, ev.SagaID), sendconfirmation.Input{
 		SagaID:     ev.SagaID,
 		Email:      ev.Email,
 		RepoName:   ev.RepoName,
@@ -64,7 +65,7 @@ func (c *Consumer) HandleConfirmed(ctx context.Context, data []byte) error {
 		return broker.Terminal(err)
 	}
 
-	return c.projector.Confirmed(ctx, ev)
+	return c.projector.Confirmed(logging.WithSagaID(ctx, ev.SagaID), ev)
 }
 
 func (c *Consumer) HandleRemoved(ctx context.Context, data []byte) error {
@@ -73,7 +74,7 @@ func (c *Consumer) HandleRemoved(ctx context.Context, data []byte) error {
 		return broker.Terminal(err)
 	}
 
-	return c.projector.Removed(ctx, ev)
+	return c.projector.Removed(logging.WithSagaID(ctx, ev.SagaID), ev)
 }
 
 func (c *Consumer) HandleReleaseDetected(ctx context.Context, data []byte) error {
@@ -82,7 +83,7 @@ func (c *Consumer) HandleReleaseDetected(ctx context.Context, data []byte) error
 		return broker.Terminal(err)
 	}
 
-	_, err = c.release.Execute(ctx, notifyrelease.Input{
+	_, err = c.release.Execute(logging.WithSagaID(ctx, ev.SagaID), notifyrelease.Input{
 		SagaID:     ev.SagaID,
 		RepoName:   ev.RepoName,
 		Tag:        ev.Tag,

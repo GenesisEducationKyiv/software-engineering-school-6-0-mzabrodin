@@ -8,9 +8,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/shared/github"
+	"github-release-notifier/internal/subscription/domain"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
 )
 
@@ -66,7 +67,7 @@ func (s *SubscribeSuite) TestExecute() {
 			setupMocks: func(m mocks) {
 				m.gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
 				m.repos.On("GetOrCreate", mock.Anything, "owner/repo").
-					Return(entity.Repository{}, assert.AnError)
+					Return(domain.Repository{}, assert.AnError)
 			},
 			wantAnyErr: true,
 		},
@@ -78,7 +79,7 @@ func (s *SubscribeSuite) TestExecute() {
 				repoID := uuid.New()
 				m.expectRepoResolved(repoID)
 				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
-					Return(entity.Subscription{}, entity.ErrNotFound)
+					Return(domain.Subscription{}, shareddomain.ErrNotFound)
 				m.tokens.On("Issue", "user@example.com", "owner/repo").Return("jwt-token", nil)
 				m.urls.On("ConfirmURL", "jwt-token").Return("http://localhost:8080/api/confirm/jwt-token")
 				m.tx.On("Within", mock.Anything).Return(nil)
@@ -100,7 +101,7 @@ func (s *SubscribeSuite) TestExecute() {
 				repoID := uuid.New()
 				m.expectRepoResolved(repoID)
 				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
-					Return(entity.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: false}, nil)
+					Return(domain.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: false}, nil)
 				m.tokens.On("Issue", "user@example.com", "owner/repo").Return("jwt-token", nil)
 				m.urls.On("ConfirmURL", "jwt-token").Return("http://localhost:8080/api/confirm/jwt-token")
 				m.tx.On("Within", mock.Anything).Return(nil)
@@ -116,9 +117,9 @@ func (s *SubscribeSuite) TestExecute() {
 				repoID := uuid.New()
 				m.expectRepoResolved(repoID)
 				m.subs.On("FindByEmailAndRepo", mock.Anything, "user@example.com", repoID).
-					Return(entity.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: true}, nil)
+					Return(domain.Subscription{RepositoryID: repoID, Email: "user@example.com", Confirmed: true}, nil)
 			},
-			wantErrIs: entity.ErrAlreadyExists,
+			wantErrIs: shareddomain.ErrAlreadyExists,
 		},
 	}
 

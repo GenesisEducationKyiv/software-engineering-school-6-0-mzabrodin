@@ -6,16 +6,19 @@
 
 ## Context
 
-GitHub API allows 60 requests/hour without a token and 5 000 with one. The service calls GitHub on every subscription (repo existence check) and on every scanner execution. Redis is used to reduce the number of real API calls.
+GitHub API allows 60 requests/hour without a token and 5 000 with one. Two services call GitHub: the
+subscription service checks repo existence on every subscribe, and the scanner fetches the
+latest release each scan pass. A single shared Redis sits in front of both so they draw on one
+cache (and one rate-limit budget) rather than two.
 
 ## Decision
 
-Cache GitHub API responses in Redis with a 10-minute TTL using a cache-aside pattern.
+Cache GitHub API responses in the shared Redis with a 10-minute TTL using a cache-aside pattern.
 
-| Key                                    | Value                        | Checked when            |
-|----------------------------------------|------------------------------|-------------------------|
-| `github:repo_exists:{owner}/{repo}`    | `"1"` (exists) / `"0"`       | Every subscribe call    |
-| `github:latest_release:{owner}/{repo}` | JSON release data / `"none"` | Every scanner execution |
+| Key                                    | Value                        | Checked when                    |
+|----------------------------------------|------------------------------|---------------------------------|
+| `github:repo_exists:{owner}/{repo}`    | `"1"` (exists) / `"0"`       | Every subscribe call            |
+| `github:latest_release:{owner}/{repo}` | JSON release data / `"none"` | Every scanner pass (per repo)   |
 
 `"none"` is stored explicitly for repos with no releases. Without it a cache miss would be indistinguishable from "not cached yet," causing an API call on every tick.
 

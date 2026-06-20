@@ -9,7 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 )
 
@@ -34,8 +34,8 @@ func (s *DomainErrorSuite) TestMapsDomainErrorsToConnectCodes() {
 	}{
 		{"invalid repo", github.ErrInvalidRepo, connect.CodeInvalidArgument},
 		{"repo not found", github.ErrRepoNotFound, connect.CodeNotFound},
-		{"already exists", entity.ErrAlreadyExists, connect.CodeAlreadyExists},
-		{"token not found", entity.ErrNotFound, connect.CodeNotFound},
+		{"already exists", domain.ErrAlreadyExists, connect.CodeAlreadyExists},
+		{"token not found", domain.ErrNotFound, connect.CodeNotFound},
 		{"unmapped", errors.New("boom"), connect.CodeInternal},
 	}
 
@@ -49,7 +49,7 @@ func (s *DomainErrorSuite) TestMapsDomainErrorsToConnectCodes() {
 }
 
 func (s *DomainErrorSuite) TestWrappedDomainErrorIsMapped() {
-	err := s.svc.domainError(s.T().Context(), errors.Join(entity.ErrNotFound, errors.New("ctx")), "k", "v")
+	err := s.svc.domainError(s.T().Context(), errors.Join(domain.ErrNotFound, errors.New("ctx")), "k", "v")
 
 	s.Equal(connect.CodeNotFound, connect.CodeOf(err))
 }

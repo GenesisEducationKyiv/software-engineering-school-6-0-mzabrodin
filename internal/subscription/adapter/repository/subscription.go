@@ -12,7 +12,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/subscription/domain"
 )
 
@@ -24,7 +24,7 @@ func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
 	return &SubscriptionRepository{pool: pool}
 }
 
-func (r *SubscriptionRepository) Create(ctx context.Context, sub entity.Subscription) error {
+func (r *SubscriptionRepository) Create(ctx context.Context, sub domain.Subscription) error {
 	ctx = metrics.WithDBOp(ctx, "create", "subscriptions")
 
 	commandTag, err := db.FromContext(ctx, r.pool).Exec(ctx, `
@@ -37,7 +37,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub entity.Subscrip
 	}
 
 	if commandTag.RowsAffected() == 0 {
-		return entity.ErrAlreadyExists
+		return shareddomain.ErrAlreadyExists
 	}
 
 	return nil
@@ -47,7 +47,7 @@ func (r *SubscriptionRepository) FindByEmailAndRepo(
 	ctx context.Context,
 	email string,
 	repoID uuid.UUID,
-) (entity.Subscription, error) {
+) (domain.Subscription, error) {
 	ctx = metrics.WithDBOp(ctx, "find_by_email_and_repo", "subscriptions")
 
 	rows, err := db.FromContext(ctx, r.pool).Query(ctx, `
@@ -55,15 +55,15 @@ func (r *SubscriptionRepository) FindByEmailAndRepo(
 		FROM subscriptions WHERE email = $1 AND repository_id = $2
 	`, email, repoID)
 	if err != nil {
-		return entity.Subscription{}, fmt.Errorf("find subscription: %w", err)
+		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
 	}
 
 	collectedRow, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[subscriptionRow])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return entity.Subscription{}, entity.ErrNotFound
+		return domain.Subscription{}, shareddomain.ErrNotFound
 	}
 	if err != nil {
-		return entity.Subscription{}, fmt.Errorf("find subscription: %w", err)
+		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
 	}
 
 	return collectedRow.toEntity(), nil
@@ -104,7 +104,7 @@ func (r *SubscriptionRepository) Delete(ctx context.Context, token string) (doma
 		SELECT d.email, r.name FROM deleted d JOIN repositories r ON r.id = d.repository_id
 	`, token).Scan(&removed.Email, &removed.Repo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.RemovedSubscription{}, entity.ErrNotFound
+		return domain.RemovedSubscription{}, shareddomain.ErrNotFound
 	}
 	if err != nil {
 		return domain.RemovedSubscription{}, fmt.Errorf("delete subscription: %w", err)

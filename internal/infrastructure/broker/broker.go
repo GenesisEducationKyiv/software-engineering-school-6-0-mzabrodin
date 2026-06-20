@@ -9,6 +9,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github-release-notifier/internal/infrastructure/metrics"
 )
 
 var ErrTerminal = errors.New("terminal message error")
@@ -58,7 +60,10 @@ func (c *Conn) EnsureStream(ctx context.Context, name string, subjects []string)
 }
 
 func (c *Conn) Publish(ctx context.Context, subject string, data []byte) error {
-	if _, err := c.js.Publish(ctx, subject, data); err != nil {
+	_, err := c.js.Publish(ctx, subject, data)
+	metrics.EventsPublishedTotal.WithLabelValues(subject, metrics.ResultLabel(err)).Inc()
+
+	if err != nil {
 		return fmt.Errorf("publish to %q: %w", subject, err)
 	}
 
@@ -91,11 +96,14 @@ func (c *Conn) Consume(ctx context.Context, stream, durable, subject string, han
 func (c *Conn) dispatch(ctx context.Context, subject string, handler Handler, msg jetstream.Msg) {
 	switch err := handler(ctx, msg.Data()); {
 	case err == nil:
+		metrics.EventsConsumedTotal.WithLabelValues(subject, "ack").Inc()
 		c.ack(msg.Ack(), subject)
 	case errors.Is(err, ErrTerminal):
+		metrics.EventsConsumedTotal.WithLabelValues(subject, "term").Inc()
 		c.log.ErrorContext(ctx, "dropping poison message", "subject", subject, "error", err)
 		c.ack(msg.Term(), subject)
 	default:
+		metrics.EventsConsumedTotal.WithLabelValues(subject, "nak").Inc()
 		c.log.ErrorContext(ctx, "message handler failed; redelivering", "subject", subject, "error", err)
 		c.ack(msg.Nak(), subject)
 	}

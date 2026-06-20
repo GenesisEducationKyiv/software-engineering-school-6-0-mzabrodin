@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/subscription/domain"
 	"github-release-notifier/internal/subscription/usecase/unsubscribe"
@@ -41,11 +41,11 @@ func (s *UnsubscribeSuite) TestNotFoundPropagates() {
 	defer m.assertExpectations(s.T())
 
 	m.subs.On("Delete", mock.Anything, "sometoken").
-		Return(domain.RemovedSubscription{}, entity.ErrNotFound)
+		Return(domain.RemovedSubscription{}, shareddomain.ErrNotFound)
 	m.tx.On("Within", mock.Anything).Return(nil)
 
 	_, err := m.useCase().Execute(s.T().Context(), unsubscribe.Input{Token: "sometoken"})
-	s.ErrorIs(err, entity.ErrNotFound)
+	s.ErrorIs(err, shareddomain.ErrNotFound)
 
 	m.pub.AssertNotCalled(s.T(), "SubscriptionRemoved", mock.Anything, mock.Anything)
 	m.pub.AssertNotCalled(s.T(), "Notify")

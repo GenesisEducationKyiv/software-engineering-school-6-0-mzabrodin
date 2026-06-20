@@ -103,24 +103,25 @@ func (m *Mailer) deliver(job mailJob) {
 	defer cancel()
 
 	start := time.Now()
+	m.log.InfoContext(ctx, "sending email batch", "kind", job.kind, "count", len(job.messages))
+
 	errs := m.sender.sendBatch(ctx, job.messages)
 	metrics.EmailSendDuration.WithLabelValues(job.kind).Observe(time.Since(start).Seconds())
 
+	var sent, failed int
 	for i, err := range errs {
 		metrics.EmailSendsTotal.WithLabelValues(job.kind, metrics.ResultLabel(err)).Inc()
 		if err != nil {
-			m.log.ErrorContext(
-				ctx,
-				"failed to send email",
-				"kind",
-				job.kind,
-				"to",
-				recipient(job.messages[i]),
-				"error",
-				err,
-			)
+			failed++
+			m.log.ErrorContext(ctx, "failed to send email",
+				"kind", job.kind, "to", recipient(job.messages[i]), "error", err)
+		} else {
+			sent++
 		}
 	}
+
+	m.log.InfoContext(ctx, "email batch delivered",
+		"kind", job.kind, "sent", sent, "failed", failed, "duration", time.Since(start).String())
 
 	if job.result != nil {
 		job.result <- errs

@@ -14,11 +14,9 @@ import (
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
-	"github-release-notifier/internal/infrastructure/tlsconfig"
 	"github-release-notifier/internal/scanner/adapter/eventconsumer"
 	"github-release-notifier/internal/scanner/adapter/eventpublisher"
 	"github-release-notifier/internal/scanner/adapter/repository"
-	"github-release-notifier/internal/scanner/adapter/scannerserver"
 	scanmigrations "github-release-notifier/internal/scanner/migrations"
 	"github-release-notifier/internal/scanner/usecase/advancetag"
 	scanneruc "github-release-notifier/internal/scanner/usecase/scanner"
@@ -64,13 +62,8 @@ func Run(ctx context.Context, cfg *config.ScannerConfig, log *slog.Logger) error
 
 	comps := buildComponents(pool, conn, scanner, log)
 
-	grpcSrv, err := newGRPCServer(cfg, scanner, log)
-	if err != nil {
-		return err
-	}
-
 	metricsSrv := &http.Server{
-		Addr:              ":" + cfg.HTTPPort,
+		Addr:              ":" + cfg.Port,
 		Handler:           bootstrap.MetricsHandler(),
 		ReadHeaderTimeout: shutdownTimeout,
 	}
@@ -84,7 +77,6 @@ func Run(ctx context.Context, cfg *config.ScannerConfig, log *slog.Logger) error
 	schedulerDone, cancelScheduler := startScheduler(ctx, comps.watch, cfg, log)
 
 	return serve(ctx, serveDeps{
-		grpcSrv:         grpcSrv,
 		metricsSrv:      metricsSrv,
 		schedulerDone:   schedulerDone,
 		cancelScheduler: cancelScheduler,
@@ -101,7 +93,7 @@ func buildComponents(pool *pgxpool.Pool, conn *broker.Conn, scanner *scanneruc.S
 	repo := repository.NewWatchedRepoRepository(pool)
 	pub := eventpublisher.New(conn, log)
 
-	projector := watchlist.New(repo)
+	projector := watchlist.New(repo, log)
 	advance := advancetag.New(repo, log)
 	watchUC := watch.New(repo, scanner, pub, log)
 
@@ -109,27 +101,4 @@ func buildComponents(pool *pgxpool.Pool, conn *broker.Conn, scanner *scanneruc.S
 		watch:         watchUC,
 		eventConsumer: eventconsumer.New(projector, advance, log),
 	}
-}
-
-func newGRPCServer(cfg *config.ScannerConfig, scanner *scanneruc.Scanner, log *slog.Logger) (*http.Server, error) {
-	tlsCfg, err := tlsconfig.ServerTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
-	if err != nil {
-		return nil, fmt.Errorf("build scanner tls config: %w", err)
-	}
-
-	handler, err := scannerserver.NewHandler(scannerserver.NewServer(scanner, log), log)
-	if err != nil {
-		return nil, fmt.Errorf("create scanner handler: %w", err)
-	}
-
-	protocols := new(http.Protocols)
-	protocols.SetHTTP2(true)
-
-	return &http.Server{
-		Addr:              ":" + cfg.GRPCPort,
-		Handler:           handler,
-		TLSConfig:         tlsCfg,
-		ReadHeaderTimeout: shutdownTimeout,
-		Protocols:         protocols,
-	}, nil
 }

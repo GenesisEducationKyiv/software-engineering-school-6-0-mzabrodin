@@ -8,18 +8,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github-release-notifier/internal/shared/entity"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/events"
 	"github-release-notifier/internal/shared/github"
+	"github-release-notifier/internal/subscription/domain"
 )
 
 type repoRepository interface {
-	GetOrCreate(ctx context.Context, name string) (entity.Repository, error)
+	GetOrCreate(ctx context.Context, name string) (domain.Repository, error)
 }
 
 type subRepository interface {
-	Create(ctx context.Context, sub entity.Subscription) error
-	FindByEmailAndRepo(ctx context.Context, email string, repoID uuid.UUID) (entity.Subscription, error)
+	Create(ctx context.Context, sub domain.Subscription) error
+	FindByEmailAndRepo(ctx context.Context, email string, repoID uuid.UUID) (domain.Subscription, error)
 }
 
 type gitHubClient interface {
@@ -110,10 +111,10 @@ func (uc *UseCase) resolveExisting(ctx context.Context, email string, repoID uui
 	existing, err := uc.subs.FindByEmailAndRepo(ctx, email, repoID)
 	switch {
 	case err == nil && existing.Confirmed:
-		return false, entity.ErrAlreadyExists
+		return false, shareddomain.ErrAlreadyExists
 	case err == nil:
 		return false, nil
-	case errors.Is(err, entity.ErrNotFound):
+	case errors.Is(err, shareddomain.ErrNotFound):
 		return true, nil
 	default:
 		return false, fmt.Errorf("find subscription: %w", err)
@@ -126,9 +127,9 @@ func (uc *UseCase) emitPending(ctx context.Context, email, repo string, repoID u
 		return Output{}, fmt.Errorf("issue confirmation token: %w", err)
 	}
 
-	var sub entity.Subscription
+	var sub domain.Subscription
 	if isNew {
-		if sub, err = entity.NewSubscription(repoID, email); err != nil {
+		if sub, err = domain.NewSubscription(repoID, email); err != nil {
 			return Output{}, fmt.Errorf("new subscription: %w", err)
 		}
 	}

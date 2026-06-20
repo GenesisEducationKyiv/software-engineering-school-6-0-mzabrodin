@@ -18,7 +18,7 @@ import (
 	"github-release-notifier/internal/bootstrap/subscription"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
-	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/subscription/adapter/confirmtoken"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 	"github-release-notifier/internal/subscription/adapter/eventpublisher"
@@ -49,9 +49,9 @@ func (m *mockGitHub) RepoExists(ctx context.Context, owner, repo string) (bool, 
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockGitHub) GetLatestRelease(ctx context.Context, owner, repo string) (*entity.Release, error) {
+func (m *mockGitHub) GetLatestRelease(ctx context.Context, owner, repo string) (*domain.Release, error) {
 	args := m.Called(ctx, owner, repo)
-	rel, _ := args.Get(0).(*entity.Release)
+	rel, _ := args.Get(0).(*domain.Release)
 	return rel, args.Error(1)
 }
 

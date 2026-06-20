@@ -1,0 +1,60 @@
+filebeat.inputs:
+  - type: filestream
+    id: docker-container-logs
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    parsers:
+      - container:
+          stream: all
+          format: docker
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+
+processors:
+  - drop_event:
+      when:
+        not:
+          regexp:
+            container.name: "^github_release_notifier_(subscription_svc|scanner_svc|notifier_svc|subscription_postgres|redis)$"
+
+  - decode_json_fields:
+      when:
+        regexp:
+          container.name: "^github_release_notifier_(subscription_svc|scanner_svc|notifier_svc)$"
+      fields: ["message"]
+      target: ""
+      overwrite_keys: true
+      add_error_key: false
+
+  - drop_fields:
+      when:
+        regexp:
+          container.name: "^github_release_notifier_(subscription_svc|scanner_svc|notifier_svc)$"
+      ignore_missing: true
+      fields:
+        - message
+
+  - drop_fields:
+      ignore_missing: true
+      fields:
+        - agent
+        - ecs
+        - input
+        - host
+        - log
+        - time
+        - container.labels
+        - container.id
+        - container.image
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+
+setup.ilm.enabled: true
+setup.ilm.policy_name: "filebeat-14d"
+setup.ilm.policy_file: /usr/share/filebeat/ilm-policy.json
+setup.ilm.overwrite: false
+
+logging.level: warning
+logging.to_files: false

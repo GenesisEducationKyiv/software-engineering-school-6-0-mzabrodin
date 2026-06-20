@@ -13,47 +13,47 @@ behind ports, but the directory layout did not reflect that — there was no str
 corresponded to a future deployable service.
 
 The aim is to realize the premise that "ports already isolate these concerns" structurally, so that
-extracting a microservice later (the direction in [ADR-009](009-microservices-split.md)) is a
-drop-in adapter swap behind an existing port rather than a rewrite — exactly how `cmd/emailer` was split
-out.
+extracting a microservice later is a drop-in adapter swap behind an existing port rather than a
+rewrite. That extraction is now done: all three modules run as independent, event-driven services
+([ADR-012](012-event-driven-services.md)).
 
 ## Decision
 
-Reorganize the single binary into a modulith — vertical slices by bounded context. The layout is now
+Reorganize the single binary into a modulith — vertical slice by bounded context. The layout is now
 `internal/{subscription,scanner,notifier}` modules over a `shared` kernel (cross-context domain types and
 the GitHub client) and domain-agnostic `infrastructure`. The clean-arch layers
 ([ADR-008](008-hexagonal-architecture.md)) are preserved inside each module.
 
-### Entity placement (usage-driven)
+### Domain-type placement (usage-driven)
 
-The shared kernel holds only what is genuinely cross-context — verified by grepping each type's call
-sites across the would-be modules:
+The shared kernel holds only what is genuinely cross-module; everything else lives in its owning
+module's `domain` package:
 
-- `shared/entity` — types used by all three modules: `Repository`, `Subscription`,
-  `Release`, their constructors (`NewRepository`, `NewSubscription`), and the generic sentinel errors
-  (`ErrNotFound`, `ErrAlreadyExists`). Only external dependency is `uuid`.
-- `shared/github` — the GitHub REST client, github-specific errors, and `ParseRepo` (used by both
-  subscribe and scanner).
-- `subscription/domain` — `SubscriptionView`, the one type used by the subscription module alone.
-- `notifier` — the `ReleaseNotification` / `BatchResult` DTOs (and `NewReleaseNotification`),
-  used only by the notifier module's adapters.
+- `shared/domain` — only `Release` (returned by `shared/github`, used by scanner and notifier) and the
+  generic sentinel errors (`ErrNotFound`, `ErrAlreadyExists`).
+- `shared/github` — the GitHub REST client, github-specific errors, and `ParseRepo`.
+- `subscription/domain` — `Repository`, `Subscription` (+ `NewSubscription`), `SubscriptionView`, and
+  the confirm/removed/expired result types.
+- `scanner/domain` — `WatchedRepo`, `ObservedRelease`.
+- `notifier/domain` + `notifier` — the read-model, retry, and `ReleaseNotification` / `BatchResult`
+  types.
+
+(All `domain` packages — shared and per-module — are package `domain`; a file importing both aliases
+the shared one as `shareddomain`.)
 
 ## Key properties
 
-These are what make the future split a drop-in:
+These are what made the split a drop-in:
 
-- No module imports another. They communicate through consumer-defined ports
-  wired only in the composition roots (`cmd/server`, `cmd/emailer`). `shared` and `infrastructure` never
-  import a module. These boundaries are enforced in CI by golangci-lint `depguard`.
-- The scanner depends only on its own
-  `gitHubRepoRepository` / `subscriptionRepository` port, satisfied
-  today by subscription's in-process repositories. Extracting the scanner = swap that port's adapter for
-  a gRPC client — the same move that turned the in-process mailer into `notifierclient`. No scanner
-  business logic changes.
-- The repository adapters (`GitHubRepoRepository`, `SubscriptionRepository`)
-  live in the subscription module (it owns the tables); the entity types they map live in the `shared`
-  because the scanner and notifier also speak them. The module owns the noun's logic; the kernel
-  owns the noun.
+- No module imports another. They communicate through consumer-defined ports wired only in the
+  composition roots (`internal/bootstrap/<service>`, `cmd/<service>`). `shared` and `infrastructure`
+  never import a module. These boundaries are enforced in CI by golangci-lint `depguard`.
+- Each cross-module edge was a consumer-defined port. Splitting a module into its own service meant
+  re-satisfying that port with a NATS adapter (`eventpublisher` / `eventconsumer`) instead of an
+  in-process call — no business logic changed. The in-process scan-and-notify ports became the
+  `subscriptions.*` / `releases.*` event flow (see [ADR-012](012-event-driven-services.md)).
+- Each module owns its tables and the `domain` types it maps; the shared kernel owns only the
+  genuinely cross-module `Release` + sentinels.
 
 ## Consequences
 
@@ -69,6 +69,7 @@ These are what make the future split a drop-in:
 - A single Go module does not enforce boundaries on its own — any package *can* import any
   `internal/...` path. The `depguard` rules in `.golangci.yml` are what make the independence real, and
   they must be maintained as modules are added or split.
-- At a real process split, in-process shared code (`shared/entity`, `shared/github`) is vendored per
-  service or becomes proto-defined; request/response ports either stay RPC or become an event-fed read
-  model (eventual consistency). These are deferred costs, recorded for when each split is taken.
+- The services still share one Go module, so the shared kernel (`shared/domain`, `shared/github`) and
+  `infrastructure` are compiled into all three binaries. Cross-service ports are now event-fed read
+  models, not RPC — which trades the old in-process consistency for eventual consistency
+  (see [ADR-012](012-event-driven-services.md)).

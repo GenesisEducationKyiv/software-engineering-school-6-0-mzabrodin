@@ -9,19 +9,20 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/scanner/domain"
+	shareddomain "github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 )
 
-func release(tag string) *entity.Release {
-	return &entity.Release{TagName: tag, HTMLURL: "https://github.com/owner/repo/releases/tag/" + tag}
+func release(tag string) *shareddomain.Release {
+	return &shareddomain.Release{TagName: tag, HTMLURL: "https://github.com/owner/repo/releases/tag/" + tag}
 }
 
 func newScanner(gh *mockGitHub, workers int) *Scanner {
 	return New(gh, workers, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-func repoNames(observed []entity.ObservedRelease) map[string]struct{} {
+func repoNames(observed []domain.ObservedRelease) map[string]struct{} {
 	out := make(map[string]struct{}, len(observed))
 	for _, o := range observed {
 		out[o.Repo] = struct{}{}

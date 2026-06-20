@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
-	"github-release-notifier/internal/shared/entity"
 	"github-release-notifier/internal/shared/events"
+	"github-release-notifier/internal/subscription/domain"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
 )
 
@@ -17,16 +17,16 @@ var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type mockRepoRepository struct{ mock.Mock }
 
-func (m *mockRepoRepository) GetOrCreate(ctx context.Context, name string) (entity.Repository, error) {
+func (m *mockRepoRepository) GetOrCreate(ctx context.Context, name string) (domain.Repository, error) {
 	args := m.Called(ctx, name)
-	v, _ := args.Get(0).(entity.Repository)
+	v, _ := args.Get(0).(domain.Repository)
 
 	return v, args.Error(1)
 }
 
 type mockSubRepository struct{ mock.Mock }
 
-func (m *mockSubRepository) Create(ctx context.Context, sub entity.Subscription) error {
+func (m *mockSubRepository) Create(ctx context.Context, sub domain.Subscription) error {
 	return m.Called(ctx, sub).Error(0)
 }
 
@@ -34,9 +34,9 @@ func (m *mockSubRepository) FindByEmailAndRepo(
 	ctx context.Context,
 	email string,
 	repoID uuid.UUID,
-) (entity.Subscription, error) {
+) (domain.Subscription, error) {
 	args := m.Called(ctx, email, repoID)
-	v, _ := args.Get(0).(entity.Subscription)
+	v, _ := args.Get(0).(domain.Subscription)
 
 	return v, args.Error(1)
 }
@@ -110,7 +110,7 @@ func (m mocks) useCase() *subscribe.UseCase {
 func (m mocks) expectRepoResolved(repoID uuid.UUID) {
 	m.gh.On("RepoExists", mock.Anything, "owner", "repo").Return(true, nil)
 	m.repos.On("GetOrCreate", mock.Anything, "owner/repo").
-		Return(entity.Repository{ID: repoID, Name: "owner/repo"}, nil)
+		Return(domain.Repository{ID: repoID, Name: "owner/repo"}, nil)
 }
 
 func (m mocks) assertExpectations(t mock.TestingT) {

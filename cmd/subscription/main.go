@@ -7,5 +7,5 @@ import (
 )
 
 func main() {
-	bootstrap.Main("subscription", config.Load, subscription.Run)
+	bootstrap.Main("subscription", config.LoadSubscription, subscription.Run)
 }

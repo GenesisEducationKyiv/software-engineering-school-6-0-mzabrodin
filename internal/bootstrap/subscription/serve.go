@@ -11,7 +11,7 @@ import (
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
 )
 
-func newPublicServer(cfg *config.Config, svc *connectapi.Service, log *slog.Logger) (*http.Server, error) {
+func newPublicServer(cfg *config.SubscriptionConfig, svc *connectapi.Service, log *slog.Logger) (*http.Server, error) {
 	handler, err := NewHandler(svc, cfg.APIKey, log)
 	if err != nil {
 		return nil, err

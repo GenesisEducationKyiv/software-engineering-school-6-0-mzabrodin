@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github-release-notifier/internal/infrastructure/cache"
-	"github-release-notifier/internal/shared/entity"
+	"github-release-notifier/internal/shared/domain"
 	"github-release-notifier/internal/shared/github"
 )
 
@@ -59,7 +59,7 @@ func (s *GitHubClientCacheSuite) TestRepoExists_CacheHit_False() {
 
 func (s *GitHubClientCacheSuite) TestGetLatestRelease_CacheHit() {
 	ctx := s.T().Context()
-	release := entity.Release{TagName: "v3.0.0", HTMLURL: "https://github.com/owner/repo-release/releases/tag/v3.0.0"}
+	release := domain.Release{TagName: "v3.0.0", HTMLURL: "https://github.com/owner/repo-release/releases/tag/v3.0.0"}
 	data, err := json.Marshal(release)
 	s.Require().NoError(err)
 	s.Require().NoError(s.ca.Set(ctx, "github:latest_release:owner/repo-release", string(data), time.Minute))

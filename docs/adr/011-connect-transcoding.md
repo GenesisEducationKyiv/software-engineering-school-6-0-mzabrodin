@@ -6,11 +6,10 @@
 
 ## Context
 
-[ADR-005](005-grpc-api-alongside-rest.md) ran two handwritten adapters for the
-public app: a Chi REST adapter (port 8080) and a grpc-go adapter (port 50051),
-each with its own handler methods, validation, error mapping, auth and
-observability. Every change meant editing both, and the surfaces had drifted
-apart — REST returned `{"message": ...}`, gRPC returned empty bodies.
+The public API originally ran two handwritten adapters: a Chi REST adapter (port 8080) and a grpc-go
+adapter (port 50051), each with its own handler methods, validation, error mapping, auth and
+observability. Every change meant editing both, and the surfaces had drifted apart — REST returned
+`{"message": ...}`, gRPC returned empty bodies.
 
 We want one definition and one handler, while keeping the existing RESTful URLs
 (notably the browser-opened `GET /api/confirm/{token}` and
@@ -30,7 +29,7 @@ We want one definition and one handler, while keeping the existing RESTful URLs
 
 Replace both adapters with a single connect-go handler
 (`internal/subscription/adapter/connectrpc`) generated from
-`proto/app/v1/app.proto`, fronted by Vanguard
+`proto/subscription/v1/subscription.proto`, fronted by Vanguard
 (`connectrpc.com/vanguard`). One `http.Server` serves the whole public surface on
 one port over h2c (cleartext HTTP/2), via Go 1.26's
 `http.Server.Protocols` (`SetUnencryptedHTTP2`); `GRPC_PORT` is removed.
@@ -64,26 +63,6 @@ one port over h2c (cleartext HTTP/2), via Go 1.26's
 - REST error bodies change to Connect's status JSON, and `GET /api/subscriptions`
   returns the proto-wrapped `{"subscriptions": [...]}` rather than a bare array.
 
-### Emailer service
-
-The emailer service was subsequently moved off plain grpc-go onto connect-go,
-removing the second transport stack and the separate metric family.
-
-- **Emailer server** (`notifierserver.NewHandler`): a connect `NotifierServiceHandler`
-  with connect interceptors (observability → correlation → protovalidate) plus
-  connect `grpchealth` + `grpcreflect`, served by an `http.Server` whose
-  `TLSConfig` is `tlsconfig.ServerTLS` (`RequireAndVerifyClientCert`, TLS 1.3). A
-  grpc-go health client still works — connect serves the standard gRPC wire format.
-- **App client**: dials with a connection client over an `http2.Transport` carrying
-  `tlsconfig.ClientTLS`, using `connect.WithGRPC()`.
-- **Correlation**: one connection interceptor
-  (`logging.NewConnectCorrelationInterceptor`) used on both client and server.
-- **Metrics**: the emailer now feeds the shared
-  `requests_total{protocol="grpc",procedure,code}` / `request_duration_seconds`;
-  the per-service `grpc_*` family and the grpc-go metrics/logging interceptors were
-  deleted. The app and emailer are told apart by the Prometheus scrape `job` label.
-  One shared connect observability interceptor
-  (`metrics.NewConnectObservabilityInterceptor`) backs both, parameterized by a
-  protocol resolver. The Grafana dashboard's public-API panels were rewritten to
-  the unified metric. mTLS, health and reflection are preserved; no public REST
-  surface was added to the emailer.
+This decision covers the public API only. Protobuf is used just here; inter-service
+communication moved to JSON events over NATS ([ADR-012](012-event-driven-services.md)), so there is no
+internal gRPC or mTLS anywhere in the system.
