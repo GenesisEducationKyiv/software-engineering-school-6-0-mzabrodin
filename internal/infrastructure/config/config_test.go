@@ -87,6 +87,7 @@ func (s *ConfigSuite) TestLoadDefaults() {
 	s.Equal("http://localhost:8080", cfg.BaseURL)
 	s.Equal("nats://localhost:4222", cfg.NATSURL)
 	s.Equal(24*time.Hour, cfg.ConfirmTokenTTL)
+	s.Equal(24*time.Hour, cfg.PendingCleanupInterval)
 }
 
 func (s *ConfigSuite) TestLoadScannerDefaults() {
