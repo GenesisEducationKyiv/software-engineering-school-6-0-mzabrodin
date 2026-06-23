@@ -12,6 +12,9 @@ type SagaConfig struct {
 	NATSURL     string `envconfig:"NATS_URL"     default:"nats://localhost:4222"`
 	DatabaseURL string `envconfig:"DATABASE_URL"                                 required:"true"`
 	LogLevel    string `envconfig:"LOG_LEVEL"    default:"info"`
+
+	CompensateTransport  string `envconfig:"SAGA_COMPENSATE_TRANSPORT" default:"nats"`
+	SubscriptionGRPCAddr string `envconfig:"SUBSCRIPTION_GRPC_ADDR"    default:"localhost:50052"`
 }
 
 func (c *SagaConfig) SlogLevel() slog.Level {
