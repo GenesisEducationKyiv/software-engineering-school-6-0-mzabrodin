@@ -20,8 +20,10 @@ services:
     container_name: github_release_notifier_subscription_svc
     ports:
       - "${SUBSCRIPTION_PORT:-8080}:${SUBSCRIPTION_PORT:-8080}"
+      - "${SUBSCRIPTION_GRPC_PORT:-50052}:${SUBSCRIPTION_GRPC_PORT:-50052}"
     environment:
       SUBSCRIPTION_PORT: ${SUBSCRIPTION_PORT:-8080}
+      SUBSCRIPTION_GRPC_PORT: ${SUBSCRIPTION_GRPC_PORT:-50052}
       BASE_URL: ${BASE_URL:-http://localhost:8080}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@subscription-postgres:5432/${SUBSCRIPTION_DB_NAME:?SUBSCRIPTION_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
@@ -133,6 +135,9 @@ services:
       DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@saga-postgres:5432/${SAGA_DB_NAME:?SAGA_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
       NATS_URL: ${NATS_URL:-nats://nats:4222}
       SAGA_PORT: ${SAGA_PORT:-8083}
+      # "nats" (default) or "grpc" — see docs/hw9-service-communication-grpc-and-buf-proto.md
+      SAGA_COMPENSATE_TRANSPORT: ${SAGA_COMPENSATE_TRANSPORT:-nats}
+      SUBSCRIPTION_GRPC_ADDR: ${SUBSCRIPTION_GRPC_ADDR:-subscription-svc:50052}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     networks:
       - app_net
@@ -141,6 +146,8 @@ services:
       saga-postgres:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      subscription-svc:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-qO-", "http://localhost:${SAGA_PORT:-8083}/health" ]
