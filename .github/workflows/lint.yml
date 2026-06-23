@@ -37,6 +37,9 @@ jobs:
       - name: Generate gRPC/connect code
         run: buf dep update && buf generate
 
+      - name: Lint protobuf
+        run: buf lint
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
