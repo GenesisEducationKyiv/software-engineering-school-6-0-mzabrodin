@@ -54,7 +54,7 @@ func (s *SagaSuite) SetupSuite() {
 	relay := outbox.NewRelay(testPool, conn, 100*time.Millisecond, 100, testLogger)
 	go relay.Run(s.ctx)
 	sagaPub := sagapublisher.New(relay, testLogger)
-	coord := coordinator.New(sagaRepo, sagaPub, transactor, testLogger)
+	coord := coordinator.New(sagaRepo, coordinator.NewNATSCompensator(sagaRepo, sagaPub, transactor), testLogger)
 	sagaEC := sagaconsumer.New(coord, testLogger)
 
 	s.stopSaga, err = bootstrap.StartConsumers(s.ctx, conn, []bootstrap.ConsumerSpec{
