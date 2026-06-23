@@ -31,17 +31,25 @@ func newPublicServer(cfg *config.SubscriptionConfig, svc *connectapi.Service, lo
 
 type serveDeps struct {
 	publicSrv        *http.Server
+	internalSrv      *http.Server
 	backgroundDone   <-chan struct{}
 	cancelBackground context.CancelFunc
 	log              *slog.Logger
 }
 
 func serve(ctx context.Context, d serveDeps) error {
-	serverError := make(chan error, 1)
+	serverError := make(chan error, 2)
 
 	go func() {
 		d.log.Info("server started", "server", "public", "addr", d.publicSrv.Addr)
 		if err := d.publicSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverError <- err
+		}
+	}()
+
+	go func() {
+		d.log.Info("server started", "server", "internal-grpc", "addr", d.internalSrv.Addr)
+		if err := d.internalSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
 	}()
@@ -67,6 +75,10 @@ func gracefulShutdown(d serveDeps) {
 
 	if err := d.publicSrv.Shutdown(shutdownCtx); err != nil {
 		d.log.Warn("failed to shut down server", "server", "public", "error", err)
+	}
+
+	if err := d.internalSrv.Shutdown(shutdownCtx); err != nil {
+		d.log.Warn("failed to shut down server", "server", "internal-grpc", "error", err)
 	}
 
 	d.log.Info("server stopped")
