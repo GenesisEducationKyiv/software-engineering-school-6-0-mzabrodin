@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"github-release-notifier/internal/saga/domain"
-	"github-release-notifier/internal/shared/events"
 )
 
 type repository interface {
@@ -18,24 +17,18 @@ type repository interface {
 	TransitionByEmailRepo(ctx context.Context, t domain.SagaType, email, repoName string, to domain.State) (bool, error)
 }
 
-type publisher interface {
-	Compensate(ctx context.Context, ev events.SagaCompensate) error
-	Notify()
-}
-
-type transactor interface {
-	Within(ctx context.Context, fn func(ctx context.Context) error) error
+type compensator interface {
+	Compensate(ctx context.Context, saga domain.Saga) error
 }
 
 type Coordinator struct {
 	repo repository
-	pub  publisher
-	tx   transactor
+	comp compensator
 	log  *slog.Logger
 }
 
-func New(repo repository, pub publisher, tx transactor, log *slog.Logger) *Coordinator {
-	return &Coordinator{repo: repo, pub: pub, tx: tx, log: log.With("component", "saga-coordinator")}
+func New(repo repository, comp compensator, log *slog.Logger) *Coordinator {
+	return &Coordinator{repo: repo, comp: comp, log: log.With("component", "saga-coordinator")}
 }
 
 func (c *Coordinator) OnPending(ctx context.Context, sagaID, email, repoName string) error {
@@ -106,23 +99,11 @@ func (c *Coordinator) OnConfirmationDead(ctx context.Context, sagaID string) err
 	case domain.StateCompleted, domain.StateExpired, domain.StateCompensated:
 		return nil
 	case domain.StatePending, domain.StateConfirmationSent:
-		if err := c.tx.Within(ctx, func(txCtx context.Context) error {
-			if _, err := c.repo.TransitionByID(txCtx, id, domain.StateCompensated); err != nil {
-				return err
-			}
-
-			return c.pub.Compensate(txCtx, events.SagaCompensate{
-				SagaID:   sagaID,
-				SagaType: string(saga.Type),
-				Email:    saga.Email,
-				RepoName: saga.RepoName,
-			})
-		}); err != nil {
+		if err := c.comp.Compensate(ctx, saga); err != nil {
 			return err
 		}
 
-		c.pub.Notify()
-		c.log.InfoContext(ctx, "saga compensation enqueued",
+		c.log.InfoContext(ctx, "saga compensation triggered",
 			"saga_id", sagaID, "email", saga.Email, "repo", saga.RepoName)
 	}
 

@@ -30,7 +30,11 @@ func (s *CoordinatorSuite) SetupTest() {
 	s.repo = &mockRepo{}
 	s.pub = &mockPublisher{}
 	s.tx = &mockTransactor{}
-	s.coord = New(s.repo, s.pub, s.tx, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.coord = New(
+		s.repo,
+		NewNATSCompensator(s.repo, s.pub, s.tx),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
 }
 
 func (s *CoordinatorSuite) TearDownTest() {
