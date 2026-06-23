@@ -4,6 +4,8 @@ A service that monitors GitHub repositories for new releases and delivers email 
 
 > This README states the facts about the project. For design rationale and detail, see the
 > [system design document](docs/SDD.md) and the [architecture decision records](docs/adr/).
+>
+> [NATS vs. gRPC comparison](docs/hw9-service-communication-grpc-and-buf-proto.md)
 
 ## What it does
 
