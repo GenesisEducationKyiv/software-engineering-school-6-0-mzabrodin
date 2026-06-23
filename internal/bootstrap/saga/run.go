@@ -13,10 +13,8 @@ import (
 	"github-release-notifier/internal/infrastructure/metrics"
 	"github-release-notifier/internal/infrastructure/outbox"
 	"github-release-notifier/internal/saga/adapter/eventconsumer"
-	"github-release-notifier/internal/saga/adapter/eventpublisher"
 	"github-release-notifier/internal/saga/adapter/repository"
 	sagamigrations "github-release-notifier/internal/saga/migrations"
-	"github-release-notifier/internal/saga/usecase/coordinator"
 	"github-release-notifier/internal/shared/events"
 )
 
@@ -57,8 +55,13 @@ func Run(ctx context.Context, cfg *config.SagaConfig, log *slog.Logger) error {
 	repo := repository.NewSagaRepository(pool)
 	transactor := db.NewTransactor(pool)
 	relay := outbox.NewRelay(pool, conn, relayInterval, relayBatchSize, log)
-	pub := eventpublisher.New(relay, log)
-	coord := coordinator.New(repo, pub, transactor, log)
+
+	coord, closeCompensator, err := newCoordinator(cfg, repo, relay, transactor, log)
+	if err != nil {
+		return err
+	}
+	defer closeCompensator()
+
 	ec := eventconsumer.New(coord, log)
 
 	stop, err := startConsumers(ctx, conn, ec, log)
