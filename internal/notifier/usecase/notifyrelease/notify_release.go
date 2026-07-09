@@ -33,10 +33,15 @@ type urlBuilder interface {
 	UnsubscribeURL(token string) string
 }
 
+type transactor interface {
+	Within(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type publisher interface {
 	ReleaseSent(ctx context.Context, ev events.NotificationReleaseSent) error
 	ReleaseFailed(ctx context.Context, ev events.NotificationReleaseFailed) error
 	ReleaseNotified(ctx context.Context, ev events.ReleaseNotified) error
+	Notify()
 }
 
 type Input struct {
@@ -57,6 +62,7 @@ type UseCase struct {
 	failed     failedStore
 	sender     sender
 	urls       urlBuilder
+	tx         transactor
 	publisher  publisher
 	log        *slog.Logger
 }
@@ -67,6 +73,7 @@ func New(
 	failed failedStore,
 	mailSender sender,
 	urls urlBuilder,
+	tx transactor,
 	pub publisher,
 	log *slog.Logger,
 ) *UseCase {
@@ -76,6 +83,7 @@ func New(
 		failed:     failed,
 		sender:     mailSender,
 		urls:       urls,
+		tx:         tx,
 		publisher:  pub,
 		log:        log.With("component", "notify-release"),
 	}
@@ -104,24 +112,30 @@ func (uc *UseCase) Execute(ctx context.Context, in Input) (Output, error) {
 		"repo", in.RepoName, "tag", in.Tag, "recipients", len(recipients))
 
 	result := uc.deliver(ctx, in, recipients)
-	uc.publishOutcomes(ctx, in, recipients, result)
 
+	if err := uc.tx.Within(ctx, func(txCtx context.Context) error {
+		if err := uc.recordOutcomes(txCtx, in, recipients, result); err != nil {
+			return err
+		}
+
+		if err := uc.publisher.ReleaseNotified(txCtx, events.ReleaseNotified{
+			SagaID:       in.SagaID,
+			RepoName:     in.RepoName,
+			Tag:          in.Tag,
+			SentCount:    result.Sent,
+			FailedEmails: result.Failed,
+		}); err != nil {
+			return err
+		}
+
+		return uc.dedupe.Mark(txCtx, in.RepoName, in.Tag)
+	}); err != nil {
+		return Output{}, fmt.Errorf("commit release outcome: %w", err)
+	}
+
+	uc.publisher.Notify()
 	uc.log.InfoContext(ctx, "release notifications processed",
 		"repo", in.RepoName, "tag", in.Tag, "sent", result.Sent, "failed", len(result.Failed))
-
-	if err := uc.publisher.ReleaseNotified(ctx, events.ReleaseNotified{
-		SagaID:       in.SagaID,
-		RepoName:     in.RepoName,
-		Tag:          in.Tag,
-		SentCount:    result.Sent,
-		FailedEmails: result.Failed,
-	}); err != nil {
-		return Output{}, fmt.Errorf("publish release notified: %w", err)
-	}
-
-	if err := uc.dedupe.Mark(ctx, in.RepoName, in.Tag); err != nil {
-		return Output{}, fmt.Errorf("mark processed release: %w", err)
-	}
 
 	return Output{SentCount: result.Sent, FailedEmails: result.Failed}, nil
 }
@@ -149,12 +163,12 @@ func (uc *UseCase) deliver(
 	return uc.sender.SendReleaseNotifications(ctx, notifications)
 }
 
-func (uc *UseCase) publishOutcomes(
+func (uc *UseCase) recordOutcomes(
 	ctx context.Context,
 	in Input,
 	recipients []domain.Recipient,
 	result notifier.BatchResult,
-) {
+) error {
 	failed := make(map[string]bool, len(result.Failed))
 	for _, email := range result.Failed {
 		failed[email] = true
@@ -162,41 +176,39 @@ func (uc *UseCase) publishOutcomes(
 
 	for _, r := range recipients {
 		if failed[r.Email] {
-			uc.recordFailure(ctx, in, r.Email)
-			notifier.TryPublish(ctx, uc.log, "release failed", func() error {
-				return uc.publisher.ReleaseFailed(ctx, events.NotificationReleaseFailed{
-					SagaID:   in.SagaID,
-					RepoName: in.RepoName,
-					Tag:      in.Tag,
-					Email:    r.Email,
-					Reason:   failureReason,
-				})
-			})
+			if err := uc.failed.Add(ctx, &domain.FailedNotification{
+				SagaID:     in.SagaID,
+				RepoName:   in.RepoName,
+				Tag:        in.Tag,
+				ReleaseURL: in.ReleaseURL,
+				Email:      r.Email,
+				Reason:     failureReason,
+			}); err != nil {
+				return err
+			}
 
-			continue
-		}
-
-		notifier.TryPublish(ctx, uc.log, "release sent", func() error {
-			return uc.publisher.ReleaseSent(ctx, events.NotificationReleaseSent{
+			if err := uc.publisher.ReleaseFailed(ctx, events.NotificationReleaseFailed{
 				SagaID:   in.SagaID,
 				RepoName: in.RepoName,
 				Tag:      in.Tag,
 				Email:    r.Email,
-			})
-		})
-	}
-}
+				Reason:   failureReason,
+			}); err != nil {
+				return err
+			}
 
-func (uc *UseCase) recordFailure(ctx context.Context, in Input, email string) {
-	if err := uc.failed.Add(ctx, &domain.FailedNotification{
-		SagaID:     in.SagaID,
-		RepoName:   in.RepoName,
-		Tag:        in.Tag,
-		ReleaseURL: in.ReleaseURL,
-		Email:      email,
-		Reason:     failureReason,
-	}); err != nil {
-		uc.log.ErrorContext(ctx, "failed to record release failure for retry",
-			"repo", in.RepoName, "tag", in.Tag, "email", email, "error", err)
+			continue
+		}
+
+		if err := uc.publisher.ReleaseSent(ctx, events.NotificationReleaseSent{
+			SagaID:   in.SagaID,
+			RepoName: in.RepoName,
+			Tag:      in.Tag,
+			Email:    r.Email,
+		}); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

@@ -22,3 +22,9 @@ scrape_configs:
       - targets:
           - scanner-svc:8082
     metrics_path: /metrics
+
+  - job_name: github_release_notifier_saga
+    static_configs:
+      - targets:
+          - saga-orchestrator:8083
+    metrics_path: /metrics

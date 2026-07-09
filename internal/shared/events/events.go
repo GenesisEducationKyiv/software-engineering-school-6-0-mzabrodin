@@ -4,6 +4,7 @@ const (
 	StreamSubscriptions = "SUBSCRIPTIONS"
 	StreamReleases      = "RELEASES"
 	StreamNotifications = "NOTIFICATIONS"
+	StreamSagas         = "SAGAS"
 )
 
 const (
@@ -27,6 +28,10 @@ const (
 	SubjectNotificationReleaseDead        = "notifications.release.dead"
 )
 
+const (
+	SubjectSagaCompensate = "saga.compensate"
+)
+
 var SubjectsSubscriptions = []string{
 	SubjectSubscriptionPending,
 	SubjectSubscriptionConfirmed,
@@ -46,6 +51,10 @@ var SubjectsNotifications = []string{
 	SubjectNotificationReleaseSent,
 	SubjectNotificationReleaseFailed,
 	SubjectNotificationReleaseDead,
+}
+
+var SubjectsSagas = []string{
+	SubjectSagaCompensate,
 }
 
 type SubscriptionPending struct {
@@ -127,4 +136,11 @@ type NotificationReleaseDead struct {
 	Tag      string `json:"tag"      validate:"required"`
 	Email    string `json:"email"    validate:"required,email"`
 	Reason   string `json:"reason"   validate:"required"`
+}
+
+type SagaCompensate struct {
+	SagaID   string `json:"sagaID"   validate:"required,uuid"`
+	SagaType string `json:"sagaType" validate:"required"`
+	Email    string `json:"email"    validate:"required,email"`
+	RepoName string `json:"repoName" validate:"required,reponame"`
 }

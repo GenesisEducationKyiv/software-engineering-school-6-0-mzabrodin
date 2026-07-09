@@ -43,10 +43,12 @@ func (s *RetrySuite) SetupTest() {
 	s.confSender = &mockConfirmationSender{}
 	s.urls = &mockURLs{}
 	s.publisher = &mockPublisher{}
+	s.publisher.On("Notify").Return().Maybe()
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s.retrier = New(
-		s.notifications, s.confirmations, s.recipients, s.relSender, s.confSender, s.urls, s.publisher,
+		s.notifications, s.confirmations, s.recipients, s.relSender, s.confSender, s.urls,
+		mockTransactor{}, s.publisher,
 		Config{MaxRetries: maxRetries, ConfirmationTTL: 24 * time.Hour}, log,
 	)
 }

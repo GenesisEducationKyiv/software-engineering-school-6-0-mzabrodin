@@ -16,6 +16,7 @@ import (
 
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/outbox"
+	sagamigrations "github-release-notifier/internal/saga/migrations"
 	submigrations "github-release-notifier/internal/subscription/migrations"
 )
 
@@ -65,6 +66,12 @@ func run(m *testing.M) int {
 	if err := db.RunMigrationsFS(pgDSN, outbox.Migrations, integrationLogger,
 		db.WithMigrationsTable("outbox_schema_migrations")); err != nil {
 		slog.Error("run outbox migrations", "err", err)
+		return 1
+	}
+
+	if err := db.RunMigrationsFS(pgDSN, sagamigrations.FS, integrationLogger,
+		db.WithMigrationsTable("saga_schema_migrations")); err != nil {
+		slog.Error("run saga migrations", "err", err)
 		return 1
 	}
 

@@ -1,0 +1,44 @@
+version: 1
+threshold:
+  compliance: 100
+  coverage: 100
+dependenciesRules:
+  # no bounded-context module imports another
+  - package: "**.internal.subscription.**"
+    shouldNotDependsOn:
+      internal: [ "**.internal.scanner.**", "**.internal.notifier.**", "**.internal.saga.**" ]
+  - package: "**.internal.scanner.**"
+    shouldNotDependsOn:
+      internal: [ "**.internal.subscription.**", "**.internal.notifier.**", "**.internal.saga.**" ]
+  - package: "**.internal.notifier.**"
+    shouldNotDependsOn:
+      internal: [ "**.internal.subscription.**", "**.internal.scanner.**", "**.internal.saga.**" ]
+  - package: "**.internal.saga.**"
+    shouldNotDependsOn:
+      internal: [ "**.internal.subscription.**", "**.internal.scanner.**", "**.internal.notifier.**" ]
+  # shared & infrastructure must not import any bounded-context module
+  - package: "**.internal.shared.**"
+    shouldNotDependsOn:
+      internal: [ "**.internal.subscription.**", "**.internal.scanner.**", "**.internal.notifier.**", "**.internal.saga.**" ]
+  - package: "**.internal.infrastructure.**"
+    shouldNotDependsOn:
+      internal: [ "**.internal.subscription.**", "**.internal.scanner.**", "**.internal.notifier.**", "**.internal.saga.**" ]
+  # layer direction (module-agnostic): dependencies point inward
+  - package: "**.domain.**"
+    shouldNotDependsOn:
+      internal: [ "**.usecase.**", "**.adapter.**" ]
+  - package: "**.usecase.**"
+    shouldNotDependsOn:
+      internal: [ "**.adapter.**" ]
+  # entity kernel: only uuid
+  - package: "**.internal.shared.domain.**"
+    shouldOnlyDependsOn:
+      external: [ "github.com/google/uuid" ]
+  # thin entry points: cmd only wires through bootstrap/infrastructure
+  - package: "**.cmd.**"
+    shouldNotDependsOn:
+      internal: [ "**.adapter.**", "**.usecase.**", "**.domain.**" ]
+  # composition roots never depend upward on the entry points
+  - package: "**.internal.bootstrap.**"
+    shouldNotDependsOn:
+      internal: [ "**.cmd.**" ]

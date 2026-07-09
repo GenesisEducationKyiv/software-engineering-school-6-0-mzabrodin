@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github-release-notifier/internal/bootstrap"
-	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
+	"github-release-notifier/internal/infrastructure/outbox"
 	"github-release-notifier/internal/infrastructure/urlbuilder"
 	"github-release-notifier/internal/notifier/adapter/eventconsumer"
 	"github-release-notifier/internal/notifier/adapter/eventpublisher"
@@ -26,7 +27,11 @@ import (
 	"github-release-notifier/internal/shared/events"
 )
 
-const shutdownTimeout = bootstrap.ShutdownTimeout
+const (
+	shutdownTimeout = bootstrap.ShutdownTimeout
+	relayInterval   = 5 * time.Second
+	relayBatchSize  = 100
+)
 
 func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) error {
 	mail, err := mailer.NewMailer(
@@ -39,6 +44,12 @@ func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) erro
 
 	if err := db.RunMigrationsFS(cfg.DatabaseURL, notifmigrations.FS, log); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	if err := db.RunMigrationsFS(
+		cfg.DatabaseURL, outbox.Migrations, log, db.WithMigrationsTable("outbox_schema_migrations"),
+	); err != nil {
+		return fmt.Errorf("run outbox migrations: %w", err)
 	}
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL, metrics.NewPgxTracer(), log)
@@ -58,13 +69,16 @@ func Run(ctx context.Context, cfg *config.NotifierConfig, log *slog.Logger) erro
 		return err
 	}
 
-	comps := buildComponents(pool, conn, mail, cfg, log)
+	relay := outbox.NewRelay(pool, conn, relayInterval, relayBatchSize, log)
+	comps := buildComponents(pool, relay, mail, cfg, log)
 
 	stop, err := startConsumers(ctx, conn, comps.eventConsumer, log)
 	if err != nil {
 		return fmt.Errorf("start consumers: %w", err)
 	}
 	defer stop()
+
+	go relay.Run(ctx)
 
 	maintenanceDone, cancelMaintenance := startMaintenance(ctx, comps.retrier, comps.processed, cfg, log)
 
@@ -90,7 +104,7 @@ type components struct {
 
 func buildComponents(
 	pool *pgxpool.Pool,
-	conn *broker.Conn,
+	relay *outbox.Relay,
 	mail *mailer.Mailer,
 	cfg *config.NotifierConfig,
 	log *slog.Logger,
@@ -100,13 +114,14 @@ func buildComponents(
 	failedConf := repository.NewFailedConfirmationsRepository(pool)
 	processed := repository.NewProcessedReleasesRepository(pool)
 
-	pub := eventpublisher.New(conn, log)
+	transactor := db.NewTransactor(pool)
+	pub := eventpublisher.New(relay, log)
 	urls := urlbuilder.New(cfg.BaseURL)
 
-	confirmUC := sendconfirmation.New(mail, failedConf, pub, log)
+	confirmUC := sendconfirmation.New(mail, failedConf, transactor, pub, log)
 	projector := readmodel.New(readRepo, log)
-	releaseUC := notifyrelease.New(readRepo, processed, failedNotif, mail, urls, pub, log)
-	retrier := retry.New(failedNotif, failedConf, readRepo, mail, mail, urls, pub, retry.Config{
+	releaseUC := notifyrelease.New(readRepo, processed, failedNotif, mail, urls, transactor, pub, log)
+	retrier := retry.New(failedNotif, failedConf, readRepo, mail, mail, urls, transactor, pub, retry.Config{
 		MaxRetries:      cfg.MaxRetries,
 		ConfirmationTTL: cfg.ConfirmationTTL,
 	}, log)

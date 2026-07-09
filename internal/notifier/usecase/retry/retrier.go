@@ -48,11 +48,16 @@ type urlBuilder interface {
 	UnsubscribeURL(token string) string
 }
 
+type transactor interface {
+	Within(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type publisher interface {
 	ReleaseSent(ctx context.Context, ev events.NotificationReleaseSent) error
 	ReleaseDead(ctx context.Context, ev events.NotificationReleaseDead) error
 	ConfirmationSent(ctx context.Context, ev events.NotificationConfirmationSent) error
 	ConfirmationDead(ctx context.Context, ev events.NotificationConfirmationDead) error
+	Notify()
 }
 
 type Config struct {
@@ -67,6 +72,7 @@ type Retrier struct {
 	relSender     releaseSender
 	confSender    confirmationSender
 	urls          urlBuilder
+	tx            transactor
 	publisher     publisher
 	cfg           Config
 	log           *slog.Logger
@@ -79,6 +85,7 @@ func New(
 	relSender releaseSender,
 	confSender confirmationSender,
 	urls urlBuilder,
+	tx transactor,
 	pub publisher,
 	cfg Config,
 	log *slog.Logger,
@@ -90,6 +97,7 @@ func New(
 		relSender:     relSender,
 		confSender:    confSender,
 		urls:          urls,
+		tx:            tx,
 		publisher:     pub,
 		cfg:           cfg,
 		log:           log.With("component", "notifier-retry"),
@@ -169,9 +177,12 @@ func (r *Retrier) retryRelease(ctx context.Context, fn *domain.FailedNotificatio
 	}})
 
 	if result.Sent > 0 {
-		r.deleteNotification(ctx, fn.ID)
-		notifier.TryPublish(ctx, r.log, "release sent", func() error {
-			return r.publisher.ReleaseSent(ctx, events.NotificationReleaseSent{
+		r.deleteAndPublish(ctx, "release sent", func(txCtx context.Context) error {
+			if err := r.notifications.Delete(txCtx, fn.ID); err != nil {
+				return err
+			}
+
+			return r.publisher.ReleaseSent(txCtx, events.NotificationReleaseSent{
 				SagaID: fn.SagaID, RepoName: fn.RepoName, Tag: fn.Tag, Email: fn.Email,
 			})
 		})
@@ -180,9 +191,12 @@ func (r *Retrier) retryRelease(ctx context.Context, fn *domain.FailedNotificatio
 	}
 
 	if fn.RetryCount+1 >= r.cfg.MaxRetries {
-		r.deleteNotification(ctx, fn.ID)
-		notifier.TryPublish(ctx, r.log, "release dead", func() error {
-			return r.publisher.ReleaseDead(ctx, events.NotificationReleaseDead{
+		r.deleteAndPublish(ctx, "release dead", func(txCtx context.Context) error {
+			if err := r.notifications.Delete(txCtx, fn.ID); err != nil {
+				return err
+			}
+
+			return r.publisher.ReleaseDead(txCtx, events.NotificationReleaseDead{
 				SagaID: fn.SagaID, RepoName: fn.RepoName, Tag: fn.Tag, Email: fn.Email, Reason: releaseDeadReason,
 			})
 		})
@@ -212,32 +226,42 @@ func (r *Retrier) retryConfirmation(ctx context.Context, fc *domain.FailedConfir
 		return
 	}
 
-	r.deleteConfirmation(ctx, fc.ID)
-	notifier.TryPublish(ctx, r.log, "confirmation sent", func() error {
+	r.deleteAndPublish(ctx, "confirmation sent", func(txCtx context.Context) error {
+		if err := r.confirmations.Delete(txCtx, fc.ID); err != nil {
+			return err
+		}
+
 		return r.publisher.ConfirmationSent(
-			ctx,
+			txCtx,
 			events.NotificationConfirmationSent{SagaID: fc.SagaID, Email: fc.Email},
 		)
 	})
 }
 
 func (r *Retrier) deadLetterConfirmation(ctx context.Context, fc *domain.FailedConfirmation, reason string) {
-	r.deleteConfirmation(ctx, fc.ID)
-	notifier.TryPublish(ctx, r.log, "confirmation dead", func() error {
-		return r.publisher.ConfirmationDead(ctx, events.NotificationConfirmationDead{
+	r.deleteAndPublish(ctx, "confirmation dead", func(txCtx context.Context) error {
+		if err := r.confirmations.Delete(txCtx, fc.ID); err != nil {
+			return err
+		}
+
+		return r.publisher.ConfirmationDead(txCtx, events.NotificationConfirmationDead{
 			SagaID: fc.SagaID, Email: fc.Email, Reason: reason,
 		})
 	})
 }
 
+func (r *Retrier) deleteAndPublish(ctx context.Context, event string, fn func(ctx context.Context) error) {
+	if err := r.tx.Within(ctx, fn); err != nil {
+		r.log.ErrorContext(ctx, "dead-letter/retry publish via outbox failed", "event", event, "error", err)
+
+		return
+	}
+
+	r.publisher.Notify()
+}
+
 func (r *Retrier) deleteNotification(ctx context.Context, id int64) {
 	if err := r.notifications.Delete(ctx, id); err != nil {
 		r.log.ErrorContext(ctx, "delete failed_notification failed", "id", id, "error", err)
-	}
-}
-
-func (r *Retrier) deleteConfirmation(ctx context.Context, id int64) {
-	if err := r.confirmations.Delete(ctx, id); err != nil {
-		r.log.ErrorContext(ctx, "delete failed_confirmation failed", "id", id, "error", err)
 	}
 }

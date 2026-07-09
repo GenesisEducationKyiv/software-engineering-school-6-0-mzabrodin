@@ -107,7 +107,7 @@ func newTestServer(t *testing.T, repoExists bool) *httptest.Server {
 
 func truncateAll(t *testing.T) {
 	t.Helper()
-	_, err := testPool.Exec(t.Context(), "TRUNCATE subscriptions, repositories, outbox_messages CASCADE")
+	_, err := testPool.Exec(t.Context(), "TRUNCATE subscriptions, repositories, outbox_messages, sagas CASCADE")
 	require.NoError(t, err)
 }
 

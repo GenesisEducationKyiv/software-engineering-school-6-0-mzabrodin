@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github-release-notifier/internal/bootstrap"
+	"github-release-notifier/internal/infrastructure/broker"
 	"github-release-notifier/internal/infrastructure/config"
 	"github-release-notifier/internal/infrastructure/db"
 	"github-release-notifier/internal/infrastructure/metrics"
@@ -18,10 +19,12 @@ import (
 	"github-release-notifier/internal/shared/github"
 	"github-release-notifier/internal/subscription/adapter/confirmtoken"
 	connectapi "github-release-notifier/internal/subscription/adapter/connectrpc"
+	"github-release-notifier/internal/subscription/adapter/eventconsumer"
 	"github-release-notifier/internal/subscription/adapter/eventpublisher"
 	"github-release-notifier/internal/subscription/adapter/repository"
 	submigrations "github-release-notifier/internal/subscription/migrations"
 	"github-release-notifier/internal/subscription/usecase/cleanup"
+	"github-release-notifier/internal/subscription/usecase/compensate"
 	"github-release-notifier/internal/subscription/usecase/confirm"
 	"github-release-notifier/internal/subscription/usecase/list"
 	"github-release-notifier/internal/subscription/usecase/subscribe"
@@ -41,9 +44,20 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 	}
 	defer cleanupInfra()
 
-	svc, cleanupUC := buildApp(inf, cfg, log)
+	svc, cleanupUC, subConsumer, compensateUC := buildApp(inf, cfg, log)
+
+	stopConsumers, err := startConsumers(ctx, inf.broker, subConsumer, log)
+	if err != nil {
+		return fmt.Errorf("start consumers: %w", err)
+	}
+	defer stopConsumers()
 
 	publicSrv, err := newPublicServer(cfg, svc, log)
+	if err != nil {
+		return err
+	}
+
+	internalSrv, err := newInternalGRPCServer(cfg, compensateUC, log)
 	if err != nil {
 		return err
 	}
@@ -52,6 +66,7 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 
 	return serve(ctx, serveDeps{
 		publicSrv:        publicSrv,
+		internalSrv:      internalSrv,
 		backgroundDone:   backgroundDone,
 		cancelBackground: cancelBackground,
 		log:              log,
@@ -59,9 +74,10 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 }
 
 type infrastructure struct {
-	pool  *pgxpool.Pool
-	gh    *github.Client
-	relay *outbox.Relay
+	pool   *pgxpool.Pool
+	gh     *github.Client
+	relay  *outbox.Relay
+	broker *broker.Conn
 }
 
 func newInfrastructure(
@@ -123,14 +139,19 @@ func newInfrastructure(
 
 	ok = true
 
-	return &infrastructure{pool: pool, gh: gh, relay: relay}, cleanupClosers, nil
+	return &infrastructure{pool: pool, gh: gh, relay: relay, broker: brokerConn}, cleanupClosers, nil
 }
 
 func buildApp(
 	inf *infrastructure,
 	cfg *config.SubscriptionConfig,
 	log *slog.Logger,
-) (*connectapi.Service, *cleanup.UseCase) {
+) (
+	svc *connectapi.Service,
+	cleanupUC *cleanup.UseCase,
+	consumer *eventconsumer.Consumer,
+	compensateUC *compensate.UseCase,
+) {
 	repos := repository.NewGitHubRepoRepository(inf.pool)
 	subs := repository.NewSubscriptionRepository(inf.pool)
 	urls := urlbuilder.New(cfg.BaseURL)
@@ -139,11 +160,14 @@ func buildApp(
 	tokens := confirmtoken.New(cfg.JWTSecret, cfg.ConfirmTokenTTL)
 
 	ucs := buildUseCases(repos, subs, inf.gh, tokens, urls, transactor, pub, log)
-	svc := connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
+	svc = connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
 
-	cleanupUC := cleanup.New(subs, transactor, pub, cfg.ConfirmTokenTTL, log)
+	cleanupUC = cleanup.New(subs, transactor, pub, cfg.ConfirmTokenTTL, log)
 
-	return svc, cleanupUC
+	compensateUC = compensate.New(subs, log)
+	consumer = eventconsumer.New(compensateUC, log)
+
+	return svc, cleanupUC, consumer, compensateUC
 }
 
 type useCases struct {

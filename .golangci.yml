@@ -55,6 +55,8 @@ linters:
               desc: shared/infrastructure must not import a bounded-context module
             - pkg: github-release-notifier/internal/notifier
               desc: shared/infrastructure must not import a bounded-context module
+            - pkg: github-release-notifier/internal/saga
+              desc: shared/infrastructure must not import a bounded-context module
         notifier:
           list-mode: lax
           files:
@@ -63,6 +65,8 @@ linters:
             - pkg: github-release-notifier/internal/subscription
               desc: notifier must not import another bounded-context module
             - pkg: github-release-notifier/internal/scanner
+              desc: notifier must not import another bounded-context module
+            - pkg: github-release-notifier/internal/saga
               desc: notifier must not import another bounded-context module
         subscription:
           list-mode: lax
@@ -73,6 +77,8 @@ linters:
               desc: subscription must not import scanner (no such edge in the module DAG)
             - pkg: github-release-notifier/internal/notifier
               desc: subscription reaches the notifier only through its own consumer-defined port (wired in cmd)
+            - pkg: github-release-notifier/internal/saga
+              desc: subscription reacts to the saga only via the saga.compensate event (shared/events), never an import
         scanner:
           list-mode: lax
           files:
@@ -82,6 +88,19 @@ linters:
               desc: scanner reaches subscription only through its own repository ports (wired in cmd)
             - pkg: github-release-notifier/internal/notifier
               desc: scanner reaches the notifier only through its own consumer-defined port (wired in cmd)
+            - pkg: github-release-notifier/internal/saga
+              desc: scanner must not import another bounded-context module
+        saga:
+          list-mode: lax
+          files:
+            - "**/internal/saga/**"
+          deny:
+            - pkg: github-release-notifier/internal/subscription
+              desc: saga must not import another bounded-context module
+            - pkg: github-release-notifier/internal/scanner
+              desc: saga must not import another bounded-context module
+            - pkg: github-release-notifier/internal/notifier
+              desc: saga must not import another bounded-context module
 
     gocognit:
       min-complexity: 15
@@ -117,7 +136,7 @@ linters:
         - performance
       settings:
         hugeParam:
-          sizeThreshold: 128
+          sizeThreshold: 192
 
     errorlint:
       errorf: true

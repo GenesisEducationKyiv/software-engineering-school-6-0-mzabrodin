@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github-release-notifier/internal/notifier"
 	"github-release-notifier/internal/notifier/domain"
 	"github-release-notifier/internal/shared/events"
 )
@@ -18,9 +17,14 @@ type failedStore interface {
 	Add(ctx context.Context, fc *domain.FailedConfirmation) error
 }
 
+type transactor interface {
+	Within(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type publisher interface {
 	ConfirmationSent(ctx context.Context, ev events.NotificationConfirmationSent) error
 	ConfirmationFailed(ctx context.Context, ev events.NotificationConfirmationFailed) error
+	Notify()
 }
 
 type Input struct {
@@ -33,14 +37,16 @@ type Input struct {
 type UseCase struct {
 	sender    sender
 	failed    failedStore
+	tx        transactor
 	publisher publisher
 	log       *slog.Logger
 }
 
-func New(mailSender sender, failed failedStore, pub publisher, log *slog.Logger) *UseCase {
+func New(mailSender sender, failed failedStore, tx transactor, pub publisher, log *slog.Logger) *UseCase {
 	return &UseCase{
 		sender:    mailSender,
 		failed:    failed,
+		tx:        tx,
 		publisher: pub,
 		log:       log.With("component", "send-confirmation"),
 	}
@@ -53,35 +59,43 @@ func (uc *UseCase) Execute(ctx context.Context, in Input) error {
 		uc.log.WarnContext(ctx, "confirmation send failed; queued for retry",
 			"email", in.Email, "repo", in.RepoName, "error", err)
 
-		if addErr := uc.failed.Add(ctx, &domain.FailedConfirmation{
-			SagaID:     in.SagaID,
-			Email:      in.Email,
-			RepoName:   in.RepoName,
-			ConfirmURL: in.ConfirmURL,
-			Reason:     err.Error(),
-		}); addErr != nil {
-			return fmt.Errorf("record confirmation failure: %w", addErr)
-		}
+		if txErr := uc.tx.Within(ctx, func(txCtx context.Context) error {
+			if addErr := uc.failed.Add(txCtx, &domain.FailedConfirmation{
+				SagaID:     in.SagaID,
+				Email:      in.Email,
+				RepoName:   in.RepoName,
+				ConfirmURL: in.ConfirmURL,
+				Reason:     err.Error(),
+			}); addErr != nil {
+				return addErr
+			}
 
-		notifier.TryPublish(ctx, uc.log, "confirmation failed", func() error {
-			return uc.publisher.ConfirmationFailed(ctx, events.NotificationConfirmationFailed{
+			return uc.publisher.ConfirmationFailed(txCtx, events.NotificationConfirmationFailed{
 				SagaID: in.SagaID,
 				Email:  in.Email,
 				Reason: err.Error(),
 			})
-		})
+		}); txErr != nil {
+			return fmt.Errorf("record confirmation failure: %w", txErr)
+		}
+
+		uc.publisher.Notify()
 
 		return nil
 	}
 
 	uc.log.InfoContext(ctx, "confirmation email sent", "email", in.Email, "repo", in.RepoName)
 
-	notifier.TryPublish(ctx, uc.log, "confirmation sent", func() error {
-		return uc.publisher.ConfirmationSent(ctx, events.NotificationConfirmationSent{
+	if err := uc.tx.Within(ctx, func(txCtx context.Context) error {
+		return uc.publisher.ConfirmationSent(txCtx, events.NotificationConfirmationSent{
 			SagaID: in.SagaID,
 			Email:  in.Email,
 		})
-	})
+	}); err != nil {
+		return fmt.Errorf("publish confirmation sent: %w", err)
+	}
+
+	uc.publisher.Notify()
 
 	return nil
 }

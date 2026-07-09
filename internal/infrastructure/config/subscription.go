@@ -20,6 +20,8 @@ type SubscriptionConfig struct {
 	PendingCleanupInterval time.Duration `envconfig:"PENDING_CLEANUP_INTERVAL" default:"24h"`
 	APIKey                 string        `envconfig:"API_KEY"`
 	LogLevel               string        `envconfig:"LOG_LEVEL"                default:"info"`
+
+	GRPCPort string `envconfig:"SUBSCRIPTION_GRPC_PORT" default:"50052"`
 }
 
 func (c *SubscriptionConfig) SlogLevel() slog.Level {

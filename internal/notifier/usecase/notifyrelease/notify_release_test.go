@@ -39,9 +39,10 @@ func (s *NotifyReleaseSuite) SetupTest() {
 	s.sender = &mockSender{}
 	s.urls = &mockURLs{}
 	s.publisher = &mockPublisher{}
+	s.publisher.On("Notify").Return().Maybe()
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s.uc = New(s.recipients, s.dedupe, s.failed, s.sender, s.urls, s.publisher, log)
+	s.uc = New(s.recipients, s.dedupe, s.failed, s.sender, s.urls, mockTransactor{}, s.publisher, log)
 
 	s.input = Input{
 		SagaID:     uuid.NewString(),
@@ -149,19 +150,20 @@ func (s *NotifyReleaseSuite) TestNoRecipientsStillNotifiesAndMarks() {
 	s.sender.AssertNotCalled(s.T(), "SendReleaseNotifications")
 }
 
-func (s *NotifyReleaseSuite) TestPerRecipientPublishFailureIgnored() {
+func (s *NotifyReleaseSuite) TestEnqueueFailureRollsBackAndReturnsError() {
 	s.dedupe.On("Exists", mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-	s.dedupe.On("Mark", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	s.recipients.On("RecipientsByRepo", mock.Anything, mock.Anything).Return([]domain.Recipient{
 		{Email: "a@example.test", UnsubToken: "ta"},
 	}, nil)
 	s.urls.On("UnsubscribeURL", mock.Anything).Return("https://example.test/u")
 	s.sender.On("SendReleaseNotifications", mock.Anything, mock.Anything).Return(notifier.BatchResult{Sent: 1})
-	s.publisher.On("ReleaseSent", mock.Anything, mock.Anything).Return(errors.New("nats down"))
-	s.publisher.On("ReleaseNotified", mock.Anything, mock.Anything).Return(nil)
+	s.publisher.On("ReleaseSent", mock.Anything, mock.Anything).Return(errors.New("db down"))
 
-	out, err := s.uc.Execute(s.T().Context(), s.input)
+	_, err := s.uc.Execute(s.T().Context(), s.input)
 
-	s.Require().NoError(err) // per-recipient publish failure is logged, not returned
-	s.Equal(1, out.SentCount)
+	// An enqueue failure rolls back the tx: the release is not marked processed and notified is
+	// never published, so the message is redelivered instead of silently advancing.
+	s.Require().Error(err)
+	s.dedupe.AssertNotCalled(s.T(), "Mark")
+	s.publisher.AssertNotCalled(s.T(), "ReleaseNotified")
 }

@@ -34,11 +34,17 @@ tasks:
     cmds:
       - golangci-lint run --build-tags integration ./test/integration/... {{.CLI_ARGS}}
 
+  lint-benchmark:
+    desc: Lint the benchmarks; pass --fix with `task lint-benchmark -- --fix`
+    cmds:
+      - golangci-lint run --build-tags benchmark ./test/benchmark/... {{.CLI_ARGS}}
+
   lint-all:
     desc: Run all linters; pass --fix with `task lint-all -- --fix`
     cmds:
       - task lint-core -- {{.CLI_ARGS}}
       - task lint-integration -- {{.CLI_ARGS}}
+      - task lint-benchmark -- {{.CLI_ARGS}}
 
   fmt:
     desc: Format the codebase
@@ -50,6 +56,23 @@ tasks:
     cmds:
       - buf dep update
       - buf generate
+
+  proto-lint:
+    desc: Lint the proto contracts with buf
+    cmds:
+      - buf lint
+
+  arch-test:
+    desc: Verify architectural dependency rules with arch-go
+    cmds:
+      - go run github.com/arch-go/arch-go/v2@v2.1.2
+
+  bench:
+    desc: Run the gRPC-vs-NATS compensation throughput benchmarks, 5 runs x 5s (testcontainers, requires Docker)
+    deps:
+      - _docker-check
+    cmds:
+      - go test -tags benchmark -run '^$' -bench 'Compensate' -benchmem -benchtime=5s -count=5 ./test/benchmark/...
 
   up:
     desc: Start the full stack with Docker Compose
