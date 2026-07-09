@@ -1,0 +1,458 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-service: &service
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  restart: unless-stopped
+
+x-app-image: &app-image
+  build: .
+  image: github_release_notifier:local
+
+services:
+  subscription-svc:
+    <<: [ *service, *app-image ]
+    container_name: github_release_notifier_subscription_svc
+    ports:
+      - "${SUBSCRIPTION_PORT:-8080}:${SUBSCRIPTION_PORT:-8080}"
+      - "${SUBSCRIPTION_GRPC_PORT:-50052}:${SUBSCRIPTION_GRPC_PORT:-50052}"
+    environment:
+      SUBSCRIPTION_PORT: ${SUBSCRIPTION_PORT:-8080}
+      SUBSCRIPTION_GRPC_PORT: ${SUBSCRIPTION_GRPC_PORT:-50052}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@subscription-postgres:5432/${SUBSCRIPTION_DB_NAME:?SUBSCRIPTION_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      CONFIRM_TOKEN_TTL: ${CONFIRM_TOKEN_TTL:-24h}
+      PENDING_CLEANUP_INTERVAL: ${PENDING_CLEANUP_INTERVAL:-24h}
+      API_KEY: ${API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - app_net
+      - monitoring_net
+    depends_on:
+      subscription-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${SUBSCRIPTION_PORT:-8080}/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  scanner-svc:
+    <<: [ *service, *app-image ]
+    container_name: github_release_notifier_scanner_svc
+    command: [ "./scanner" ]
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      SCAN_WORKERS: ${SCAN_WORKERS:-5}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-10m}
+      DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@scanner-postgres:5432/${SCANNER_DB_NAME:?SCANNER_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      SCANNER_PORT: ${SCANNER_PORT:-8082}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - app_net
+      - monitoring_net
+    depends_on:
+      scanner-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${SCANNER_PORT:-8082}/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  notifier-svc:
+    <<: [ *service, *app-image ]
+    container_name: github_release_notifier_notifier_svc
+    command: [ "./notifier" ]
+    environment:
+      DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@notifier-postgres:5432/${NOTIFIER_DB_NAME:?NOTIFIER_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      NOTIFIER_PORT: ${NOTIFIER_PORT:-8081}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      RETRY_INTERVAL: ${RETRY_INTERVAL:-15m}
+      MAX_RETRIES: ${MAX_RETRIES:-5}
+      CONFIRMATION_TTL: ${CONFIRMATION_TTL:-24h}
+      PROCESSED_RELEASE_TTL: ${PROCESSED_RELEASE_TTL:-720h}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER required}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD required}
+      SMTP_FROM: ${SMTP_FROM:?SMTP_FROM required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - app_net
+      - monitoring_net
+    depends_on:
+      notifier-postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${NOTIFIER_PORT:-8081}/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  saga-orchestrator:
+    <<: [ *service, *app-image ]
+    container_name: github_release_notifier_saga_orchestrator
+    command: [ "./saga-orchestrator" ]
+    environment:
+      DATABASE_URL: postgres://${DB_USER:?DB_USER required}:${DB_PASSWORD:?DB_PASSWORD required}@saga-postgres:5432/${SAGA_DB_NAME:?SAGA_DB_NAME required}?sslmode=${DB_SSL_MODE:-disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      SAGA_PORT: ${SAGA_PORT:-8083}
+      # "nats" (default) or "grpc" — see docs/hw9-service-communication-grpc-and-buf-proto.md
+      SAGA_COMPENSATE_TRANSPORT: ${SAGA_COMPENSATE_TRANSPORT:-nats}
+      SUBSCRIPTION_GRPC_ADDR: ${SUBSCRIPTION_GRPC_ADDR:-subscription-svc:50052}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - app_net
+      - monitoring_net
+    depends_on:
+      saga-postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      subscription-svc:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:${SAGA_PORT:-8083}/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  subscription-postgres:
+    <<: *service
+    image: postgres:18-alpine
+    container_name: github_release_notifier_subscription_postgres
+    environment:
+      POSTGRES_DB: ${SUBSCRIPTION_DB_NAME:?SUBSCRIPTION_DB_NAME required}
+      POSTGRES_USER: ${DB_USER:?DB_USER required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - subscription_postgres_data:/var/lib/postgresql
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${SUBSCRIPTION_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  notifier-postgres:
+    <<: *service
+    image: postgres:18-alpine
+    container_name: github_release_notifier_notifier_postgres
+    environment:
+      POSTGRES_DB: ${NOTIFIER_DB_NAME:?NOTIFIER_DB_NAME required}
+      POSTGRES_USER: ${DB_USER:?DB_USER required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - notifier_postgres_data:/var/lib/postgresql
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${NOTIFIER_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  scanner-postgres:
+    <<: *service
+    image: postgres:18-alpine
+    container_name: github_release_notifier_scanner_postgres
+    environment:
+      POSTGRES_DB: ${SCANNER_DB_NAME:?SCANNER_DB_NAME required}
+      POSTGRES_USER: ${DB_USER:?DB_USER required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - scanner_postgres_data:/var/lib/postgresql
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${SCANNER_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  saga-postgres:
+    <<: *service
+    image: postgres:18-alpine
+    container_name: github_release_notifier_saga_postgres
+    environment:
+      POSTGRES_DB: ${SAGA_DB_NAME:?SAGA_DB_NAME required}
+      POSTGRES_USER: ${DB_USER:?DB_USER required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - saga_postgres_data:/var/lib/postgresql
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${SAGA_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  redis:
+    <<: *service
+    image: redis:8-alpine
+    container_name: github_release_notifier_redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+      --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  nats:
+    <<: *service
+    image: nats:2-alpine
+    container_name: github_release_notifier_nats
+    command: [ "-js", "-sd", "/data", "-m", "8222" ]
+    volumes:
+      - nats_data:/data
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  elasticsearch:
+    <<: *service
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.2
+    container_name: github_release_notifier_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - logging_net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -v '\"status\":\"red\"'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  kibana:
+    <<: *service
+    image: docker.elastic.co/kibana/kibana:9.4.2
+    container_name: github_release_notifier_kibana
+    ports:
+      - "127.0.0.1:${KIBANA_PORT:-5601}:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - logging_net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:5601/api/status | grep -v '\"level\":\"critical\"'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.4.2
+    container_name: github_release_notifier_filebeat
+    user: root
+    command: filebeat -e --strict.perms=false
+    volumes:
+      - filebeat_data:/usr/share/filebeat/data
+      - ./observability/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./observability/filebeat/ilm-policy.json:/usr/share/filebeat/ilm-policy.json:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - logging_net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "filebeat test output" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging: *default-logging
+    restart: unless-stopped
+
+  kibana-setup:
+    image: curlimages/curl:8.20.0
+    container_name: github_release_notifier_kibana_setup
+    volumes:
+      - ./observability/kibana/dashboards.ndjson:/kibana/dashboards.ndjson:ro
+    networks:
+      - logging_net
+    depends_on:
+      kibana:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+    command:
+      - -sf
+      - -X
+      - POST
+      - "http://kibana:5601/api/saved_objects/_import?overwrite=true"
+      - -H
+      - "kbn-xsrf: true"
+      - -F
+      - "file=@/kibana/dashboards.ndjson"
+
+  prometheus:
+    <<: *service
+    image: prom/prometheus:v3.12.0
+    container_name: github_release_notifier_prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring_net
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    depends_on:
+      subscription-svc:
+        condition: service_healthy
+      notifier-svc:
+        condition: service_healthy
+      scanner-svc:
+        condition: service_healthy
+      saga-orchestrator:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  grafana:
+    <<: *service
+    image: grafana/grafana:13.0.1
+    container_name: github_release_notifier_grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD required}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring_net
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+networks:
+  app_net:
+    driver: bridge
+  monitoring_net:
+    driver: bridge
+  logging_net:
+    driver: bridge
+
+volumes:
+  subscription_postgres_data:
+  notifier_postgres_data:
+  scanner_postgres_data:
+  saga_postgres_data:
+  redis_data:
+  nats_data:
+  elasticsearch_data:
+  filebeat_data:
+  prometheus_data:
+  grafana_data:

@@ -1,0 +1,16 @@
+services:
+  subscription-postgres:
+    ports:
+      - "${SUBSCRIPTION_DB_PORT:-5432}:5432"
+  scanner-postgres:
+    ports:
+      - "${SCANNER_DB_PORT:-5433}:5432"
+  notifier-postgres:
+    ports:
+      - "${NOTIFIER_DB_PORT:-5434}:5432"
+  saga-postgres:
+    ports:
+      - "${SAGA_DB_PORT:-5435}:5432"
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"

@@ -1,0 +1,124 @@
+package broker
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
+	"github-release-notifier/internal/infrastructure/metrics"
+)
+
+var ErrTerminal = errors.New("terminal message error")
+
+func Terminal(err error) error {
+	return fmt.Errorf("%w: %w", ErrTerminal, err)
+}
+
+const (
+	maxDeliver = 5
+	ackWait    = 90 * time.Second
+)
+
+type Handler func(ctx context.Context, data []byte) error
+
+type Conn struct {
+	nc  *nats.Conn
+	js  jetstream.JetStream
+	log *slog.Logger
+}
+
+func Connect(url string, log *slog.Logger) (*Conn, error) {
+	nc, err := nats.Connect(url)
+	if err != nil {
+		return nil, fmt.Errorf("connect nats: %w", err)
+	}
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		nc.Close()
+
+		return nil, fmt.Errorf("create jetstream context: %w", err)
+	}
+
+	return &Conn{nc: nc, js: js, log: log.With("component", "broker")}, nil
+}
+
+func (c *Conn) EnsureStream(ctx context.Context, name string, subjects []string) error {
+	if _, err := c.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:     name,
+		Subjects: subjects,
+	}); err != nil {
+		return fmt.Errorf("ensure stream %q: %w", name, err)
+	}
+
+	return nil
+}
+
+func (c *Conn) Publish(ctx context.Context, subject string, data []byte) error {
+	_, err := c.js.Publish(ctx, subject, data)
+	metrics.EventsPublishedTotal.WithLabelValues(subject, metrics.ResultLabel(err)).Inc()
+
+	if err != nil {
+		return fmt.Errorf("publish to %q: %w", subject, err)
+	}
+
+	return nil
+}
+
+func (c *Conn) Consume(ctx context.Context, stream, durable, subject string, handler Handler) (func(), error) {
+	cons, err := c.js.CreateOrUpdateConsumer(ctx, stream, jetstream.ConsumerConfig{
+		Durable:       durable,
+		FilterSubject: subject,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       ackWait,
+		MaxAckPending: 1,
+		MaxDeliver:    maxDeliver,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create consumer %q: %w", durable, err)
+	}
+
+	cc, err := cons.Consume(func(msg jetstream.Msg) {
+		c.dispatch(ctx, subject, handler, msg)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("start consume %q: %w", durable, err)
+	}
+
+	return cc.Stop, nil
+}
+
+func (c *Conn) dispatch(ctx context.Context, subject string, handler Handler, msg jetstream.Msg) {
+	switch err := handler(ctx, msg.Data()); {
+	case err == nil:
+		metrics.EventsConsumedTotal.WithLabelValues(subject, "ack").Inc()
+		c.ack(msg.Ack(), subject)
+	case errors.Is(err, ErrTerminal):
+		metrics.EventsConsumedTotal.WithLabelValues(subject, "term").Inc()
+		c.log.ErrorContext(ctx, "dropping poison message", "subject", subject, "error", err)
+		c.ack(msg.Term(), subject)
+	default:
+		metrics.EventsConsumedTotal.WithLabelValues(subject, "nak").Inc()
+		c.log.ErrorContext(ctx, "message handler failed; redelivering", "subject", subject, "error", err)
+		c.ack(msg.Nak(), subject)
+	}
+}
+
+func (c *Conn) ack(err error, subject string) {
+	if err != nil {
+		c.log.Warn("failed to acknowledge message", "subject", subject, "error", err)
+	}
+}
+
+func (c *Conn) Close() error {
+	if err := c.nc.Drain(); err != nil {
+		return fmt.Errorf("drain nats: %w", err)
+	}
+
+	return nil
+}

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package compensation.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github-release-notifier/internal/shared/grpc/gen/compensationv1;compensationv1";
+
+service CompensationService {
+  // Compensate deletes the pending subscription identified by (email, repo_name)
+  rpc Compensate(CompensateRequest) returns (CompensateResponse);
+}
+
+message CompensateRequest {
+  string saga_id = 1 [(buf.validate.field).string.uuid = true];
+  string saga_type = 2 [(buf.validate.field).string.min_len = 1];
+  string email = 3 [(buf.validate.field).string.email = true];
+  string repo_name = 4 [(buf.validate.field).string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"];
+}
+
+message CompensateResponse {
+  // rolled_back is true when a pending row was actually deleted
+  // false on an idempotent no-op (already confirmed, already rolled back, or never existed)
+  bool rolled_back = 1;
+}

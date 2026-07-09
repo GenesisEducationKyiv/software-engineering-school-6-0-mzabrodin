@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package subscription.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+
+option go_package = "github-release-notifier/internal/subscription/grpc/gen/subscriptionv1;subscriptionv1";
+
+service SubscriptionService {
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {
+    option (google.api.http) = {
+      post: "/api/subscribe"
+      body: "*"
+    };
+  }
+
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse) {
+    option (google.api.http) = {get: "/api/confirm/{token}"};
+  }
+
+  rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse) {
+    option (google.api.http) = {get: "/api/unsubscribe/{token}"};
+  }
+
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse) {
+    option (google.api.http) = {get: "/api/subscriptions"};
+  }
+}
+
+message SubscribeRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  // repo must be in "owner/repo" form (mirrors github.ParseRepo).
+  string repo = 2 [(buf.validate.field).string.pattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"];
+}
+
+// message is a human-readable confirmation, identical across the REST and gRPC surfaces.
+message SubscribeResponse {
+  string message = 1;
+}
+
+message ConfirmRequest {
+  // token is the signed JWT confirmation token.
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ConfirmResponse {
+  string message = 1;
+}
+
+message UnsubscribeRequest {
+  // token is the 64-character hex unsubscribe token.
+  string token = 1 [(buf.validate.field).string.len = 64];
+}
+
+message UnsubscribeResponse {
+  string message = 1;
+}
+
+message ListSubscriptionsRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+}
+
+message ListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+}
+
+message Subscription {
+  string email = 1;
+  string repo = 2;
+  bool confirmed = 3;
+}
