@@ -28,10 +28,11 @@ Adopt ports and adapters. Dependencies point inward:
 
 ```mermaid
 flowchart LR
-    Inbound["adapter (inbound)<br/>connectrpc · eventconsumer"] --> UseCase[usecase]
-    UseCase --> Outbound["adapter (outbound)<br/>repository · eventpublisher · mailer · github · cache · urlbuilder"]
-    Outbound --> Domain[domain]
-    Infra["infrastructure<br/>config · db · logging · metrics · scheduler · broker · outbox"] -.cross-cutting.-> UseCase
+    Inbound["adapter (inbound)<br/>connectrpc · compensationserver · eventconsumer · scheduler-driven"] --> UseCase[usecase]
+    UseCase --> Outbound["adapter (outbound)<br/>repository · eventpublisher · mailer · compensationclient<br/>confirmtoken · github · cache · urlbuilder"]
+    UseCase --> Domain[domain]
+    Outbound --> Domain
+    Infra["infrastructure<br/>config · db · logging · metrics · scheduler · broker · outbox"] -.->|"cross-cutting"| UseCase
 ```
 
 The layers live inside each module (`internal/<module>/{domain,usecase,adapter}`):
@@ -41,9 +42,10 @@ The layers live inside each module (`internal/<module>/{domain,usecase,adapter}`
 - **`usecase`** — business logic. Each use case declares its own narrow port interfaces
   (consumer-defined) and exposes `Execute(ctx, In) (Out, error)`.
 - **`adapter`** — implementations of those ports:
-    - inbound: `connectrpc` (the public Connect/Vanguard handler), `eventconsumer` (NATS)
-    - outbound: `repository` (pgx), `eventpublisher` (NATS), `mailer` (SMTP), plus shared `github` /
-      `cache` (Redis) / `urlbuilder`
+    - inbound: `connectrpc` (the public Connect/Vanguard handler), `compensationserver` (the saga's optional gRPC
+      rollback endpoint), `eventconsumer` (NATS)
+    - outbound: `repository` (pgx), `eventpublisher` (NATS outbox), `mailer` (SMTP), `compensationclient`
+      (gRPC), `confirmtoken` (JWT), plus shared `github` / `cache` (Redis) / `urlbuilder`
 - **`internal/infrastructure/*`** — cross-cutting plumbing (`config`, `db`, `logging`, `metrics`,
   `scheduler`, `broker`, `outbox`).
 - **`internal/bootstrap/<service>` + `cmd/<service>`** — composition roots; construct concrete

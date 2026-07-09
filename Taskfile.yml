@@ -62,6 +62,11 @@ tasks:
     cmds:
       - buf lint
 
+  arch-test:
+    desc: Verify architectural dependency rules with arch-go
+    cmds:
+      - go run github.com/arch-go/arch-go/v2@v2.1.2
+
   bench:
     desc: Run the gRPC-vs-NATS compensation throughput benchmarks, 5 runs x 5s (testcontainers, requires Docker)
     deps:
