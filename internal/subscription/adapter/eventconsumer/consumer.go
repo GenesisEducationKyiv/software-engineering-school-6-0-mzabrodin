@@ -11,7 +11,7 @@ import (
 )
 
 type compensator interface {
-	Execute(ctx context.Context, in compensate.Input) error
+	Execute(ctx context.Context, in compensate.Input) (bool, error)
 }
 
 type Consumer struct {
@@ -29,8 +29,10 @@ func (c *Consumer) HandleCompensate(ctx context.Context, data []byte) error {
 		return broker.Terminal(err)
 	}
 
-	return c.compensate.Execute(logging.WithSagaID(ctx, ev.SagaID), compensate.Input{
+	_, err = c.compensate.Execute(logging.WithSagaID(ctx, ev.SagaID), compensate.Input{
 		Email:    ev.Email,
 		RepoName: ev.RepoName,
 	})
+
+	return err
 }

@@ -131,6 +131,7 @@ CLAUDE.md
 internal/subscription/grpc/gen/
 internal/scanner/grpc/gen/
 internal/notifier/grpc/gen/
+internal/shared/grpc/gen/
 
 # mTLS certificates for the app
 certs/

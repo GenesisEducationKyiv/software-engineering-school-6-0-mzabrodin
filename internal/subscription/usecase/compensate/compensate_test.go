@@ -42,18 +42,23 @@ func (s *CompensateSuite) TearDownTest() {
 func (s *CompensateSuite) TestDeletesPending() {
 	s.subs.On("DeletePendingByEmailAndRepo", mock.Anything, "user@example.test", "golang/go").Return(true, nil)
 
-	s.Require().NoError(s.uc.Execute(s.T().Context(), Input{Email: "user@example.test", RepoName: "golang/go"}))
+	deleted, err := s.uc.Execute(s.T().Context(), Input{Email: "user@example.test", RepoName: "golang/go"})
+	s.Require().NoError(err)
+	s.True(deleted)
 }
 
 func (s *CompensateSuite) TestNoPendingRowIsNotAnError() {
 	s.subs.On("DeletePendingByEmailAndRepo", mock.Anything, "user@example.test", "golang/go").Return(false, nil)
 
-	s.Require().NoError(s.uc.Execute(s.T().Context(), Input{Email: "user@example.test", RepoName: "golang/go"}))
+	deleted, err := s.uc.Execute(s.T().Context(), Input{Email: "user@example.test", RepoName: "golang/go"})
+	s.Require().NoError(err)
+	s.False(deleted)
 }
 
 func (s *CompensateSuite) TestPropagatesError() {
 	s.subs.On("DeletePendingByEmailAndRepo", mock.Anything, "user@example.test", "golang/go").
 		Return(false, errors.New("db down"))
 
-	s.Require().Error(s.uc.Execute(s.T().Context(), Input{Email: "user@example.test", RepoName: "golang/go"}))
+	_, err := s.uc.Execute(s.T().Context(), Input{Email: "user@example.test", RepoName: "golang/go"})
+	s.Require().Error(err)
 }

@@ -44,12 +44,7 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 	}
 	defer cleanupInfra()
 
-	svc, cleanupUC, subConsumer := buildApp(inf, cfg, log)
-
-	publicSrv, err := newPublicServer(cfg, svc, log)
-	if err != nil {
-		return err
-	}
+	svc, cleanupUC, subConsumer, compensateUC := buildApp(inf, cfg, log)
 
 	stopConsumers, err := startConsumers(ctx, inf.broker, subConsumer, log)
 	if err != nil {
@@ -57,10 +52,21 @@ func Run(ctx context.Context, cfg *config.SubscriptionConfig, log *slog.Logger) 
 	}
 	defer stopConsumers()
 
+	publicSrv, err := newPublicServer(cfg, svc, log)
+	if err != nil {
+		return err
+	}
+
+	internalSrv, err := newInternalGRPCServer(cfg, compensateUC, log)
+	if err != nil {
+		return err
+	}
+
 	backgroundDone, cancelBackground := startBackground(ctx, inf.relay, cleanupUC, cfg.PendingCleanupInterval, log)
 
 	return serve(ctx, serveDeps{
 		publicSrv:        publicSrv,
+		internalSrv:      internalSrv,
 		backgroundDone:   backgroundDone,
 		cancelBackground: cancelBackground,
 		log:              log,
@@ -140,7 +146,12 @@ func buildApp(
 	inf *infrastructure,
 	cfg *config.SubscriptionConfig,
 	log *slog.Logger,
-) (*connectapi.Service, *cleanup.UseCase, *eventconsumer.Consumer) {
+) (
+	svc *connectapi.Service,
+	cleanupUC *cleanup.UseCase,
+	consumer *eventconsumer.Consumer,
+	compensateUC *compensate.UseCase,
+) {
 	repos := repository.NewGitHubRepoRepository(inf.pool)
 	subs := repository.NewSubscriptionRepository(inf.pool)
 	urls := urlbuilder.New(cfg.BaseURL)
@@ -149,13 +160,14 @@ func buildApp(
 	tokens := confirmtoken.New(cfg.JWTSecret, cfg.ConfirmTokenTTL)
 
 	ucs := buildUseCases(repos, subs, inf.gh, tokens, urls, transactor, pub, log)
-	svc := connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
+	svc = connectapi.NewService(ucs.subscribe, ucs.confirm, ucs.unsubscribe, ucs.list, log)
 
-	cleanupUC := cleanup.New(subs, transactor, pub, cfg.ConfirmTokenTTL, log)
+	cleanupUC = cleanup.New(subs, transactor, pub, cfg.ConfirmTokenTTL, log)
 
-	consumer := eventconsumer.New(compensate.New(subs, log), log)
+	compensateUC = compensate.New(subs, log)
+	consumer = eventconsumer.New(compensateUC, log)
 
-	return svc, cleanupUC, consumer
+	return svc, cleanupUC, consumer, compensateUC
 }
 
 type useCases struct {
